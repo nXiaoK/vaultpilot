@@ -45,6 +45,8 @@ Account 输出有 Drive 稳定身份、配额域、verified/status/enabled、整
 | GET/POST | /sources | name, path, excludes[], include_hidden, max_file_bytes, one_file_system；服务生成source_id及mount_identity |
 | PUT/PATCH/DELETE | /sources/{id} | 修改携带version，路径限于SourceRoots，删除检查计划 |
 | GET | /browse?path=… | 部署授权目录浏览；未指定path列根目录，不跟随链接 |
+| GET | /sources/{id}/files | 源内当前目录：path 为相对路径，search 搜索当前目录，limit 最大500，cursor 使用上一页 next_cursor；返回 items/total/path/next_cursor，文件夹优先、按名称排序 |
+| GET | /sources/{id}/content?path=… | 普通文件只读预览：UTF-8 文本最多256KiB；经内容检测的 PNG/JPEG/GIF/WebP 最多5MiB，返回 JSON 文本或 Base64；特殊文件、链接、越界路径和已变化挂载拒绝 |
 | GET/POST | /plans | name, source_ids, pool_id, schedule, timezone, enabled, excludes, retention, retry_count, bandwidth_kib |
 | PUT/DELETE | /plans/{id} | 更新/删除；运行中计划不能删除 |
 | POST | /plans/{id}/preview | {} → 异步扫描/分配预览；不上传数据 |

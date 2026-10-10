@@ -327,6 +327,8 @@ func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("PATCH /api/pools/{id}", r.savePool)
 	m.HandleFunc("DELETE /api/pools/{id}", r.deletePool)
 	m.HandleFunc("GET /api/sources", r.listSources)
+	m.HandleFunc("GET /api/sources/{id}/files", r.sourceFiles)
+	m.HandleFunc("GET /api/sources/{id}/content", r.sourceContent)
 	m.HandleFunc("POST /api/sources", r.saveSource)
 	m.HandleFunc("PUT /api/sources/{id}", r.saveSource)
 	m.HandleFunc("PATCH /api/sources/{id}", r.saveSource)

@@ -22,6 +22,9 @@ func MountIdentity(path string) (string, error) {
 	if e != nil {
 		return "", e
 	}
+	return directoryIdentity(actual, info)
+}
+func directoryIdentity(actual string, info os.FileInfo) (string, error) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "", fmt.Errorf("无法获取目录设备身份")
