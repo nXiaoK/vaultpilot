@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -635,16 +634,19 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 		password[i] = 0
 	}
 	full := []string{"--repo", s.repoAddress(repo, a), "--password-file", name, "--cache-dir", filepath.Join(s.rt.Config.CacheDir, "restic"), "--json"}
+	var env []string
 	if a.Backend != "local" {
 		config := s.rt.RcloneConfig()
 		if config == "" {
 			return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
 		}
 		defer s.rt.ReleaseRcloneConfig(config)
-		full = append(full, "-o", "rclone.program="+s.rt.Config.RcloneBin, "-o", "rclone.args=serve restic --stdio --config "+strconv.Quote(config))
+		// Inherit the config path in Rclone's subprocess without nested command quoting.
+		env = append(env, "RCLONE_CONFIG="+config)
+		full = append(full, "-o", "rclone.program="+s.rt.Config.RcloneBin, "-o", "rclone.args=serve restic --stdio")
 	}
 	full = append(full, args...)
-	output, err := process.Run(ctx, s.rt.Config.ResticBin, full, nil, onLine)
+	output, err := process.Run(ctx, s.rt.Config.ResticBin, full, env, onLine)
 	if a.Backend != "local" {
 		_ = s.rt.SyncRcloneCredentials()
 	}
