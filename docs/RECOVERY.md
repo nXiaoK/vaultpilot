@@ -18,6 +18,30 @@
 
 恢复包错误密码、篡改或不支持版本直接拒绝。若所有旧发现入口将失效、密钥或格式将改变，必须在旧入口仍可用时保存新的恢复包，并做空白实例验证。
 
+## 恢复目录权限错误
+
+`mkdirat <source_id>: permission denied` 表示进程无法在恢复目标中创建备份源子目录，不表示 OneDrive 授权失效。Compose 默认使用 `VP_UID=1000`、`VP_GID=1000`；宿主机管理员能写入该目录，不代表容器用户也能写入。新版本会在预检查阶段检查目标和已有父目录的写入、进入权限，返回 `RESTORE_TARGET_NOT_WRITABLE`，并显示实际进程 UID/GID；执行阶段的权限变化也使用该错误码。
+
+在 B 机器项目目录中查看实际容器身份与挂载：
+
+```sh
+docker compose exec vaultpilot id
+docker compose exec vaultpilot ls -ldn /restore
+```
+
+例如 `.env` 配置 `VP_RESTORE_HOST=/data/from-a`、`VP_UID=1000`、`VP_GID=1000`，使用专用恢复目录时，在宿主机准备它：
+
+```sh
+sudo mkdir -p /data/from-a
+sudo chown 1000:1000 /data/from-a
+sudo chmod u+rwx /data/from-a
+docker compose up -d --force-recreate
+```
+
+UID/GID 和目录必须替换为实际设置；上述操作只调整该专用目录，不递归修改已有文件。网页填写容器路径 `/restore/first-restore`，宿主机对应 `/data/from-a/first-restore/<source_id>/...`。如果已有恢复子目录属于其他用户，可另选新的目标子目录，或为实际目录设置正确的权限。更改 `.env` 的路径或 UID/GID 后必须重建容器，单独 `restart` 不会应用新配置；更改运行 UID/GID 时还需确保该用户能够写入 state/cache。
+
+若仍失败，检查宿主机文件系统或挂载是否只读，以及 NFS/CIFS/NAS 的 UID 映射、ACL 或访问策略。应用不会自动更改宿主机属主或放宽权限。
+
 ## 管理服务不可用时的人工恢复
 
 独立 `vprescue` 工具不需要 SQLite、节点密钥或正在运行的管理服务。应和离线恢复包一起保存对应版本的工具/源码以及 Restic、Rclone 的版本信息。

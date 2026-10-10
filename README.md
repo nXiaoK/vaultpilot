@@ -27,6 +27,8 @@ docker compose up -d
 
 生产环境替换 `.env` 的 `VP_SOURCE_HOST` 与 `VP_RESTORE_HOST`。源以只读方式挂载到 `/sources`；恢复目标独立挂载到 `/restore`。新增宿主机目录需要更新 compose 的只读挂载和 `VP_SOURCE_ROOTS`，重建容器后才会出现在网页选择器中。
 
+自定义 `VP_RESTORE_HOST` 后，需要为那个真实宿主机目录设置 `VP_UID`/`VP_GID` 的写入权限，上面的示例目录授权不会自动应用到它。出现 `mkdirat …: permission denied` 时，查看 [恢复目录权限排查](docs/RECOVERY.md#恢复目录权限错误)。
+
 ## OneDrive 授权（无需 Azure）
 
 在「存储账号 → 添加账号」创建名称，默认选择「Rclone 标准授权」，打开微软页面，用 Microsoft 365 Family 的个人账号登录并同意权限。成功后选择实际 Drive 并完成读写验证。

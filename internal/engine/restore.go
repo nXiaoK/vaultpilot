@@ -145,7 +145,7 @@ func (s *Service) allowedTarget(target string, create bool) (*os.Root, string, e
 		}
 		root, err := os.OpenRoot(base)
 		if err != nil {
-			return nil, "", err
+			return nil, "", restoreTargetError(err, base)
 		}
 		rel, err := filepath.Rel(base, target)
 		if err != nil {
@@ -158,7 +158,7 @@ func (s *Service) allowedTarget(target string, create bool) (*os.Root, string, e
 		if create {
 			if err = root.MkdirAll(rel, 0700); err != nil {
 				root.Close()
-				return nil, "", err
+				return nil, "", restoreTargetError(err, target)
 			}
 		}
 		child, err := root.OpenRoot(rel)
@@ -170,6 +170,9 @@ func (s *Service) allowedTarget(target string, create bool) (*os.Root, string, e
 			return root, target, nil
 		}
 		root.Close()
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EROFS) {
+			return nil, "", restoreTargetError(err, target)
+		}
 		return nil, "", fail("RESTORE_BOUNDARY", "恢复目标含越界链接或不可写路径")
 	}
 	return nil, "", fail("RESTORE_BOUNDARY", "目标不在部署允许的恢复目录内")
@@ -223,6 +226,14 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 	}
 	defer root.Close()
 	preview.Target = target
+	targetRel, err := filepath.Rel(root.Name(), target)
+	if err != nil {
+		return preview, err
+	}
+	checkedDirectories := map[string]bool{}
+	if err = checkRestoreDirectoryWritable(root, targetRel, checkedDirectories); err != nil {
+		return preview, err
+	}
 	point, where, args, repos, accounts, err := s.restoreContext(ctx, req)
 	if err != nil {
 		return preview, err
@@ -261,6 +272,9 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 				continue
 			}
 			rel := filepath.Join(e.SourceID, filepath.FromSlash(e.Path)) // Query only; no target writes during preview.
+			if err = checkRestoreDirectoryWritable(root, filepath.Dir(filepath.Join(targetRel, rel)), checkedDirectories); err != nil {
+				return preview, err
+			}
 			path := filepath.Join(target, rel)
 			_, err := os.Lstat(path)
 			if err == nil {
@@ -275,7 +289,7 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 					preview.Conflicts = append(preview.Conflicts, PathSelection{e.SourceID, e.Path})
 				}
 			} else if !errors.Is(err, os.ErrNotExist) {
-				return preview, err
+				return preview, restoreTargetError(err, path)
 			}
 		}
 	}
@@ -418,8 +432,9 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 		return fail("RESTORE_PATH_INVALID", "恢复清单路径无效")
 	}
 	target := filepath.Join(e.SourceID, filepath.FromSlash(e.Path))
+	outputPath := filepath.Join(out.Name(), target)
 	if err := assertParents(out, target); err != nil {
-		return err
+		return restoreTargetError(err, outputPath)
 	}
 	snapshotPath, err := sourceSnapshotRelative(e.SnapshotPath)
 	if err != nil {
@@ -432,7 +447,7 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 	existing, statErr := out.Lstat(target)
 	exists := statErr == nil
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return statErr
+		return restoreTargetError(statErr, outputPath)
 	}
 	if e.Kind == "dir" {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
@@ -447,7 +462,7 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 			}
 			return fail("RESTORE_CONFLICT", "拒绝将现有非目录目标替换为目录")
 		}
-		return out.Mkdir(target, 0700)
+		return restoreTargetError(out.Mkdir(target, 0700), outputPath)
 	}
 	if exists && !overwrite {
 		return fail("RESTORE_CONFLICT", "恢复目标已存在")
@@ -470,14 +485,14 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 			return fail("RESTORE_UNSAFE_LINK", "拒绝恢复指向源边界外的符号链接："+e.Path)
 		}
 		if !overwrite {
-			return out.Symlink(link, target)
+			return restoreTargetError(out.Symlink(link, target), outputPath)
 		}
 		temp := filepath.Join(filepath.Dir(target), ".vaultpilot-"+uid())
 		if err = out.Symlink(link, temp); err != nil {
-			return err
+			return restoreTargetError(err, outputPath)
 		}
 		defer out.Remove(temp)
-		return out.Rename(temp, target)
+		return restoreTargetError(out.Rename(temp, target), outputPath)
 	}
 	if e.Kind != "file" || !info.Mode().IsRegular() {
 		return fail("RESTORE_TYPE_MISMATCH", "恢复文件类型不符")
@@ -490,7 +505,7 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 	temp := filepath.Join(filepath.Dir(target), ".vaultpilot-"+uid())
 	file, err := out.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return err
+		return restoreTargetError(err, outputPath)
 	}
 	defer out.Remove(temp)
 	n, err := io.Copy(file, in)
@@ -508,18 +523,21 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 	}
 	closeErr := file.Close()
 	if err != nil {
-		return err
+		return restoreTargetError(err, outputPath)
 	}
 	if closeErr != nil {
-		return closeErr
+		return restoreTargetError(closeErr, outputPath)
 	}
 	if !overwrite {
 		if err = out.Link(temp, target); err != nil {
-			return fail("RESTORE_CONFLICT", "写入时目标已存在，未覆盖")
+			if errors.Is(err, os.ErrExist) {
+				return fail("RESTORE_CONFLICT", "写入时目标已存在，未覆盖")
+			}
+			return restoreTargetError(err, outputPath)
 		}
 		return nil
 	}
-	return out.Rename(temp, target)
+	return restoreTargetError(out.Rename(temp, target), outputPath)
 }
 func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 	var req RestoreRequest
