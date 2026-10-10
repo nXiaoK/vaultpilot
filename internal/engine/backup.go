@@ -511,7 +511,9 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 	}()
 	for _, allocation := range plan.Shards {
 		repo := repos[allocation.RepositoryID]
-		if repo.Status == "new" {
+		// A failed initialization leaves status "new" on an already persisted row.
+		// Only persist newly allocated repositories; retries must reuse their secrets.
+		if repo.Version == 0 {
 			v, err := s.rt.Store.Save(ctx, "repositories", repo.ID, 0, repo)
 			if err != nil {
 				return err
