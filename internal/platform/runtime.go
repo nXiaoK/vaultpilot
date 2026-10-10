@@ -63,6 +63,7 @@ type Runtime struct {
 	rcloneAuth    map[string]*rcloneAuthFlow
 	rcloneAuthWG  sync.WaitGroup
 	closing       bool
+	network       *networkMonitor
 }
 
 func New(c Config) (*Runtime, error) {
@@ -203,9 +204,14 @@ func New(c Config) (*Runtime, error) {
 			return nil, e
 		}
 	}
+	r.network = newNetworkMonitor(readNetworkCounters)
 	return r, nil
 }
 func (r *Runtime) Close() error {
+	if r.network != nil {
+		r.network.closeOnce.Do(func() { close(r.network.stop) })
+		<-r.network.done
+	}
 	r.rcloneAuthMu.Lock()
 	r.closing = true
 	for _, flow := range r.rcloneAuth {
@@ -292,6 +298,7 @@ func (r *Runtime) secureCookie() bool {
 }
 func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("GET /api/status", r.status)
+	m.HandleFunc("GET /api/metrics/network", r.networkMetrics)
 	m.HandleFunc("POST /api/setup", r.setup)
 	m.HandleFunc("POST /api/auth/login", r.login)
 	m.HandleFunc("POST /api/auth/logout", r.logout)

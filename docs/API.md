@@ -21,6 +21,8 @@
 
 ## 账号与存储池
 
+`GET /metrics/network` 要求登录，返回 `available`、`supported`、`server_time` 和最近 60 秒的 `history`。每条采样包含 `at`、`upload_bytes_per_second`（出站）和 `download_bytes_per_second`（入站）。服务每秒读取 Linux `/proc/net/dev`，排除回环接口；Docker 默认桥接网络下为容器网络流量，原生或 host 网络部署下为节点全部非回环接口流量，包含其他程序流量，不代表单个备份任务的文件处理速度。计数器重置、接口变化或采样中断会重新建立基线；不支持的系统返回不可用，界面不生成模拟数据。历史仅保留在内存中，服务重启后重新采集。
+
 | Method | Path | 说明 |
 |---|---|---|
 | GET/POST | /accounts | 列表/创建：name, backend=onedrive, budget_bytes, cloud_reserve_bytes, maintenance_reserve_bytes |
