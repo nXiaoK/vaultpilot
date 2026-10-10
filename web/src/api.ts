@@ -8,12 +8,26 @@ export class ApiError extends Error {
 }
 let csrf = ''
 export function setCSRF(value: string) { csrf = value }
+let taskSequence = 0
+function taskKey(): string {
+  const cryptoAPI = globalThis.crypto
+  if (typeof cryptoAPI?.randomUUID === 'function') return cryptoAPI.randomUUID()
+  if (typeof cryptoAPI?.getRandomValues === 'function') {
+    const bytes = cryptoAPI.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  }
+  // Task deduplication only; this fallback must not be used for secrets or tokens.
+  return `task-${Date.now().toString(36)}-${(++taskSequence).toString(36)}-${Math.random().toString(36).slice(2)}`
+}
 export async function api<T = any>(path: string, options: { method?: string; body?: unknown; task?: boolean; signal?: AbortSignal } = {}): Promise<T> {
   const method = options.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
   if (method !== 'GET') headers['X-CSRF-Token'] = csrf
-  if (options.task) headers['Idempotency-Key'] = crypto.randomUUID()
+  if (options.task) headers['Idempotency-Key'] = taskKey()
   let response: Response
   try { response = await fetch('/api' + path, { method, headers, credentials: 'same-origin', body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: options.signal }) }
   catch { throw new ApiError('无法连接服务，请检查网络后重试。', 'network_unavailable', true, 0) }
