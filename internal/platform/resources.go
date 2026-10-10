@@ -211,6 +211,10 @@ func (r *Runtime) updateAccount(w http.ResponseWriter, req *http.Request) {
 	}
 }
 func (r *Runtime) deleteAccount(w http.ResponseWriter, req *http.Request) {
+	r.accountMu.Lock()
+	defer r.accountMu.Unlock()
+	r.credentialsMu.Lock()
+	defer r.credentialsMu.Unlock()
 	id := req.PathValue("id")
 	for _, table := range []string{"repositories", "storage_pools"} {
 		rows, e := r.Store.All(req.Context(), table)

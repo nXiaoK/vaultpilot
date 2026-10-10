@@ -40,6 +40,7 @@ type loginAttempt struct {
 type oauthState struct {
 	AccountID, Verifier, SessionID string
 	Expires                        time.Time
+	Version                        int
 }
 type Runtime struct {
 	Config        Config
@@ -58,6 +59,10 @@ type Runtime struct {
 	accountMu     sync.Mutex
 	rclonePath    string
 	rclonePaths   []string
+	rcloneAuthMu  sync.Mutex
+	rcloneAuth    map[string]*rcloneAuthFlow
+	rcloneAuthWG  sync.WaitGroup
+	closing       bool
 }
 
 func New(c Config) (*Runtime, error) {
@@ -168,6 +173,11 @@ func New(c Config) (*Runtime, error) {
 		}
 	}
 	r.rclonePaths = nil
+	// Authorization/refresh subprocesses are gone after restart.
+	staleOAuth, _ := filepath.Glob(filepath.Join(c.CacheDir, "oauth-*.conf"))
+	for _, path := range staleOAuth {
+		_ = os.Remove(path)
+	}
 	r.vaultID, _ = r.meta("vault_id")
 	r.mode, _ = r.meta("mode")
 	if r.mode == "" {
@@ -196,6 +206,13 @@ func New(c Config) (*Runtime, error) {
 	return r, nil
 }
 func (r *Runtime) Close() error {
+	r.rcloneAuthMu.Lock()
+	r.closing = true
+	for _, flow := range r.rcloneAuth {
+		flow.cancel()
+	}
+	r.rcloneAuthMu.Unlock()
+	r.rcloneAuthWG.Wait()
 	r.Keys.Lock()
 	r.rcloneMu.Lock()
 	for _, path := range r.rclonePaths {
@@ -287,6 +304,12 @@ func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("PATCH /api/accounts/{id}", r.updateAccount)
 	m.HandleFunc("DELETE /api/accounts/{id}", r.deleteAccount)
 	m.HandleFunc("POST /api/accounts/{id}/authorize", r.authorize)
+	m.HandleFunc("POST /api/accounts/{id}/rclone/authorize", r.startRcloneAuth)
+	m.HandleFunc("GET /api/accounts/{id}/rclone/authorize", r.getRcloneAuth)
+	m.HandleFunc("DELETE /api/accounts/{id}/rclone/authorize", r.cancelRcloneAuth)
+	m.HandleFunc("POST /api/accounts/{id}/rclone/callback", r.relayRcloneCallback)
+	m.HandleFunc("POST /api/rclone/import/preview", r.previewRcloneImport)
+	m.HandleFunc("POST /api/accounts/{id}/rclone/import", r.importRcloneAccount)
 	m.HandleFunc("GET /api/oauth/callback", r.oauthCallback)
 	m.HandleFunc("GET /api/accounts/{id}/drives", r.drives)
 	m.HandleFunc("POST /api/accounts/{id}/verify", r.verifyAccount)

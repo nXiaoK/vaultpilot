@@ -6,13 +6,13 @@
 
 ## Debian 12 / Docker Compose
 
-需要 Docker Engine、Compose 插件、至少两个可参与存储池的 OneDrive 账号，以及微软应用注册信息。公开访问请在 HTTPS 反向代理后部署。不要把宿主机根目录或 Docker Socket 挂载给应用。
+需要 Docker Engine、Compose 插件和至少两个可参与存储池的 OneDrive 账号。默认采用 Rclone 标准授权，无需开通 Azure 或注册微软应用。公开访问请在 HTTPS 反向代理后部署。不要把宿主机根目录或 Docker Socket 挂载给应用。
 
 ```sh
 git clone https://github.com/nXiaoK/vaultpilot.git
 cd vaultpilot
 cp .env.example .env
-# 编辑 .env：真实源目录、恢复目录、运行 UID/GID 和 OAuth 配置。
+# 编辑 .env：真实源目录、恢复目录、运行 UID/GID；Rclone 标准授权可保留 OAuth 配置为空。
 mkdir -p state cache example-data/source example-data/restore
 # 让 .env 中指定的 UID/GID 能写入 state/cache/恢复目标，能读取备份源。
 sudo chown -R 1000:1000 state cache example-data/restore
@@ -23,13 +23,21 @@ docker compose up -d
 
 默认仅监听宿主机 `127.0.0.1:8080`。访问 `http://localhost:8080`，创建管理员和独立恢复密码，添加账号并逐一授权、明确选择 Drive、完成读写验证，然后创建存储池、备份源和计划。首轮备份后立即导出并离线保存恢复包，执行一次恢复演练后再扩大规模。
 
-在 VPS 部署时，可以在自己的电脑运行 `ssh -L 8080:127.0.0.1:8080 <用户>@<VPS地址>`，再从浏览器访问 `http://localhost:8080`；此时 OAuth 的公开 URL 与微软注册回调也应使用对应的 localhost 地址。使用域名访问时请配置 HTTPS 反向代理，再修改 `VP_PUBLIC_URL` 与微软回调地址。
+在 VPS 部署时，可以在自己的电脑运行 `ssh -L 8080:127.0.0.1:8080 <用户>@<VPS地址>`，再从浏览器访问 `http://localhost:8080`。Rclone 标准授权遇到 localhost 回调打不开时，在网页中粘贴完整回调地址即可。使用域名访问时请配置 HTTPS 反向代理，并设置 `VP_PUBLIC_URL`。
 
 生产环境替换 `.env` 的 `VP_SOURCE_HOST` 与 `VP_RESTORE_HOST`。源以只读方式挂载到 `/sources`；恢复目标独立挂载到 `/restore`。新增宿主机目录需要更新 compose 的只读挂载和 `VP_SOURCE_ROOTS`，重建容器后才会出现在网页选择器中。
 
-## 微软应用注册
+## OneDrive 授权（无需 Azure）
 
-在 Microsoft Entra 应用注册中选择适合个人账号的账户类型，添加 Web 回调：`<VP_PUBLIC_URL>/api/oauth/callback`，填写 Client ID 和适用的 Client Secret。应用使用授权码、state、PKCE 和离线权限。公开 URL、注册回调与实际访问地址必须一致；开发环境可使用微软允许的 localhost 回调。
+在「存储账号 → 添加账号」创建名称，默认选择「Rclone 标准授权」，打开微软页面，用 Microsoft 365 Family 的个人账号登录并同意权限。成功后选择实际 Drive 并完成读写验证。
+
+Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常自动接收；VPS 或 Docker 部署时，授权后可能显示“无法访问此网站”，复制该页地址栏完整地址，回到 VaultPilot 粘贴并提交即可。无需暴露服务器的 53682 端口。每次授权有效 10 分钟，同一实例依次授权账号。
+
+也可选择「导入 Rclone 配置」，上传未加密的 `rclone.conf`、`rclone config dump` JSON，或粘贴 `rclone authorize onedrive` 的输出。解析预览后显式选择 remote；每次导入一个账号，随后从真实微软响应中选择 Drive 并验证。详细步骤见 [Rclone 授权指南](docs/RCLONE_AUTH.md)。
+
+## 可选：自定义微软应用注册
+
+仅当希望使用自己的应用时配置 `VP_OAUTH_CLIENT_ID`、`VP_OAUTH_CLIENT_SECRET`。在 Microsoft Entra 应用注册中选择适合个人账号的账户类型，添加 Web 回调：`<VP_PUBLIC_URL>/api/oauth/callback`，填写 Client ID 和适用的 Client Secret。应用使用授权码、state、PKCE 和离线权限。公开 URL、注册回调与实际访问地址必须一致；开发环境可使用微软允许的 localhost 回调。
 
 网页授权结束后必须手动选择 Drive。授权成功不代表该 Drive 通过备份访问验证；例如 `ODCMetadataArchive` 不能被自动当成业务存储。企业版及 SharePoint 未经真实验收不承诺支持。
 

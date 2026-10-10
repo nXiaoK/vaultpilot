@@ -43,11 +43,14 @@ func (r *Runtime) tokenEndpoint() string {
 	return "https://login.microsoftonline.com/" + url.PathEscape(r.Config.OAuthTenant) + "/oauth2/v2.0/token"
 }
 func (r *Runtime) tokenExchange(ctx context.Context, values url.Values) (OAuthToken, error) {
-	values.Set("client_id", r.Config.OAuthClientID)
-	if r.Config.OAuthClientSecret != "" {
-		values.Set("client_secret", r.Config.OAuthClientSecret)
+	return r.tokenExchangeFor(ctx, r.customCredential(OAuthToken{}), values)
+}
+func (r *Runtime) tokenExchangeFor(ctx context.Context, cred accountCredential, values url.Values) (OAuthToken, error) {
+	values.Set("client_id", cred.ClientID)
+	if cred.ClientSecret != "" {
+		values.Set("client_secret", cred.ClientSecret)
 	}
-	req, e := http.NewRequestWithContext(ctx, http.MethodPost, r.tokenEndpoint(), strings.NewReader(values.Encode()))
+	req, e := http.NewRequestWithContext(ctx, http.MethodPost, credentialTokenEndpoint(cred.Tenant), strings.NewReader(values.Encode()))
 	if e != nil {
 		return OAuthToken{}, e
 	}
@@ -71,48 +74,11 @@ func (r *Runtime) tokenExchange(ctx context.Context, values url.Values) (OAuthTo
 	}
 	return OAuthToken{v.AccessToken, v.RefreshToken, v.TokenType, time.Now().Add(time.Duration(v.ExpiresIn) * time.Second)}, nil
 }
-func (r *Runtime) saveToken(id string, t OAuthToken) error {
-	plain, e := json.Marshal(t)
-	if e != nil {
-		return e
-	}
-	box, e := encrypt(r.nodeKey, plain, []byte("vaultpilot-oauth-v1:"+id))
-	for i := range plain {
-		plain[i] = 0
-	}
-	if e != nil {
-		return e
-	}
-	return r.setMeta("credential:"+id, base64.StdEncoding.EncodeToString(box))
-}
-func (r *Runtime) loadToken(id string) (OAuthToken, error) {
-	var t OAuthToken
-	raw, e := r.meta("credential:" + id)
-	if e != nil || raw == "" {
-		return t, errors.New("账号尚未授权")
-	}
-	box, e := base64.StdEncoding.DecodeString(raw)
-	if e != nil {
-		return t, errors.New("账号凭据格式损坏")
-	}
-	plain, e := decrypt(r.nodeKey, box, []byte("vaultpilot-oauth-v1:"+id))
-	if e != nil {
-		return t, errors.New("账号凭据无法解密")
-	}
-	defer func() {
-		for i := range plain {
-			plain[i] = 0
-		}
-	}()
-	if e = json.Unmarshal(plain, &t); e != nil || t.AccessToken == "" {
-		return t, errors.New("账号凭据格式损坏")
-	}
-	return t, nil
-}
 func (r *Runtime) accessToken(ctx context.Context, id string) (OAuthToken, error) {
 	r.credentialsMu.Lock()
 	defer r.credentialsMu.Unlock()
-	t, e := r.loadToken(id)
+	cred, e := r.loadCredential(id)
+	t := cred.Token
 	if e != nil {
 		return t, e
 	}
@@ -122,7 +88,10 @@ func (r *Runtime) accessToken(ctx context.Context, id string) (OAuthToken, error
 	if t.RefreshToken == "" {
 		return t, errors.New("凭据已到期，请重新授权")
 	}
-	refreshed, e := r.tokenExchange(ctx, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {t.RefreshToken}, "scope": {oauthScope}})
+	if cred.Mode == "rclone" {
+		return r.refreshRcloneToken(ctx, id, cred)
+	}
+	refreshed, e := r.tokenExchangeFor(ctx, cred, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {t.RefreshToken}, "scope": {oauthScope}})
 	if e != nil {
 		return t, e
 	}
@@ -214,7 +183,7 @@ func (r *Runtime) authorize(w http.ResponseWriter, req *http.Request) {
 			delete(r.oauth, id)
 		}
 	}
-	r.oauth[state] = oauthState{a.ID, verifier, sid, time.Now().Add(10 * time.Minute)}
+	r.oauth[state] = oauthState{AccountID: a.ID, Verifier: verifier, SessionID: sid, Expires: time.Now().Add(10 * time.Minute), Version: a.Version}
 	r.mu.Unlock()
 	values := url.Values{"client_id": {r.Config.OAuthClientID}, "response_type": {"code"}, "redirect_uri": {strings.TrimRight(r.Config.PublicURL, "/") + "/api/oauth/callback"}, "response_mode": {"query"}, "scope": {oauthScope}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"}, "prompt": {"select_account"}}
 	writeJSON(w, 200, map[string]string{"authorization_url": "https://login.microsoftonline.com/" + url.PathEscape(r.Config.OAuthTenant) + "/oauth2/v2.0/authorize?" + values.Encode()})
@@ -242,26 +211,11 @@ func (r *Runtime) oauthCallback(w http.ResponseWriter, req *http.Request) {
 		redirect("oauth_error", "token_exchange_failed")
 		return
 	}
-	r.credentialsMu.Lock()
-	e = r.saveToken(flow.AccountID, t)
-	r.credentialsMu.Unlock()
+	a, e := r.installCredential(req.Context(), flow.AccountID, flow.Version, r.customCredential(t), "account.authorized")
 	if e != nil {
 		redirect("oauth_error", "credential_save_failed")
 		return
 	}
-	var a Account
-	if r.Store.Get(req.Context(), "accounts", flow.AccountID, &a) != nil {
-		redirect("oauth_error", "account_not_found")
-		return
-	}
-	a.Status = "awaiting_drive_selection"
-	a.Verified = false
-	_, e = r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
-	if e != nil {
-		redirect("oauth_error", "account_changed")
-		return
-	}
-	_ = r.Store.Audit(req.Context(), "account.authorized", a.ID)
 	redirect("authorized", a.ID)
 }
 

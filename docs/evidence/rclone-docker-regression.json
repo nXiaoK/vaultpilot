@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "image": "sha256:87ca2d93055351098eff93cda8e0f63ba7365da76ed38c2e53effc2b6dbc973d",
+  "platform": "Debian 12.12 Linux container",
+  "uid": 1000,
+  "read_only_root": true,
+  "read_only_source_bind": true,
+  "dropped_capabilities": true,
+  "no_new_privileges": true,
+  "healthcheck": "passed",
+  "http_setup_login_directory_browser": "passed",
+  "rclone_standard_authorize_remote_denial": "passed without exposing 53682",
+  "rclone_import_preview_encrypted_save": "passed with synthetic protocol fixture; no real Microsoft grant",
+  "restic": "restic 0.18.1 compiled with go1.25.1 on linux/arm64",
+  "rclone": "rclone v1.70.3"
+}

@@ -274,7 +274,8 @@ func TestStartupPreservesRcloneRefreshAfterCrash(t *testing.T) {
 	updated.RefreshToken = "updated-private-refresh"
 	updated.Expiry = original.Expiry.Add(time.Hour)
 	b, _ := json.Marshal(updated)
-	if e := os.WriteFile(path, []byte("["+a.Remote+"]\ntoken = "+string(b)+"\n"), 0600); e != nil {
+	credential, _ := h.r.loadCredential(a.ID)
+	if e := os.WriteFile(path, []byte("["+a.Remote+"]\nvp_credential_id = "+credential.GrantID+"\ntoken = "+string(b)+"\n"), 0600); e != nil {
 		t.Fatal(e)
 	}
 	// Simulate abrupt termination: leave the transient Rclone config behind.
@@ -418,7 +419,8 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 	updated.RefreshToken = "rclone-new-refresh"
 	updated.Expiry = time.Now().Add(2 * time.Hour)
 	b, _ := json.Marshal(updated)
-	os.WriteFile(path, []byte("["+a.Remote+"]\ntoken = "+string(b)+"\n"), 0600)
+	credential, _ := h.r.loadCredential(a.ID)
+	os.WriteFile(path, []byte("["+a.Remote+"]\nvp_credential_id = "+credential.GrantID+"\ntoken = "+string(b)+"\n"), 0600)
 	if e = h.r.ReleaseRcloneConfig(path); e != nil {
 		t.Fatal(e)
 	}

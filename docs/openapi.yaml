@@ -514,6 +514,153 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/EmptyRequest"
+  "/accounts/{id}/rclone/authorize":
+    parameters:
+    - "$ref": "#/components/parameters/ResourceID"
+    post:
+      summary: 启动 Rclone 标准授权（无需自定义微软应用）
+      operationId: start_rclone_authorize
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      description: 实际子进程使用 Rclone 内置应用。一个活动授权，10 分钟期限。返回 id 用于 flow_id 查询；未完成会话不跨重启。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: {type: integer, minimum: 1}
+      responses:
+        '202':
+          description: 已启动，继续轮询
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RcloneAuthFlow"}
+        '409': {"$ref": "#/components/responses/APIError"}
+    get:
+      summary: 查询本登录会话所属的 Rclone 授权状态
+      operationId: get_rclone_authorize
+      tags: [账号]
+      parameters:
+      - {name: flow_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 状态、微软授权 URL 或完成后的账号；不包含凭据
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RcloneAuthFlow"}
+        '404': {"$ref": "#/components/responses/APIError"}
+    delete:
+      summary: 取消本次 Rclone 授权子进程
+      operationId: cancel_rclone_authorize
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      parameters:
+      - {name: flow_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 已请求取消，轮询至 cancelled
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/RcloneAuthFlow"}
+        '404': {"$ref": "#/components/responses/APIError"}
+  "/accounts/{id}/rclone/callback":
+    post:
+      summary: 提交远程浏览器的 Rclone localhost 回调地址
+      operationId: relay_rclone_callback
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      - {name: flow_id, in: query, required: true, schema: {type: string}}
+      description: 请求目标始终为进程内部 loopback，校验 state、原会话、到期及一次使用状态。禁止跟随重定向。请求体包含临时授权码，不记录或回传。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: {type: string, maxLength: 65536}
+      responses:
+        '202': {description: 已提交，继续轮询授权状态}
+        '400': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
+  "/rclone/import/preview":
+    post:
+      summary: 解析配置并返回不含凭据的 OneDrive remote 预览
+      operationId: preview_rclone_import
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config]
+              properties:
+                config: {type: string, maxLength: 1048576, description: 未加密 INI、dump JSON 或 authorize 结果；不原样保存}
+      responses:
+        '200':
+          description: remote 名称、Drive 参考信息与 custom_client；不含 Token 或客户端密钥
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: {type: integer}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        drive_id: {type: string}
+                        drive_type: {type: string}
+                        custom_client: {type: boolean}
+        '400': {"$ref": "#/components/responses/APIError"}
+  "/accounts/{id}/rclone/import":
+    post:
+      summary: 显式选择 remote 并加密导入凭据
+      operationId: import_rclone_account
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      description: 原子保存账号与凭据；版本冲突不覆盖。导入 Drive 信息不构成验证，仍需读取 Drive 列表并显式选择验证。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config, remote, version]
+              properties:
+                config: {type: string, maxLength: 1048576}
+                remote: {type: string}
+                version: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: awaiting_drive_selection 账号
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/Account"}
+        '400': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
   "/oauth/callback":
     get:
       summary: 微软授权回调，校验state并交换Token
@@ -1955,6 +2102,21 @@ components:
           schema:
             "$ref": "#/components/schemas/Error"
   schemas:
+    RcloneAuthFlow:
+      type: object
+      properties:
+        id: {type: string}
+        account_id: {type: string}
+        status:
+          type: string
+          enum: [starting, waiting, exchanging, cancelling, completed, failed, cancelled]
+        expires_at: {type: string, format: date-time}
+        message: {type: string}
+        authorization_url: {type: string, description: 仅等待授权阶段可用的官方微软 URL}
+        account:
+          anyOf:
+          - {"$ref": "#/components/schemas/Account"}
+          - {type: 'null'}
     Error:
       type: object
       properties:

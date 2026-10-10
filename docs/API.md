@@ -77,3 +77,20 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 恢复报告的 `verification_status` 为 `passed`、`not_started`、`partial`、`unknown` 或 `failed`。`verification_errors` 是已识别的校验异常数；Restic 错误无法区分发生在恢复还是校验阶段时返回 `null`，同时标记 `unknown`，不能将其显示为零异常。`failure_entries` 列出 `{source_id,path,code,stage,error?}`；`failure_entry_count` 给出完整异常条目数量，`failure_entries_truncated` 明确列表是否被截断。部分账号不可用时另行报告跳过及缺失范围。
 
 `old_location_index` 来自仓库 `locations` 数组，建议同时提供读取到的 `old_location_path`，路径变化会拒绝操作。清理旧副本会重新验证当前仓库及所有有效快照引用，先提交旧位置退休登记再删除；不会清理当前仓库位置。完成证书冗余未满足时，任务返回 `PROTECTION_DEGRADED`，恢复点 `protection_status=degraded`；该点可恢复，但不能当作达到副本要求的完整成功。
+
+## Rclone 标准授权与配置导入
+
+以下接口均要求管理员会话，写请求要求 `X-CSRF-Token`。默认标准授权无需全局 OAuth 配置。配置与回调地址仅通过请求体提交；不应写入访问日志。
+
+| 方法 | 路径 | 参数与行为 |
+|---|---|---|
+| POST | /accounts/{id}/rclone/authorize | `{version}`，启动实际 Rclone 授权，202 返回会话 `id` |
+| GET | /accounts/{id}/rclone/authorize?flow_id=… | 查询状态、授权 URL、过期时间；仅原登录会话可读取，完成时返回更新的 Account |
+| DELETE | /accounts/{id}/rclone/authorize?flow_id=… | 取消子进程；等待状态 cancelled 后可重新开始 |
+| POST | /accounts/{id}/rclone/callback?flow_id=… | `{url}`，校验固定 localhost 回调、state、有效期和一次使用状态，202 表示已提交，继续轮询 |
+| POST | /rclone/import/preview | `{config}`，返回 remote 名称、Drive 参考信息及是否自定义应用；不返回任何凭据 |
+| POST | /accounts/{id}/rclone/import | `{config,remote,version}`，显式选择 remote，加密保存并返回待选择 Drive 的 Account |
+
+标准授权状态：starting → waiting → exchanging（粘贴回调时）→ completed / failed；取消经 cancelling → cancelled。有效期 10 分钟，同一实例仅一个活动授权。重启使未完成会话失效，临时配置在完成、取消和重启时删除。已保存凭据跨重启保留。
+
+导入和授权不会把 `drive_id` 参考信息直接登记为已验证身份，仍需调用 `/drives` 与 `/verify`。已有账号必须选原 Drive；其他 Drive 应创建新账号。重新授权同时原子保存账号状态与凭据；冲突时不覆盖已有凭据。旧引擎配置仅能同步同一授权版本的刷新结果。

@@ -3,16 +3,16 @@
 | 环境变量 | 默认值 | 含义 |
 |---|---|---|
 | VP_ADDR | 127.0.0.1:8080 | 服务监听；compose 中为 0.0.0.0:8080 |
-| VP_PUBLIC_URL | http://localhost:8080 | 对外 URL，OAuth 回调与 Cookie 安全设置依赖它 |
+| VP_PUBLIC_URL | http://localhost:8080 | 对外 URL，Cookie 安全与可选自定义应用回调依赖它；Rclone 标准回调不依赖此 URL |
 | VP_STATE_DIR | ./state | SQLite、受保护恢复包、节点凭据密钥、排他锁 |
 | VP_CACHE_DIR | ./cache | 引擎缓存与权限受控临时文件 |
 | VP_SOURCE_ROOTS | /sources | 逗号分隔的允许源目录；生产只读绑定挂载 |
 | VP_RESTORE_ROOTS | /restore | 逗号分隔的授权恢复根目录 |
 | VP_RESTIC_BIN | restic | 引擎路径 |
 | VP_RCLONE_BIN | rclone | 引擎路径 |
-| VP_OAUTH_CLIENT_ID | 空 | 微软应用 ID |
-| VP_OAUTH_CLIENT_SECRET | 空 | 适用的 Web 应用 Secret；不能提交到 Git |
-| VP_OAUTH_TENANT | consumers | 默认 OneDrive Personal |
+| VP_OAUTH_CLIENT_ID | 空 | 可选自定义微软应用 ID；标准 Rclone 授权留空 |
+| VP_OAUTH_CLIENT_SECRET | 空 | 可选自定义 Web 应用 Secret；标准 Rclone 授权留空，不提交到 Git |
+| VP_OAUTH_TENANT | consumers | 仅自定义应用的租户；默认 OneDrive Personal |
 | VP_GLOBAL_CONCURRENCY | 2 | 全局后台任务数量上限 |
 | VP_LOG_MAX_ROWS | 100000 | 全局日志保留条数；批量修剪最多临时超出 127 行，单行最多 8 KiB |
 | VP_CACHE_MAX_BYTES | 21474836480 | 缓存目录容量阈值，任务阶段边界检查，超限中止，不删除活动文件 |
@@ -34,3 +34,11 @@
 先停止任务并导出最新恢复包，备份 `state`，记录当前镜像版本，然后停止旧容器、构建新镜像、启动。不要在 SQLite 仍有写入时只复制 `.db` 而忽略 WAL；使用停机目录备份或 SQLite 在线备份。恢复包与云端目录提供异机恢复能力，`state` 备份只用于方便升级回退。
 
 引擎版本固定在 Dockerfile。更改版本后先运行本地闭环，再用两个真实 OneDrive 重新执行云端验收。不要通过 `restic unlock --remove-all` 自动解除其他节点的锁。
+
+## Rclone 标准授权与导入
+
+默认无需设置 OAuth 客户端 ID、密钥或微软回调地址。使用内置 Rclone 引擎完成授权，账号的应用来源、令牌及刷新设置分别加密保存；全局自定义应用不会覆盖标准或导入账号。标准授权的 `common` 端点来自 Rclone，完成授权后平台仍仅接受全球区 Personal。
+
+Rclone 授权监听进程内部的 `127.0.0.1:53682`。Docker 无需新增端口映射，远程访问使用网页回调粘贴入口。端口被其他 Rclone 授权占用时，先结束该授权后重试。服务器需可访问微软登录和 Graph 服务。共享应用可能受微软策略、配额或 Rclone 应用状态影响；可以导入已有授权或选择自己的应用，平台不会绕过微软同意页面。
+
+导入上限 1 MiB，支持未加密 INI 配置、dump JSON、authorize token JSON 与其 Base64 结果。加密配置须在原电脑解密后导入。每次只选择一个 remote，忽略不用于凭据的选项，不执行配置中的命令、代理或任意端点。导入凭据到期后由 Rclone 使用原应用刷新；必须有 refresh_token。详见 [操作指南](RCLONE_AUTH.md)。

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -24,23 +23,6 @@ func (r *Runtime) RcloneConfig() string {
 		return ""
 	}
 	var b strings.Builder
-	secret := ""
-	if r.Config.OAuthClientSecret != "" {
-		// Rclone's password fields use its own reversible obscuring format.
-		// Read the secret from stdin, keeping it out of argv and logs.
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "obscure", "-")
-		cmd.Stdin = strings.NewReader(r.Config.OAuthClientSecret + "\n")
-		output, e := cmd.Output()
-		if e != nil {
-			return ""
-		}
-		secret = strings.TrimSpace(string(output))
-		if secret == "" || strings.ContainsAny(secret, "\r\n") {
-			return ""
-		}
-	}
 	for _, raw := range accounts {
 		var a Account
 		if json.Unmarshal(raw, &a) != nil {
@@ -49,28 +31,25 @@ func (r *Runtime) RcloneConfig() string {
 		if a.Backend != "onedrive" || !a.Verified {
 			continue
 		}
-		t, e := r.accessToken(context.Background(), a.ID)
+		_, e := r.accessToken(context.Background(), a.ID)
 		if e != nil {
 			return ""
 		}
-		token, e := json.Marshal(t)
+		c, e := r.loadCredential(a.ID)
 		if e != nil {
 			return ""
 		}
-		b.WriteString("[" + a.Remote + "]\ntype = onedrive\n")
-		// Keep refresh permissions identical to the consented web grant.
-		// Rclone's defaults include broader All/Sites scopes that this app
-		// neither requests nor needs for OneDrive Personal.
-		b.WriteString("access_scopes = " + oauthScope + "\n")
-		b.WriteString("token_url = " + r.tokenEndpoint() + "\n")
-		b.WriteString("token = " + string(token) + "\ndrive_id = " + a.DriveID + "\ndrive_type = " + a.DriveType + "\n")
-		if r.Config.OAuthClientID != "" {
-			b.WriteString("client_id = " + r.Config.OAuthClientID + "\n")
+		var current Account
+		if r.Store.Get(context.Background(), "accounts", a.ID, &current) != nil || !current.Verified || current.Version != a.Version {
+			return ""
 		}
-		if r.Config.OAuthClientSecret != "" {
-			b.WriteString("client_secret = " + secret + "\n")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		content, e := r.credentialConfig(ctx, a.Remote, c, a.DriveID, a.DriveType)
+		cancel()
+		if e != nil {
+			return ""
 		}
-		b.WriteString("region = global\n\n")
+		b.WriteString(content)
 	}
 	f, e := os.CreateTemp(r.Config.CacheDir, "rclone-*.conf")
 	if e != nil {
@@ -135,6 +114,7 @@ func (r *Runtime) syncRcloneFile(path string) error {
 	}
 	defer f.Close()
 	tokens := map[string]OAuthToken{}
+	grants := map[string]string{}
 	scan := bufio.NewScanner(f)
 	scan.Buffer(make([]byte, 4096), 1<<20)
 	section := ""
@@ -145,6 +125,10 @@ func (r *Runtime) syncRcloneFile(path string) error {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(key) == "vp_credential_id" {
+			grants[section] = strings.TrimSpace(value)
+			continue
+		}
 		if !ok || strings.TrimSpace(key) != "token" {
 			continue
 		}
@@ -172,9 +156,13 @@ func (r *Runtime) syncRcloneFile(path string) error {
 		if !ok {
 			continue
 		}
-		old, e := r.loadToken(a.ID)
+		credential, e := r.loadCredential(a.ID)
+		old := credential.Token
 		if e != nil {
 			return e
+		}
+		if grants[a.Remote] != credential.GrantID {
+			continue
 		}
 		if t.AccessToken != old.AccessToken && t.Expiry.After(old.Expiry) {
 			if t.RefreshToken == "" {

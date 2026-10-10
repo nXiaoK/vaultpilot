@@ -264,6 +264,14 @@ func (r *Runtime) logout(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	delete(r.sessions, id)
 	r.mu.Unlock()
+	r.rcloneAuthMu.Lock()
+	for _, flow := range r.rcloneAuth {
+		if flow.SessionID == id && flow.active() {
+			flow.Status = "cancelling"
+			flow.cancel()
+		}
+	}
+	r.rcloneAuthMu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: "vaultpilot_session", Value: "", Path: "/", HttpOnly: true, Secure: r.secureCookie(), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	w.WriteHeader(204)
 }
