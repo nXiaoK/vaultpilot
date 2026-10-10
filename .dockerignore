@@ -1,0 +1,14 @@
+.git
+.tools
+state
+cache
+bin
+test-artifacts
+example-data
+web/node_modules
+web/dist
+web/*.tsbuildinfo
+.env
+*.db
+*.vpk
+*.vpc

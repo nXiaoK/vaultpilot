@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-10",
+  "passed": true,
+  "go_version": "go1.26.4",
+  "platform": "darwin/arm64",
+  "command": "VP_TEST_RESTIC=/path/to/restic go test -race ./...",
+  "real_restic_tests_enabled": true,
+  "vet": "passed",
+  "backend_build": "passed",
+  "frontend_typecheck_production_build": "passed",
+  "output": "?   \tvaultpilot/cmd/vaultpilot\t[no test files]\n?   \tvaultpilot/cmd/vprescue\t[no test files]\nok  \tvaultpilot/internal/engine\t19.215s\nok  \tvaultpilot/internal/platform\t27.387s\nok  \tvaultpilot/internal/process\t(cached)\nok  \tvaultpilot/internal/store\t(cached)\n"
+}

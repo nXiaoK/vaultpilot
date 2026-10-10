@@ -1,0 +1,74 @@
+{
+  "backend": "local directories, real Restic",
+  "restic_version": "restic 0.18.1 compiled with go1.25.1 on darwin/arm64",
+  "original_state_used_for_recovery": false,
+  "checks": [
+    "first backup, two catalog replicas, idempotency, allocation preview",
+    "incremental unchanged data, protected retention/forget/prune, real whole-repository migration and full data check",
+    "confirmed old-copy cleanup, current/stale-location rejection, corrupted-pack full-check rejection, old location removed and current snapshots remain readable",
+    "historical versions after modify, delete and rename",
+    "fresh state, new account IDs, absent original source, both versions restored with SHA-256",
+    "Chinese, spaces, newline, empty directory and symbolic link preserved",
+    "recovery kit exported before later repository creation discovers new repository key and restores added file",
+    "repeat discovery, single-file restore, conflict preservation, explicit overwrite and partial offline-account restore"
+  ],
+  "allocation_evidence": {
+    "single_account_budget_bytes": 35651584,
+    "single_source_logical_bytes": 41943109,
+    "allocated_account_count": 2
+  },
+  "recovery_kit_evidence": {
+    "exported_before_repository_count": 2,
+    "later_repository_count": 3,
+    "kit_reexported": false
+  },
+  "restore_expectations": [
+    {
+      "point_id": "b84aa0bc18e9c91d865db6cd6289b89c",
+      "source_id": "bdade8f3fd4726ddc146427f8aa7e575",
+      "files": {
+        "中文 文件.txt": "98e8e9fd46393dd2320e7543eaa5c429f4e993adf550f8ff0561da90267b34d9",
+        "换行\n文件.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
+        "删除.txt": "f76feeaf6921acbd039a1000a848980288a983d34a02a8af4d9e37efd247ab8e",
+        "大文件 A.bin": "e94d2b056e39d9dfe752a93fb74a61ff57e288b005a9b7d55a13ee9082204ab5",
+        "大文件 B.bin": "234a36c0ce88eebbd088a569a366f4d98974ee038a091ba10c6b5532260b2b4a"
+      },
+      "absent": [
+        "skip.tmp",
+        "重命名.txt",
+        "恢复包导出后新增.bin"
+      ],
+      "directories": [
+        "",
+        "空目录"
+      ],
+      "symlinks": {
+        "链接": "中文 文件.txt"
+      }
+    },
+    {
+      "point_id": "bf8580faa86ee90304496abfeb0cb537",
+      "source_id": "bdade8f3fd4726ddc146427f8aa7e575",
+      "files": {
+        "大文件 A.bin": "e94d2b056e39d9dfe752a93fb74a61ff57e288b005a9b7d55a13ee9082204ab5",
+        "大文件 B.bin": "234a36c0ce88eebbd088a569a366f4d98974ee038a091ba10c6b5532260b2b4a",
+        "中文 文件.txt": "dabf9024dbfce8a57298111cf697fb7b8ac2797dc9c32eb2e035e72ec1a9ef9e",
+        "重命名.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
+        "恢复包导出后新增.bin": "f7d273f6f5a7d54a47c07cd9f28481b93f68a5951aa9136338f7029afbe5dc23"
+      },
+      "absent": [
+        "删除.txt",
+        "换行\n文件.txt",
+        "skip.tmp"
+      ],
+      "directories": [
+        "",
+        "空目录"
+      ],
+      "symlinks": {
+        "链接": "中文 文件.txt"
+      }
+    }
+  ],
+  "passed": true
+}

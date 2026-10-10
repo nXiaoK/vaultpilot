@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "image": "sha256:e4f9c34e4005f0ec6c9726a36f89471fc09a269d8e004134f1038bf47e59038e",
+  "platform": "Debian 12.12 Linux container",
+  "uid": 1000,
+  "read_only_root": true,
+  "read_only_source_bind": true,
+  "dropped_capabilities": true,
+  "no_new_privileges": true,
+  "healthcheck": "passed",
+  "http_setup_login_directory_browser": "passed",
+  "restic": "restic 0.18.1 compiled with go1.25.1 on linux/arm64",
+  "rclone": "rclone v1.70.3"
+}

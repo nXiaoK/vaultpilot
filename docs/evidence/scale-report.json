@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-10T09:22:52Z",
+  "database_bytes": 285380608,
+  "go_heap_alloc_bytes": 2912856,
+  "go_version": "go1.26.4",
+  "insert_seconds": 7.065065584,
+  "page_100_seconds": 0.000153709,
+  "physical_backup_verified": false,
+  "platform": "darwin/arm64",
+  "rows": 1000000,
+  "synthetic_logical_bytes": 5242880000000,
+  "test": "synthetic SQLite file index, no cloud I/O"
+}

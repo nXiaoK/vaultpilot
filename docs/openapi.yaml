@@ -1,0 +1,3597 @@
+---
+openapi: 3.1.0
+info:
+  title: VaultPilot API
+  version: 1.0.0
+  description: 实现参考。所有Bytes为整数，列表分页；管理会话Cookie + X-CSRF-Token。OneDrive Personal实际云端联调状态见测试报告，企业版/SharePoint不宣称兼容。资源修改用version，后台任务用Idempotency-Key。
+servers:
+- url: "/api"
+security:
+- SessionAuth: []
+tags:
+- name: 安全
+- name: 账号
+- name: 存储池
+- name: 目录
+- name: 计划
+- name: 任务
+- name: 恢复
+- name: 维护
+paths:
+  "/status":
+    get:
+      summary: 初始化、身份、密钥、引擎及部署限制状态
+      operationId: get_status
+      tags:
+      - 安全
+      security: []
+      responses:
+        '200':
+          description: 初始化、身份、密钥、引擎及部署限制状态
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Status"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+  "/setup":
+    post:
+      summary: 创建新的备份库或导入恢复包建立恢复节点
+      operationId: post_setup
+      tags:
+      - 安全
+      security: []
+      responses:
+        '201':
+          description: 创建新的备份库或导入恢复包建立恢复节点
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SetupResult"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+      description: 仅未初始化实例可调用。成功创建HttpOnly会话Cookie；恢复模式不会初始化已有云端仓库。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SetupRequest"
+  "/auth/login":
+    post:
+      summary: 管理员登录
+      operationId: post_auth_login
+      tags:
+      - 安全
+      security: []
+      responses:
+        '200':
+          description: 管理员登录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Session"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+      description: 受限速及Origin检查保护；成功设置vaultpilot_session Cookie，会话有效12小时。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/LoginRequest"
+  "/auth/logout":
+    post:
+      summary: 结束当前会话
+      operationId: post_auth_logout
+      tags:
+      - 安全
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '204':
+          description: 结束当前会话
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/security/unlock":
+    post:
+      summary: 使用当前节点恢复密码解锁主密钥
+      operationId: post_security_unlock
+      tags:
+      - 安全
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 使用当前节点恢复密码解锁主密钥
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UnlockState"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PasswordRequest"
+  "/security/lock":
+    post:
+      summary: 清除内存中的主密钥
+      operationId: post_security_lock
+      tags:
+      - 安全
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 清除内存中的主密钥
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UnlockState"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/security/recovery-kit":
+    post:
+      summary: 导出独立密码保护的离线恢复包
+      operationId: post_security_recovery_kit
+      tags:
+      - 安全
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 导出独立密码保护的离线恢复包
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RecoveryKit"
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename=vaultpilot-<vault_id>-recovery.json
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+        '423':
+          "$ref": "#/components/responses/APIError"
+      description: 需要已解锁。导出密码不会改变当前节点重启解锁密码。包含定位入口和受保护主密钥，不包含OAuth Token。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PasswordRequest"
+  "/security/discover":
+    post:
+      summary: 发现认证提交目录并重建本地索引
+      operationId: post_security_discover
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 发现认证提交目录并重建本地索引
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 仅准备文件不会被发布；完成证书冗余不足时标记保护降级。来源Drive必须重新授权并显式验证。
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/accounts":
+    get:
+      summary: 账号列表，不返回敏感凭据
+      operationId: get_accounts
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 账号列表，不返回敏感凭据
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+    post:
+      summary: 创建OneDrive配置或显式启用的本地联调入口
+      operationId: post_accounts
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '201':
+          description: 创建OneDrive配置或显式启用的本地联调入口
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Account"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountCreate"
+  "/accounts/{id}":
+    put:
+      summary: 修改账号名称、启用状态与预算
+      operationId: put_accounts_id
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 修改账号名称、启用状态与预算
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Account"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountUpdate"
+    patch:
+      summary: 修改账号名称、启用状态与预算
+      operationId: patch_accounts_id
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 修改账号名称、启用状态与预算
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Account"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountUpdate"
+    delete:
+      summary: 删除未被仓库、历史位置或池引用的账号配置
+      operationId: delete_accounts_id
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '204':
+          description: 删除未被仓库、历史位置或池引用的账号配置
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 不会删除云端业务数据；仍有依赖时拒绝删除。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/accounts/{id}/authorize":
+    post:
+      summary: 生成会话绑定state与PKCE的微软授权地址
+      operationId: post_accounts_id_authorize
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 生成会话绑定state与PKCE的微软授权地址
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AuthorizationURL"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 要求配置公开OAuth地址及应用ID。公网回调必须HTTPS；本地主机开发可用HTTP。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/oauth/callback":
+    get:
+      summary: 微软授权回调，校验state并交换Token
+      operationId: get_oauth_callback
+      tags:
+      - 账号
+      security: []
+      responses:
+        '303':
+          description: 微软授权回调，校验state并交换Token
+          headers:
+            Location:
+              schema:
+                type: string
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+      description: state绑定发起登录会话且仅能使用一次。成功或错误均跳转/#accounts?...；不会在重定向中回显Token。
+      parameters:
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: error
+        in: query
+        required: false
+        schema:
+          type: string
+  "/accounts/{id}/drives":
+    get:
+      summary: 列出授权可见Drive，必须由用户选择
+      operationId: get_accounts_id_drives
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 列出授权可见Drive，必须由用户选择
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/DrivePage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/accounts/{id}/verify":
+    post:
+      summary: 显式Drive选择、根访问及项目目录读写验证
+      operationId: post_accounts_id_verify
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 显式Drive选择、根访问及项目目录读写验证
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Account"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 拒绝非Personal、元数据入口、重复Drive和重新授权后Drive身份变化。local账号执行真实目录验证，不需要drive_id。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/VerifyAccountRequest"
+  "/accounts/{id}/quota":
+    post:
+      summary: 刷新真实配额及项目占用
+      operationId: post_accounts_id_quota
+      tags:
+      - 账号
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 刷新真实配额及项目占用
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Account"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/pools":
+    get:
+      summary: 存储池配置列表
+      operationId: get_pools
+      tags:
+      - 存储池
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 存储池配置列表
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PoolPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+    post:
+      summary: 创建存储池配置
+      operationId: post_pools
+      tags:
+      - 存储池
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '201':
+          description: 创建存储池配置
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Pool"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PoolCreate"
+  "/pools/{id}":
+    put:
+      summary: 保存完整存储池配置并检查version
+      operationId: put_pools_id
+      tags:
+      - 存储池
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 保存完整存储池配置并检查version
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Pool"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PoolUpdate"
+    patch:
+      summary: 保存完整存储池配置并检查version
+      operationId: patch_pools_id
+      tags:
+      - 存储池
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 保存完整存储池配置并检查version
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Pool"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PoolUpdate"
+    delete:
+      summary: 删除未被计划引用的存储池配置
+      operationId: delete_pools_id
+      tags:
+      - 存储池
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '204':
+          description: 删除未被计划引用的存储池配置
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/sources":
+    get:
+      summary: 目录配置列表
+      operationId: get_sources
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 目录配置列表
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SourcePage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+    post:
+      summary: 创建目录配置
+      operationId: post_sources
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '201':
+          description: 创建目录配置
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Source"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceCreate"
+  "/sources/{id}":
+    put:
+      summary: 保存完整目录配置并检查version
+      operationId: put_sources_id
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 保存完整目录配置并检查version
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Source"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceUpdate"
+    patch:
+      summary: 保存完整目录配置并检查version
+      operationId: patch_sources_id
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 保存完整目录配置并检查version
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Source"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceUpdate"
+    delete:
+      summary: 删除未被计划引用的目录配置
+      operationId: delete_sources_id
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '204':
+          description: 删除未被计划引用的目录配置
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/browse":
+    get:
+      summary: 分页浏览服务器允许的直属目录
+      operationId: get_browse
+      tags:
+      - 目录
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 分页浏览服务器允许的直属目录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/BrowsePage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 只浏览部署提供的SourceRoots；省略path时返回可用根目录。目录中的符号链接不作为备份源入口。
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+      - name: path
+        in: query
+        schema:
+          type: string
+  "/audit-events":
+    get:
+      summary: 分页读取管理操作审计事件
+      operationId: get_audit_events
+      tags:
+      - 安全
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 分页读取管理操作审计事件
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AuditPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+  "/plans":
+    get:
+      summary: 计划列表及未来三次执行时间
+      operationId: get_plans
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 计划列表及未来三次执行时间
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PlanPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+    post:
+      summary: 创建备份计划
+      operationId: post_plans
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '201':
+          description: 创建备份计划
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Plan"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PlanCreate"
+  "/plans/{id}":
+    put:
+      summary: 更新完整计划配置并检查version
+      operationId: put_plans_id
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '201':
+          description: 更新完整计划配置并检查version
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Plan"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 当前实现保存成功返回201。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PlanUpdate"
+    delete:
+      summary: 删除未运行的计划
+      operationId: delete_plans_id
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '204':
+          description: 删除未运行的计划
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/plans/{id}/preview":
+    post:
+      summary: 扫描与容量分配预览，不上传业务数据
+      operationId: post_plans_id_preview
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 扫描与容量分配预览，不上传业务数据
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 同一计划的备份运行期间新触发最多合并一次待执行任务。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/plans/{id}/run":
+    post:
+      summary: 触发异步增量备份
+      operationId: post_plans_id_run
+      tags:
+      - 计划
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 触发异步增量备份
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 同一计划的备份运行期间新触发最多合并一次待执行任务。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/tasks":
+    get:
+      summary: 分页任务列表
+      operationId: get_tasks
+      tags:
+      - 任务
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 分页任务列表
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TaskPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+  "/tasks/{id}":
+    get:
+      summary: 读取持久化任务状态及结果
+      operationId: get_tasks_id
+      tags:
+      - 任务
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 读取持久化任务状态及结果
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+  "/tasks/{id}/logs":
+    get:
+      summary: 分页任务日志
+      operationId: get_tasks_id_logs
+      tags:
+      - 任务
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 分页任务日志
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TaskLogPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+  "/tasks/{id}/cancel":
+    post:
+      summary: 请求终止任务引擎进程树
+      operationId: post_tasks_id_cancel
+      tags:
+      - 任务
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 请求终止任务引擎进程树
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+        '200':
+          description: 任务已结束，无需取消
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EmptyRequest"
+  "/events":
+    get:
+      summary: SSE任务状态事件，支持重新读取任务后重连
+      operationId: get_events
+      tags:
+      - 任务
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: text/event-stream事件流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 事件名tasks，data为最近任务的JSON数组；连接断开不取消任务。
+  "/repositories":
+    get:
+      summary: 仓库及物理位置登记，不包含密码
+      operationId: get_repositories
+      tags:
+      - 维护
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 仓库及物理位置登记，不包含密码
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RepositoryPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+  "/recovery-points":
+    get:
+      summary: 可恢复的未删除恢复点，保护状态单独标明
+      operationId: get_recovery_points
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 可恢复的未删除恢复点，保护状态单独标明
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RecoveryPointPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+  "/recovery-points/{id}/files":
+    get:
+      summary: 浏览该恢复点的独立版本文件映射
+      operationId: get_recovery_points_id_files
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: 浏览该恢复点的独立版本文件映射
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/FileEntryPage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      - "$ref": "#/components/parameters/Limit"
+      - "$ref": "#/components/parameters/Offset"
+      - name: source_id
+        in: query
+        schema:
+          type: string
+      - name: prefix
+        in: query
+        schema:
+          type: string
+      - name: search
+        in: query
+        schema:
+          type: string
+  "/recovery-points/{id}/protect":
+    post:
+      summary: 更新全局恢复点保护状态并提交目录
+      operationId: post_recovery_points_id_protect
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 更新全局恢复点保护状态并提交目录
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RecoveryPoint"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+        '202':
+          description: 逻辑已提交，但必要证书冗余未满足
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ProtectionDegraded"
+      description: 恢复节点拒绝写入保护状态。冗余证书未满足时返回202及点/降级错误，已提交状态仍保留。
+      parameters:
+      - "$ref": "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ProtectRequest"
+  "/restore/preview":
+    post:
+      summary: 恢复空间、冲突与缺失范围预检查
+      operationId: post_restore_preview
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 恢复空间、冲突与缺失范围预检查
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RestorePreview"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/RestoreRequest"
+  "/restore":
+    post:
+      summary: 恢复指定点、目录或文件并校验
+      operationId: post_restore
+      tags:
+      - 恢复
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 恢复指定点、目录或文件并校验
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 使用完整快照ID；先恢复至私有暂存，再用授权Root安全写入。部分恢复返回partial_failed及RESTORE_PARTIAL。
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/RestoreRequest"
+  "/maintenance/check":
+    post:
+      summary: 仓库结构、抽样或全量读取检查
+      operationId: post_maintenance_check
+      tags:
+      - 维护
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 仓库结构、抽样或全量读取检查
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: structure不读取验证全部数据；full使用Restic check --read-data。受维护窗口、缓存和操作互斥限制。
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CheckRequest"
+  "/maintenance/retention/preview":
+    post:
+      summary: 计算全局保留、未引用快照及清理阻塞项
+      operationId: post_maintenance_retention_preview
+      tags:
+      - 维护
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '200':
+          description: 计算全局保留、未引用快照及清理阻塞项
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RetentionPreview"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/RetentionPreviewRequest"
+  "/maintenance/retention":
+    post:
+      summary: 重新校验并明确确认后清理历史
+      operationId: post_maintenance_retention
+      tags:
+      - 维护
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 重新校验并明确确认后清理历史
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 先提交全局删除决策，再forget/prune。保护点、挂载异常、异常减少和持续失败会阻止清理；恢复节点拒绝。
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/RetentionRequest"
+  "/maintenance/migrate":
+    post:
+      summary: 整仓迁移或经再次确认清理旧副本
+      operationId: post_maintenance_migrate
+      tags:
+      - 维护
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      responses:
+        '202':
+          description: 整仓迁移或经再次确认清理旧副本
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '404':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+        '502':
+          "$ref": "#/components/responses/APIError"
+      description: 正常迁移冻结计划/账号/仓库，完整复制及全量读取验证，提交新位置，保留旧副本。cleanup_old是独立确认的破坏性操作；恢复节点拒绝。
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MigrationRequest"
+components:
+  securitySchemes:
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: vaultpilot_session
+      description: HttpOnly、SameSite=Lax的12小时管理会话；公开HTTPS时Secure。
+    CSRFToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: 由登录或已认证status响应取得，所有认证写请求必需。
+  parameters:
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 500
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+        default: 0
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 200
+      description: 同一任务类型及计划范围内重复键返回原任务；建议每次新操作生成新键。
+  responses:
+    APIError:
+      description: 稳定错误码、中文说明及是否可重试
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 中文用户说明
+        code:
+          type: string
+          description: 稳定错误码；平台使用snake_case，引擎使用大写码
+        retryable:
+          type: boolean
+      required:
+      - error
+      - code
+      - retryable
+    EmptyRequest:
+      type: object
+      properties: {}
+    Status:
+      type: object
+      properties:
+        initialized:
+          type: boolean
+        authenticated:
+          type: boolean
+        csrf_token:
+          type: string
+          description: 仅已登录会话返回，所有认证写请求使用
+        unlocked:
+          type: boolean
+        vault_id:
+          type: string
+        mode:
+          type: string
+          enum:
+          - create
+          - recovery
+        engines:
+          type: object
+          properties:
+            restic:
+              type: boolean
+            rclone:
+              type: boolean
+          required:
+          - restic
+          - rclone
+        oauth_configured:
+          type: boolean
+        allow_local:
+          type: boolean
+        source_roots:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        restore_roots:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        cache_max_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 仅已登录返回，实际配置的缓存容量阈值
+        log_max_rows:
+          type: integer
+          format: int64
+          minimum: 100
+          description: 仅已登录返回，日志保留行数配置
+        maintenance_window:
+          type: string
+          description: 仅已登录返回；空表示不限，否则HH:MM-HH:MM，可跨午夜
+        maintenance_timezone:
+          type: string
+          description: 仅已登录返回，IANA时区
+      required:
+      - initialized
+      - authenticated
+      - unlocked
+      - vault_id
+      - mode
+      - engines
+      - oauth_configured
+      - allow_local
+    RecoveryKit:
+      type: object
+      properties:
+        format:
+          type: string
+          const: vaultpilot-recovery
+        version:
+          type: integer
+          format: int64
+          const: 1
+        kdf:
+          type: string
+          const: argon2id
+        salt:
+          type: string
+          description: Base64盐
+        time:
+          type: integer
+          format: int64
+          const: 3
+        memory_kib:
+          type: integer
+          format: int64
+          const: 65536
+        parallelism:
+          type: integer
+          format: int64
+          const: 2
+        ciphertext:
+          type: string
+          description: Base64认证加密载荷；不包含OAuth Token
+      required:
+      - format
+      - version
+      - kdf
+      - salt
+      - time
+      - memory_kib
+      - parallelism
+      - ciphertext
+    SetupRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+        password:
+          type: string
+          writeOnly: true
+          description: 最少12 Bytes、最多1024 Bytes；登录凭据和恢复凭据分别设置。
+        recovery_password:
+          type: string
+          writeOnly: true
+          description: 最少12 Bytes、最多1024 Bytes；登录凭据和恢复凭据分别设置。
+        mode:
+          type: string
+          enum:
+          - create
+          - recovery
+          default: create
+        recovery_kit:
+          oneOf:
+          - "$ref": "#/components/schemas/RecoveryKit"
+          - type: string
+            description: 完整恢复包JSON字符串
+      description: 密码分别最少12 Bytes且必须不同。recovery模式需提供恢复包及该包保护密码；导入强制恢复节点。
+      allOf:
+      - if:
+          properties:
+            mode:
+              const: recovery
+          required:
+          - mode
+        then:
+          required:
+          - recovery_kit
+      required:
+      - username
+      - password
+      - recovery_password
+    SetupResult:
+      type: object
+      properties:
+        vault_id:
+          type: string
+        mode:
+          type: string
+          enum:
+          - create
+          - recovery
+        csrf_token:
+          type: string
+        unlocked:
+          type: boolean
+      required:
+      - vault_id
+      - mode
+      - csrf_token
+      - unlocked
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - username
+      - password
+    Session:
+      type: object
+      properties:
+        csrf_token:
+          type: string
+        unlocked:
+          type: boolean
+      required:
+      - csrf_token
+      - unlocked
+    PasswordRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          writeOnly: true
+          description: 最少12 Bytes、最多1024 Bytes；登录凭据和恢复凭据分别设置。
+      required:
+      - password
+    UnlockState:
+      type: object
+      properties:
+        unlocked:
+          type: boolean
+      required:
+      - unlocked
+    AccountCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        backend:
+          type: string
+          enum:
+          - onedrive
+          - local
+          default: onedrive
+        budget_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 项目容量上限Bytes
+        cloud_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 云端安全预留Bytes
+        maintenance_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 项目维护预留Bytes，必须小于budget_bytes
+        local_path:
+          type: string
+          description: local账号必须提供已存在的真实目录；仅VP_ALLOW_LOCAL=true可用
+      description: OneDrive未指定预算时默认1TiB；创建后仍需授权与显式Drive验证。本地账号需预算和目录，并执行真实读写及磁盘容量查询。
+      allOf:
+      - if:
+          properties:
+            backend:
+              const: local
+          required:
+          - backend
+        then:
+          required:
+          - local_path
+          - budget_bytes
+      required:
+      - name
+    AccountUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        enabled:
+          type: boolean
+        budget_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 项目容量上限Bytes
+        cloud_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 云端安全预留Bytes
+        maintenance_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 项目维护预留Bytes，必须小于budget_bytes
+      description: PUT和PATCH都采用完整可编辑配置；省略预留会设为零。Drive身份、backend和local_path不通过该接口修改。
+      required:
+      - name
+      - version
+      - budget_bytes
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        name:
+          type: string
+        backend:
+          type: string
+          enum:
+          - onedrive
+          - local
+        remote:
+          type: string
+          description: 节点内部Rclone remote名，不是稳定云端身份
+        drive_id:
+          type: string
+        drive_name:
+          type: string
+        drive_type:
+          type: string
+        region:
+          type: string
+        tenant_id:
+          type: string
+        quota_domain:
+          type: string
+          description: 同一配额域不得在池中重复计算
+        status:
+          type: string
+        enabled:
+          type: boolean
+        budget_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 项目容量上限Bytes
+        cloud_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 云端安全预留Bytes
+        maintenance_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 项目维护预留Bytes，必须小于budget_bytes
+        total_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        used_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        free_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        project_used_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        quota_at:
+          type: string
+          description: 真实配额查询时间；未查询时为空
+        verified:
+          type: boolean
+        local_path:
+          type: string
+      description: 响应不包含OAuth Token、节点密钥或解密配置。
+      required:
+      - id
+      - version
+      - name
+      - backend
+      - status
+      - enabled
+      - verified
+    AccountPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Account"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    AuthorizationURL:
+      type: object
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+      required:
+      - authorization_url
+    Drive:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        drive_type:
+          type: string
+        supported:
+          type: boolean
+        quota:
+          type: object
+          properties:
+            total:
+              type:
+              - integer
+              - 'null'
+            used:
+              type:
+              - integer
+              - 'null'
+            remaining:
+              type:
+              - integer
+              - 'null'
+            state:
+              type: string
+      required:
+      - id
+      - name
+      - drive_type
+      - supported
+      - quota
+    DrivePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Drive"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    VerifyAccountRequest:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        drive_id:
+          type: string
+          description: OneDrive必须显式指定本次授权可见Drive；不会默认选择第一项
+        budget_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 项目容量上限Bytes
+        cloud_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 云端安全预留Bytes
+        maintenance_reserve_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 项目维护预留Bytes，必须小于budget_bytes
+      description: 对OneDrive必填drive_id。重新授权必须选择原Drive；其他Drive需新建账号。预算字段省略时保留当前值。验证根访问及专用项目目录随机文件写入/读回/删除，并核对真实配额。
+      required:
+      - version
+    PoolCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        account_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        catalog_replicas:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10
+          default: 2
+        shard_target_bytes:
+          type: integer
+          format: int64
+          minimum: 1048576
+          default: 107374182400
+      description: 账号必须已验证且启用，配额域不得重复；数量不足时拒绝，不静默降低副本要求。
+      required:
+      - name
+      - account_ids
+    PoolUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        account_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        catalog_replicas:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10
+          default: 2
+        shard_target_bytes:
+          type: integer
+          format: int64
+          minimum: 1048576
+          default: 107374182400
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - name
+      - account_ids
+      - version
+    Pool:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+        account_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        catalog_replicas:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10
+          default: 2
+        shard_target_bytes:
+          type: integer
+          format: int64
+          minimum: 1048576
+          default: 107374182400
+      required:
+      - id
+      - version
+      - name
+      - account_ids
+      - catalog_replicas
+      - shard_target_bytes
+    PoolPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Pool"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    SourceCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          description: 服务器中SourceRoots挂载范围内的目录；响应规范化为真实路径
+        excludes:
+          type: array
+          items:
+            type: string
+        include_hidden:
+          type: boolean
+          default: false
+        max_file_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        one_file_system:
+          type: boolean
+          default: false
+      required:
+      - name
+      - path
+    SourceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          description: 服务器中SourceRoots挂载范围内的目录；响应规范化为真实路径
+        excludes:
+          type: array
+          items:
+            type: string
+        include_hidden:
+          type: boolean
+          default: false
+        max_file_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        one_file_system:
+          type: boolean
+          default: false
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - name
+      - path
+      - version
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+        path:
+          type: string
+          description: 服务器中SourceRoots挂载范围内的目录；响应规范化为真实路径
+        excludes:
+          type: array
+          items:
+            type: string
+        include_hidden:
+          type: boolean
+          default: false
+        max_file_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        one_file_system:
+          type: boolean
+          default: false
+        mount_identity:
+          type: string
+          readOnly: true
+          description: 服务器生成的目录设备/inode身份
+      required:
+      - id
+      - version
+      - name
+      - path
+      - mount_identity
+    SourcePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Source"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    BrowseEntry:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        mount_identity:
+          type: string
+      required:
+      - name
+      - path
+      - mount_identity
+    BrowsePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/BrowseEntry"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        path:
+          type: string
+        roots:
+          type: array
+          items:
+            type: string
+      required:
+      - items
+      - total
+      - path
+      - roots
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        action:
+          type: string
+        resource:
+          type: string
+        at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - version
+      - action
+      - resource
+      - at
+    AuditPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/AuditEvent"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    Retention:
+      type: object
+      properties:
+        daily:
+          type: integer
+          format: int64
+          minimum: 0
+        weekly:
+          type: integer
+          format: int64
+          minimum: 0
+        monthly:
+          type: integer
+          format: int64
+          minimum: 0
+    PlanCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        source_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        pool_id:
+          type: string
+        schedule:
+          type: string
+          description: 5字段Cron或@every 6h；空字符串表示不定时
+        timezone:
+          type: string
+          default: Asia/Shanghai
+          description: IANA时区
+        enabled:
+          type: boolean
+          default: false
+        excludes:
+          type: array
+          items:
+            type: string
+        retention:
+          "$ref": "#/components/schemas/Retention"
+        retry_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 8
+          default: 0
+        bandwidth_kib:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 带宽KiB/s；0表示不限
+      description: 同一计划拒绝父子重叠的备份源。未指定retention时各计数为零，但最新点仍保留。
+      required:
+      - name
+      - source_ids
+      - pool_id
+    PlanUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        source_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        pool_id:
+          type: string
+        schedule:
+          type: string
+          description: 5字段Cron或@every 6h；空字符串表示不定时
+        timezone:
+          type: string
+          default: Asia/Shanghai
+          description: IANA时区
+        enabled:
+          type: boolean
+          default: false
+        excludes:
+          type: array
+          items:
+            type: string
+        retention:
+          "$ref": "#/components/schemas/Retention"
+        retry_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 8
+          default: 0
+        bandwidth_kib:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 带宽KiB/s；0表示不限
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - name
+      - source_ids
+      - pool_id
+      - version
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+        source_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        pool_id:
+          type: string
+        schedule:
+          type: string
+          description: 5字段Cron或@every 6h；空字符串表示不定时
+        timezone:
+          type: string
+          default: Asia/Shanghai
+          description: IANA时区
+        enabled:
+          type: boolean
+          default: false
+        excludes:
+          type: array
+          items:
+            type: string
+        retention:
+          "$ref": "#/components/schemas/Retention"
+        retry_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 8
+          default: 0
+        bandwidth_kib:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 带宽KiB/s；0表示不限
+        next_runs:
+          type: array
+          items:
+            type: string
+            format: date-time
+          maxItems: 3
+      required:
+      - id
+      - version
+      - name
+      - source_ids
+      - pool_id
+    PlanPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Plan"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        kind:
+          type: string
+        plan_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - completed
+          - partial_failed
+          - failed
+          - cancelled
+          - interrupted
+        stage:
+          type: string
+          description: 实际执行阶段；不等同于上传字节进度
+        progress:
+          type: number
+        started_at:
+          type: string
+          description: 排队时为空
+        finished_at:
+          type: string
+          description: 未结束时为空
+        scanned_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        uploaded_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        cloud_growth_bytes:
+          type: integer
+          format: int64
+        error:
+          type: string
+        code:
+          type: string
+        retryable:
+          type: boolean
+        attempt:
+          type: integer
+          format: int64
+          minimum: 0
+        request: {}
+        result:
+          description: 结构依任务kind而定。restore开始实际执行后采用RestoreResult；预检查即拒绝时可能尚无result。其他种类为分配、备份、发现或维护结果。已复制部分条目后发生错误会保留原稳定code并标记partial_failed。
+        cancel_requested:
+          type: boolean
+      required:
+      - id
+      - version
+      - kind
+      - status
+      - stage
+      - progress
+      - scanned_bytes
+      - uploaded_bytes
+      - cloud_growth_bytes
+    TaskPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Task"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    TaskLog:
+      type: object
+      properties:
+        seq:
+          type: integer
+          format: int64
+        line:
+          type: string
+        at:
+          type: string
+          format: date-time
+      required:
+      - seq
+      - line
+      - at
+    TaskLogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TaskLog"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    Location:
+      type: object
+      properties:
+        account_id:
+          type: string
+        drive_id:
+          type: string
+        region:
+          type: string
+        tenant_id:
+          type: string
+        path:
+          type: string
+        verified:
+          type: boolean
+        at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          description: 旧位置退休为cleanup_pending，删除后为deleted；早期登记可省略
+    Repository:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        plan_id:
+          type: string
+        account_id:
+          type: string
+        path:
+          type: string
+        status:
+          type: string
+        locations:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Location"
+        logical_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+      description: 不返回password字段。仓库逻辑ID与当前位置分离；locations包含可用及已退休的历史位置。
+      required:
+      - id
+      - version
+      - account_id
+      - path
+      - status
+    RepositoryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Repository"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    Snapshot:
+      type: object
+      properties:
+        repository_id:
+          type: string
+        snapshot_id:
+          type: string
+          description: 非空分片必须是完整64字符快照ID；empty分片为空字符串
+        empty:
+          type: boolean
+      required:
+      - repository_id
+      - snapshot_id
+      - empty
+    RecoveryPoint:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          readOnly: true
+        plan_id:
+          type: string
+        run_id:
+          type: string
+        name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        protected:
+          type: boolean
+        file_count:
+          type: integer
+          format: int64
+          minimum: 0
+        logical_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        snapshots:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Snapshot"
+        commit_id:
+          type: string
+        deleted_at:
+          type: string
+          format: date-time
+        protection_status:
+          type: string
+          enum:
+          - complete
+          - degraded
+      required:
+      - id
+      - version
+      - status
+      - protected
+      - file_count
+      - logical_bytes
+      - snapshots
+      - commit_id
+    RecoveryPointPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/RecoveryPoint"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    FileEntry:
+      type: object
+      properties:
+        source_id:
+          type: string
+        path:
+          type: string
+          description: 该源相对路径；根目录为空
+        kind:
+          type: string
+          enum:
+          - file
+          - dir
+          - symlink
+        size:
+          type: integer
+          format: int64
+          minimum: 0
+        mtime_ns:
+          type: integer
+          format: int64
+        mode:
+          type: integer
+          format: int64
+          minimum: 0
+        link_target:
+          type: string
+        repository_id:
+          type: string
+        snapshot_path:
+          type: string
+          description: 该恢复点映射到Restic快照的实际路径
+      required:
+      - source_id
+      - path
+      - kind
+      - size
+      - mtime_ns
+      - mode
+      - repository_id
+      - snapshot_path
+    FileEntryPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/FileEntry"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - total
+    ProtectRequest:
+      type: object
+      properties:
+        protected:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - protected
+      - version
+    ProtectionDegraded:
+      type: object
+      properties:
+        point:
+          "$ref": "#/components/schemas/RecoveryPoint"
+        error:
+          type: string
+        code:
+          type: string
+          const: PROTECTION_DEGRADED
+        retryable:
+          type: boolean
+          const: true
+      required:
+      - point
+      - error
+      - code
+      - retryable
+    PathSelection:
+      type: object
+      properties:
+        source_id:
+          type: string
+        path:
+          type: string
+          description: 源内相对路径，空字符串选择整个源
+      required:
+      - source_id
+    RestoreRequest:
+      type: object
+      properties:
+        point_id:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+        paths:
+          anyOf:
+          - type: array
+            items:
+              "$ref": "#/components/schemas/PathSelection"
+          - type: array
+            items:
+              type: string
+              description: 兼容形式：source_id/relative/path
+        target:
+          type: string
+          description: RestoreRoots允许范围内的绝对路径
+        overwrite:
+          type: boolean
+          default: false
+        allow_partial:
+          type: boolean
+          default: false
+      description: 省略source_ids和paths表示整个点；两个范围同时指定时取交集。默认不覆盖已有文件，不允许部分恢复。
+      required:
+      - point_id
+      - target
+    RestoreFailureEntry:
+      type: object
+      properties:
+        source_id:
+          type: string
+        path:
+          type: string
+          description: 源内逻辑相对路径
+        code:
+          type: string
+          description: 该条目失败的稳定错误码
+        stage:
+          type: string
+          description: 失败发生阶段
+        error:
+          type: string
+      required:
+      - source_id
+      - path
+      - code
+      - stage
+    RestoreResult:
+      type: object
+      description: restore任务实际执行后的result。成功复制部分条目后失败会标记partial_failed并保留原稳定code；预检查直接拒绝可能尚无result。计数按恢复清单条目，包括目录和链接。
+      properties:
+        restored:
+          type: integer
+          format: int64
+          minimum: 0
+        skipped:
+          type: integer
+          format: int64
+          minimum: 0
+        conflicts:
+          type: integer
+          format: int64
+          minimum: 0
+        failed:
+          type: integer
+          format: int64
+          minimum: 0
+        unattempted:
+          type: integer
+          format: int64
+          minimum: 0
+        verification_errors:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          description: 已识别校验异常数。无法区分引擎错误发生在恢复或校验阶段时为null，不能显示为零异常。
+        verification_status:
+          type: string
+          enum:
+          - passed
+          - not_started
+          - partial
+          - unknown
+          - failed
+        failure_entries:
+          type: array
+          items:
+            "$ref": "#/components/schemas/RestoreFailureEntry"
+        failure_entry_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 全部异常条目数量，不限于当前返回列表
+        failure_entries_truncated:
+          type: boolean
+          description: 异常条目列表是否被截断
+        target:
+          type: string
+        point_id:
+          type: string
+        verification:
+          type: string
+          description: 实际校验方式说明
+      required:
+      - restored
+      - skipped
+      - conflicts
+      - failed
+      - unattempted
+      - verification_errors
+      - verification_status
+      - failure_entries
+      - failure_entry_count
+      - failure_entries_truncated
+      - target
+      - point_id
+      - verification
+    RestorePreview:
+      type: object
+      properties:
+        file_count:
+          type: integer
+          format: int64
+          minimum: 0
+        logical_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        required_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        conflicts:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PathSelection"
+        conflict_count:
+          type: integer
+          format: int64
+          minimum: 0
+        missing_accounts:
+          type: array
+          items:
+            type: string
+        missing_files:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PathSelection"
+        missing_file_count:
+          type: integer
+          format: int64
+          minimum: 0
+        target:
+          type: string
+        allow_partial:
+          type: boolean
+        blocked:
+          type: boolean
+        code:
+          type: string
+      description: conflicts与missing_files各最多展示200条，计数提供完整总数。
+      required:
+      - file_count
+      - logical_bytes
+      - required_bytes
+      - conflicts
+      - conflict_count
+      - missing_accounts
+      - missing_files
+      - missing_file_count
+      - target
+      - allow_partial
+      - blocked
+    CheckRequest:
+      type: object
+      properties:
+        repository_ids:
+          type: array
+          items:
+            type: string
+          description: 省略或空数组检查全部登记仓库
+        mode:
+          type: string
+          enum:
+          - structure
+          - sample
+          - full
+          default: structure
+        sample:
+          type: string
+          default: 10%
+          description: 仅sample模式使用，采用Restic支持的抽样表达式
+    RetentionPreviewRequest:
+      type: object
+      properties:
+        plan_id:
+          type: string
+      required:
+      - plan_id
+    RetentionRequest:
+      type: object
+      properties:
+        plan_id:
+          type: string
+        point_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        confirm:
+          type: boolean
+          const: true
+      description: 实际执行重新计算全局引用及保留集合，拒绝受保护点或仍需保留的点。
+      required:
+      - plan_id
+      - point_ids
+      - confirm
+    RetentionPreview:
+      type: object
+      properties:
+        plan_id:
+          type: string
+        keep_ids:
+          type: array
+          items:
+            type: string
+        delete_ids:
+          type: array
+          items:
+            type: string
+        snapshots:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Snapshot"
+        blocked:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+      required:
+      - plan_id
+      - keep_ids
+      - delete_ids
+      - snapshots
+      - blocked
+      - reasons
+    MigrateRepositoryRequest:
+      type: object
+      properties:
+        repository_id:
+          type: string
+        target_account_id:
+          type: string
+        confirm:
+          type: boolean
+          const: true
+        cleanup_old:
+          type: boolean
+          const: false
+          default: false
+      required:
+      - repository_id
+      - target_account_id
+      - confirm
+    CleanupOldCopyRequest:
+      type: object
+      properties:
+        repository_id:
+          type: string
+        cleanup_old:
+          type: boolean
+          const: true
+        old_location_index:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: 来自locations数组的下标；未指定时服务器默认为0
+        old_location_path:
+          type: string
+          description: 建议同时提供读取到的路径，变化时拒绝操作
+        confirm:
+          type: boolean
+          const: true
+      required:
+      - repository_id
+      - cleanup_old
+      - confirm
+    MigrationRequest:
+      oneOf:
+      - "$ref": "#/components/schemas/MigrateRepositoryRequest"
+      - "$ref": "#/components/schemas/CleanupOldCopyRequest"
+      description: 正常迁移保留旧副本；cleanup_old=true是另一次明确确认后的旧副本清理，先验证新位置及引用，再登记退休并提交目录，最后删除旧位置。

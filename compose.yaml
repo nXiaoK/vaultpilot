@@ -1,0 +1,43 @@
+name: vaultpilot
+services:
+  vaultpilot:
+    build: .
+    image: vaultpilot:0.1.0
+    restart: unless-stopped
+    user: "${VP_UID:-1000}:${VP_GID:-1000}"
+    ports:
+      - "127.0.0.1:${VP_PORT:-8080}:8080"
+    environment:
+      VP_ADDR: 0.0.0.0:8080
+      VP_STATE_DIR: /app/state
+      VP_CACHE_DIR: /app/cache
+      VP_SOURCE_ROOTS: /sources
+      VP_RESTORE_ROOTS: /restore
+      VP_PUBLIC_URL: ${VP_PUBLIC_URL:-http://localhost:8080}
+      VP_OAUTH_CLIENT_ID: ${VP_OAUTH_CLIENT_ID:-}
+      VP_OAUTH_CLIENT_SECRET: ${VP_OAUTH_CLIENT_SECRET:-}
+      VP_OAUTH_TENANT: ${VP_OAUTH_TENANT:-consumers}
+      VP_GLOBAL_CONCURRENCY: ${VP_GLOBAL_CONCURRENCY:-2}
+      VP_LOG_MAX_ROWS: ${VP_LOG_MAX_ROWS:-100000}
+      VP_CACHE_MAX_BYTES: ${VP_CACHE_MAX_BYTES:-21474836480}
+      VP_MAINTENANCE_WINDOW: ${VP_MAINTENANCE_WINDOW:-}
+      VP_MAINTENANCE_TIMEZONE: ${VP_MAINTENANCE_TIMEZONE:-Asia/Shanghai}
+      VP_AUTO_UNLOCK_FILE: ${VP_AUTO_UNLOCK_FILE:-}
+    volumes:
+      - ./state:/app/state
+      - ./cache:/app/cache
+      - ${VP_SOURCE_HOST:-./example-data/source}:/sources:ro
+      - ${VP_RESTORE_HOST:-./example-data/restore}:/restore
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, /app/healthcheck]
+      interval: 30s
+      timeout: 5s
+      retries: 3
