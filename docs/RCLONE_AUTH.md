@@ -46,3 +46,7 @@ Microsoft 365 Family 属于个人订阅，可以使用 Rclone 自带的微软应
 ![标准授权入口](screenshots/rclone-authorize.png)
 
 ![配置导入入口](screenshots/rclone-import.png)
+
+## 微软账号身份
+
+存储卡片保留自定义名称，并显示 Microsoft Graph 返回的邮箱或显示名。已有账号可点击“重新授权 / 验证”读取账号身份，或刷新配额读取 Drive 所有者信息；不必重新登录微软。缺少 User.Read 权限时身份读取失败不阻断 Drive 选择，未提供邮箱时显示名称或身份未读取提示。重新授权会清空旧身份，避免误标。相同稳定 Drive ID 的多个别名合并为一个选择项，优先显示 OneDrive 名称。

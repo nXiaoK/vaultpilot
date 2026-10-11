@@ -18,6 +18,8 @@ import (
 )
 
 type Account struct {
+	AccountEmail            string `json:"account_email"`
+	AccountDisplayName      string `json:"account_display_name"`
 	ID                      string `json:"id"`
 	Version                 int    `json:"version"`
 	Name                    string `json:"name"`
@@ -143,6 +145,8 @@ func (r *Runtime) createAccount(w http.ResponseWriter, req *http.Request) {
 	a.Status = "awaiting_authorization"
 	a.DriveID = ""
 	a.DriveName = ""
+	a.AccountEmail = ""
+	a.AccountDisplayName = ""
 	a.DriveType = ""
 	a.Region = "global"
 	a.TenantID = r.Config.OAuthTenant

@@ -262,6 +262,8 @@ func (r *Runtime) installCredential(ctx context.Context, id string, version int,
 	}
 	a.Status = "awaiting_drive_selection"
 	a.Verified = false
+	a.AccountEmail = ""
+	a.AccountDisplayName = ""
 	a.Version++
 	data, e := json.Marshal(a)
 	if e != nil {

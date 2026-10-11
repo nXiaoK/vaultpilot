@@ -219,11 +219,28 @@ func (r *Runtime) oauthCallback(w http.ResponseWriter, req *http.Request) {
 	redirect("authorized", a.ID)
 }
 
+type driveOwner struct {
+	User struct {
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+	} `json:"user"`
+}
+
+func applyOwner(a *Account, owner driveOwner) {
+	if owner.User.Email != "" {
+		a.AccountEmail = owner.User.Email
+	}
+	if owner.User.DisplayName != "" {
+		a.AccountDisplayName = owner.User.DisplayName
+	}
+}
+
 type Drive struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	DriveType string `json:"drive_type"`
-	Supported bool   `json:"supported"`
+	Owner     driveOwner `json:"owner"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	DriveType string     `json:"drive_type"`
+	Supported bool       `json:"supported"`
 	Quota     struct {
 		Total     *int64 `json:"total"`
 		Used      *int64 `json:"used"`
@@ -243,6 +260,7 @@ func (r *Runtime) listDrives(ctx context.Context, id string) ([]Drive, error) {
 			Name      string          `json:"name"`
 			DriveType string          `json:"driveType"`
 			Quota     json.RawMessage `json:"quota"`
+			Owner     driveOwner      `json:"owner"`
 		} `json:"value"`
 		NextLink string `json:"@odata.nextLink"`
 	}
@@ -253,14 +271,27 @@ func (r *Runtime) listDrives(ctx context.Context, id string) ([]Drive, error) {
 		return nil, errors.New("Drive 列表需要分页，当前仅支持 OneDrive Personal；请使用个人账号")
 	}
 	drives := make([]Drive, 0, len(res.Value))
+	seen := map[string]int{}
 	for _, d := range res.Value {
-		v := Drive{ID: d.ID, Name: d.Name, DriveType: d.DriveType, Supported: d.DriveType == "personal"}
+		if d.ID == "" {
+			continue
+		}
+		v := Drive{ID: d.ID, Name: d.Name, DriveType: d.DriveType, Supported: d.DriveType == "personal", Owner: d.Owner}
 		_ = json.Unmarshal(d.Quota, &v.Quota)
+		if index, exists := seen[d.ID]; exists {
+			if strings.EqualFold(v.Name, "OneDrive") {
+				drives[index] = v
+			}
+			continue
+		}
+		seen[d.ID] = len(drives)
 		drives = append(drives, v)
 	}
 	return drives, nil
 }
 func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
+	r.accountMu.Lock()
+	defer r.accountMu.Unlock()
 	var a Account
 	if r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &a) != nil {
 		fail(w, 404, "account_not_found", "账号不存在")
@@ -275,7 +306,26 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 		cloudFailure(w, e)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
+	// Profile is optional: older authorizations may lack User.Read.
+	if b, err := r.graph(req.Context(), a.ID, "GET", "/me?$select=displayName,mail,userPrincipalName", nil, ""); err == nil {
+		var profile struct{ DisplayName, Mail, UserPrincipalName string }
+		if json.Unmarshal(b, &profile) == nil {
+			email := profile.Mail
+			if email == "" && strings.Contains(profile.UserPrincipalName, "@") && !strings.Contains(profile.UserPrincipalName, "#EXT#") {
+				email = profile.UserPrincipalName
+			}
+			if (email != "" || profile.DisplayName != "") && (a.AccountEmail != email || a.AccountDisplayName != profile.DisplayName) {
+				a.AccountEmail, a.AccountDisplayName = email, profile.DisplayName
+				version, err := r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
+				if err != nil {
+					fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
+					return
+				}
+				a.Version = version
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]any{"items": items, "total": len(items), "account": a})
 }
 func (r *Runtime) ensureCloudFolder(ctx context.Context, a Account, parent, name string) (string, error) {
 	parentPath := "/drives/" + url.PathEscape(a.DriveID) + parent
@@ -371,6 +421,7 @@ func (r *Runtime) cloudQuota(ctx context.Context, a *Account) error {
 	}
 	var d struct {
 		ID    string                                  `json:"id"`
+		Owner driveOwner                              `json:"owner"`
 		Quota struct{ Total, Used, Remaining *int64 } `json:"quota"`
 	}
 	if json.Unmarshal(b, &d) != nil || d.ID != a.DriveID || d.Quota.Total == nil || d.Quota.Used == nil || d.Quota.Remaining == nil {
@@ -379,6 +430,7 @@ func (r *Runtime) cloudQuota(ctx context.Context, a *Account) error {
 	if *d.Quota.Total < 0 || *d.Quota.Used < 0 || *d.Quota.Remaining < 0 {
 		return errors.New("OneDrive 配额响应无效")
 	}
+	applyOwner(a, d.Owner)
 	a.TotalBytes = *d.Quota.Total
 	a.UsedBytes = *d.Quota.Used
 	a.FreeBytes = *d.Quota.Remaining
@@ -475,6 +527,7 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 		}
 		a.DriveID = selected.ID
 		a.DriveName = selected.Name
+		applyOwner(&a, selected.Owner)
 		a.DriveType = selected.DriveType
 		a.Region = "global"
 		a.TenantID = "consumers"
