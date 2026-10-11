@@ -64,6 +64,10 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if err = migrateNotifications(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err = os.Chmod(path, 0600); err != nil {
 		db.Close()
 		return nil, err
@@ -73,6 +77,22 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func migrateNotifications(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`CREATE TABLE IF NOT EXISTS notification_outbox(id TEXT PRIMARY KEY,kind TEXT NOT NULL,generation TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'queued',attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,sent_at TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '');
+ CREATE INDEX IF NOT EXISTS notification_due ON notification_outbox(status,next_at);
+ CREATE TABLE IF NOT EXISTS notification_incidents(account_id TEXT PRIMARY KEY,episode TEXT NOT NULL,category TEXT NOT NULL,updated_at TEXT NOT NULL);
+ INSERT OR IGNORE INTO schema_migrations VALUES(2,strftime('%Y-%m-%dT%H:%M:%SZ','now'));`)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) Close() error { return s.DB.Close() }
 func table(t string) error {

@@ -43,29 +43,34 @@ type oauthState struct {
 	Version                        int
 }
 type Runtime struct {
-	Config            Config
-	Store             *store.Store
-	Keys              *Keyring
-	mu                sync.Mutex
-	setupMu           sync.Mutex
-	sessions          map[string]session
-	attempts          map[string]loginAttempt
-	oauth             map[string]oauthState
-	client            *http.Client
-	nodeKey           []byte
-	vaultID, mode     string
-	rcloneMu          sync.Mutex
-	credentialsMu     sync.Mutex
-	accountMu         sync.Mutex
-	recentDrives      map[string]cachedDrives // guarded by accountMu
-	accountTransferMu sync.Mutex
-	rclonePath        string
-	rclonePaths       []string
-	rcloneAuthMu      sync.Mutex
-	rcloneAuth        map[string]*rcloneAuthFlow
-	rcloneAuthWG      sync.WaitGroup
-	closing           bool
-	network           *networkMonitor
+	Config             Config
+	Store              *store.Store
+	Keys               *Keyring
+	mu                 sync.Mutex
+	setupMu            sync.Mutex
+	sessions           map[string]session
+	attempts           map[string]loginAttempt
+	oauth              map[string]oauthState
+	client             *http.Client
+	nodeKey            []byte
+	vaultID, mode      string
+	rcloneMu           sync.Mutex
+	credentialsMu      sync.Mutex
+	accountMu          sync.Mutex
+	recentDrives       map[string]cachedDrives // guarded by accountMu
+	accountTransferMu  sync.Mutex
+	rclonePath         string
+	rclonePaths        []string
+	rcloneAuthMu       sync.Mutex
+	rcloneAuth         map[string]*rcloneAuthFlow
+	rcloneAuthWG       sync.WaitGroup
+	closing            bool
+	network            *networkMonitor
+	notificationMu     sync.Mutex
+	notificationCancel context.CancelFunc
+	notificationWG     sync.WaitGroup
+	notificationWake   chan struct{}
+	healthWake         chan struct{}
 }
 
 func New(c Config) (*Runtime, error) {
@@ -207,9 +212,14 @@ func New(c Config) (*Runtime, error) {
 		}
 	}
 	r.network = newNetworkMonitor(readNetworkCounters)
+	r.startNotifications()
 	return r, nil
 }
 func (r *Runtime) Close() error {
+	if r.notificationCancel != nil {
+		r.notificationCancel()
+		r.notificationWG.Wait()
+	}
 	if r.network != nil {
 		r.network.closeOnce.Do(func() { close(r.network.stop) })
 		<-r.network.done
@@ -320,6 +330,11 @@ func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("POST /api/security/unlock", r.unlockHandler)
 	m.HandleFunc("POST /api/security/lock", r.lockHandler)
 	m.HandleFunc("POST /api/security/recovery-kit", r.exportKit)
+	m.HandleFunc("GET /api/notifications/telegram", r.telegramSettingsHTTP)
+	m.HandleFunc("PUT /api/notifications/telegram", r.telegramSaveHTTP)
+	m.HandleFunc("POST /api/notifications/telegram/test", r.telegramTestHTTP)
+	m.HandleFunc("POST /api/notifications/telegram/retry", r.telegramRetryHTTP)
+	m.HandleFunc("POST /api/notifications/telegram/check-accounts", r.telegramCheckHTTP)
 	m.HandleFunc("GET /api/accounts", r.listAccounts)
 	m.HandleFunc("POST /api/accounts", r.createAccount)
 	m.HandleFunc("POST /api/accounts/export", r.exportAccounts)

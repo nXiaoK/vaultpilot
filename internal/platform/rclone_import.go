@@ -288,6 +288,7 @@ func (r *Runtime) installCredential(ctx context.Context, id string, version int,
 	if e = tx.Commit(); e != nil {
 		return a, e
 	}
+	r.AccountAuthorizationHealthy(id, true)
 	_ = r.Store.Audit(ctx, audit, id)
 	return a, nil
 }

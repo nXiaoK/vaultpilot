@@ -365,6 +365,11 @@ func (s *Service) execute(id string) {
 	}
 	t.FinishedAt = now()
 	s.save(&t)
+	if t.Kind == "backup" {
+		if notifyErr := s.rt.NotifyBackup(t.ID); notifyErr != nil {
+			s.log(&t, "Telegram 通知入队失败，请检查通知设置与数据库状态")
+		}
+	}
 	if t.Kind == "discover" && s.rt.RecoveryMode() {
 		_ = s.rt.Store.SetMeta(context.Background(), "cloud_last_checked", now())
 		if err == nil {

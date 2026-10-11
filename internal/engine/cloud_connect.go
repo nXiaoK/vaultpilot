@@ -27,7 +27,9 @@ func (s *Service) rcloneOutputBounded(ctx context.Context, args []string, limit 
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
 	}
 	defer s.rt.ReleaseRcloneConfig(args[1])
-	return process.OutputLimited(ctx, s.rt.Config.RcloneBin, args, nil, limit)
+	output, err := process.OutputLimited(ctx, s.rt.Config.RcloneBin, args, nil, limit)
+	s.observeRcloneAccounts(args, output, err)
+	return output, err
 }
 
 func cloudVaultID(id string) bool {

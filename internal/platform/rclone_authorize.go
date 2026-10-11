@@ -162,6 +162,11 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 	_ = os.Remove(path)
 	r.rcloneAuthMu.Lock()
 	defer r.rcloneAuthMu.Unlock()
+	defer func() {
+		if f.Status == "failed" {
+			r.AccountAuthorizationFailed(f.AccountID, "authorization_failed")
+		}
+	}()
 	f.AuthorizationURL = ""
 	f.State = ""
 	if f.Status == "cancelling" || r.closing {

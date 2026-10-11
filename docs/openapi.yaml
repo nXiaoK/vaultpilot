@@ -17,7 +17,81 @@ tags:
 - name: 任务
 - name: 恢复
 - name: 维护
+- name: 通知
 paths:
+  "/notifications/telegram":
+    get:
+      summary: 读取本节点 Telegram 设置与最近发送状态，不回显 Token
+      operationId: get_telegram_notifications
+      tags: [通知]
+      responses:
+        '200':
+          description: 脱敏设置、队列统计与最近十条记录
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/TelegramSettings"}
+        '401': {"$ref": "#/components/responses/APIError"}
+    put:
+      summary: 保存 Telegram 通知设置，Token 使用节点密钥加密
+      operationId: save_telegram_notifications
+      tags: [通知]
+      security: [{SessionAuth: [], CSRFToken: []}]
+      description: version 必须匹配；bot_token 留空保留现值。启用时必须有有效 Token、个人数字 Chat ID 及至少一类事件。更换 Token/接收用户或关闭通知取消旧待发通知；在途请求可能完成。设置不随恢复包或账号迁移。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref": "#/components/schemas/TelegramSettingsRequest"}
+      responses:
+        '200':
+          description: 保存成功后的脱敏设置
+          content:
+            application/json:
+              schema: {"$ref": "#/components/schemas/TelegramSettings"}
+        '400': {"$ref": "#/components/responses/APIError"}
+        '401': {"$ref": "#/components/responses/APIError"}
+        '403': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
+  "/notifications/telegram/test":
+    post:
+      summary: 使用已保存配置排队测试通知，每分钟最多三次
+      operationId: test_telegram_notifications
+      tags: [通知]
+      security: [{SessionAuth: [], CSRFToken: []}]
+      responses:
+        '202':
+          description: 已排队，不代表已送达
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {id: {type: string}, status: {type: string, const: queued}}
+        '401': {"$ref": "#/components/responses/APIError"}
+        '403': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
+        '429': {"$ref": "#/components/responses/APIError"}
+  "/notifications/telegram/retry":
+    post:
+      summary: 将当前接收配置下失败通知重新排队
+      operationId: retry_telegram_notifications
+      tags: [通知]
+      security: [{SessionAuth: [], CSRFToken: []}]
+      responses:
+        '202': {description: 重试已提交}
+        '401': {"$ref": "#/components/responses/APIError"}
+        '403': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
+  "/notifications/telegram/check-accounts":
+    post:
+      summary: 后台只读检查启用且已验证的 OneDrive 账号，授权异常去重通知
+      operationId: check_telegram_account_authorizations
+      tags: [通知]
+      security: [{SessionAuth: [], CSRFToken: []}]
+      responses:
+        '202': {description: 检查已提交}
+        '401': {"$ref": "#/components/responses/APIError"}
+        '403': {"$ref": "#/components/responses/APIError"}
+        '409': {"$ref": "#/components/responses/APIError"}
   "/status":
     get:
       summary: 初始化、身份、密钥、引擎及部署限制状态
@@ -4222,6 +4296,46 @@ components:
           maxItems: 100
           uniqueItems: true
           items: {type: string, minLength: 1}
+    TelegramSettingsRequest:
+      type: object
+      required: [version, enabled, chat_id, node_name, backup_success, backup_failure, account_error]
+      properties:
+        version: {type: integer, minimum: 0}
+        enabled: {type: boolean}
+        bot_token: {type: string, writeOnly: true, description: 留空保留；新 Token 必须符合 BotFather 格式}
+        clear_token: {type: boolean, default: false}
+        chat_id: {type: string, description: 个人用户正整数 ID；禁用时可为空}
+        node_name: {type: string, maxLength: 80}
+        backup_success: {type: boolean}
+        backup_failure: {type: boolean, description: 包括取消与重启中断}
+        account_error: {type: boolean}
+    TelegramSettings:
+      type: object
+      properties:
+        version: {type: integer}
+        enabled: {type: boolean}
+        token_configured: {type: boolean}
+        chat_id: {type: string}
+        node_name: {type: string}
+        backup_success: {type: boolean}
+        backup_failure: {type: boolean}
+        account_error: {type: boolean}
+        health_interval_minutes: {type: integer, const: 15}
+        queued_count: {type: integer}
+        failed_count: {type: integer}
+        recent:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              kind: {type: string, enum: [test, backup_success, backup_failure, account_error]}
+              status: {type: string, enum: [queued, sent, failed, cancelled]}
+              attempts: {type: integer}
+              created_at: {type: string, format: date-time}
+              sent_at: {type: string, description: 未发送时为空}
+              last_error: {type: string, description: 脱敏发送失败说明，不含原始接口错误}
     AccountClearRequest:
       allOf:
       - "$ref": "#/components/schemas/AccountClearSelection"

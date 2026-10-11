@@ -32,6 +32,7 @@ export function subscribeActivity(listener: (items: RequestActivity[]) => void) 
   return () => { activityListeners.delete(listener) }
 }
 function requestLabel(path: string, method: string) {
+  if (path.includes('/notifications/telegram')) return method === 'GET' ? '正在加载 Telegram 通知设置…' : '正在保存或提交 Telegram 通知…'
   if (path.includes('/accounts/clear')) return path.includes('/preview') ? '正在预览批量清空范围…' : '正在提交批量清空任务…'
   if (/\/accounts\/[^/]+\/drives(?:\?|$)/.test(path)) return '正在读取 OneDrive 账号身份与 Drive 列表…'
   if (path.includes('/rclone/authorize')) return '正在启动或更新微软授权…'

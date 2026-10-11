@@ -651,6 +651,7 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 	output, err := process.Run(ctx, s.rt.Config.ResticBin, full, env, onLine)
 	if a.Backend != "local" {
 		_ = s.rt.SyncRcloneCredentials()
+		s.rt.ObserveRcloneFailure(a.ID, output, err)
 	}
 	return output, err
 }
@@ -907,12 +908,46 @@ func (s *Service) rcloneOutput(ctx context.Context, args []string) ([]byte, erro
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
 	}
 	defer s.rt.ReleaseRcloneConfig(args[1])
-	return process.Output(ctx, s.rt.Config.RcloneBin, args, nil)
+	output, err := process.Output(ctx, s.rt.Config.RcloneBin, args, nil)
+	s.observeRcloneAccounts(args, output, err)
+	return output, err
 }
 func (s *Service) rcloneRun(ctx context.Context, args []string, onLine func(string)) ([]byte, error) {
 	if len(args) < 2 || args[1] == "" {
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
 	}
 	defer s.rt.ReleaseRcloneConfig(args[1])
-	return process.Run(ctx, s.rt.Config.RcloneBin, args, nil, onLine)
+	output, err := process.Run(ctx, s.rt.Config.RcloneBin, args, nil, onLine)
+	s.observeRcloneAccounts(args, output, err)
+	return output, err
+}
+
+func (s *Service) observeRcloneAccounts(args []string, output []byte, err error) {
+	if err == nil {
+		return
+	}
+	raws, e := s.rt.Store.All(context.Background(), "accounts")
+	if e != nil {
+		return
+	}
+	matched := []Account{}
+	for _, raw := range raws {
+		var a Account
+		if json.Unmarshal(raw, &a) != nil || a.Backend != "onedrive" || a.Remote == "" {
+			continue
+		}
+		for _, arg := range args {
+			if strings.HasPrefix(arg, a.Remote+":") {
+				matched = append(matched, a)
+				break
+			}
+		}
+	}
+	// A two-remote copy can fail on either side. Without remote attribution in
+	// its output, let the individual health probes identify the affected account.
+	for _, a := range matched {
+		if len(matched) == 1 || strings.Contains(string(output), a.Remote+":") {
+			s.rt.ObserveRcloneFailure(a.ID, output, err)
+		}
+	}
 }

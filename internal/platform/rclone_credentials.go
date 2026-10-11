@@ -186,11 +186,18 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 	cmd.Env = rcloneEnvironment()
 	output, e := cmd.Output()
 	if e != nil {
-		return c.Token, errors.New("Rclone 刷新授权失败，请检查网络或重新授权")
+		if ctx.Err() != nil {
+			return c.Token, ctx.Err()
+		}
+		if exit, ok := e.(*exec.ExitError); ok {
+			r.ObserveRcloneFailure(id, exit.Stderr, e)
+		}
+		return c.Token, authorizationIssue{"refresh_failed", "Rclone 刷新授权失败，请检查网络或重新授权"}
 	}
 	var result struct{ Error string }
 	if json.Unmarshal(output, &result) != nil || result.Error != "" {
-		return c.Token, errors.New("Rclone 无法刷新授权或读取 Drive，请重新授权")
+		r.ObserveRcloneFailure(id, []byte(result.Error), errors.New("refresh failed"))
+		return c.Token, authorizationIssue{"refresh_failed", "Rclone 无法刷新授权或读取 Drive，请重新授权"}
 	}
 	raw, e := os.ReadFile(path)
 	if e != nil {
@@ -202,7 +209,7 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 	}
 	fresh := entries[0].Credential.Token
 	if fresh.AccessToken == "" || !fresh.Expiry.After(time.Now()) {
-		return c.Token, errors.New("刷新凭据已过期，请重新授权")
+		return c.Token, authorizationIssue{"authorization_required", "刷新凭据已过期，请重新授权"}
 	}
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = c.Token.RefreshToken

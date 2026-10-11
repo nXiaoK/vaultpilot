@@ -74,26 +74,34 @@ func (r *Runtime) tokenExchangeFor(ctx context.Context, cred accountCredential, 
 	}
 	return OAuthToken{v.AccessToken, v.RefreshToken, v.TokenType, time.Now().Add(time.Duration(v.ExpiresIn) * time.Second)}, nil
 }
-func (r *Runtime) accessToken(ctx context.Context, id string) (OAuthToken, error) {
+func (r *Runtime) accessToken(ctx context.Context, id string) (token OAuthToken, err error) {
+	defer func() { r.ObserveAccountAccess(id, err) }()
 	r.credentialsMu.Lock()
 	defer r.credentialsMu.Unlock()
 	cred, e := r.loadCredential(id)
 	t := cred.Token
 	if e != nil {
-		return t, e
+		return t, authorizationIssue{"authorization_required", e.Error()}
 	}
 	if t.Expiry.After(time.Now().Add(2 * time.Minute)) {
 		return t, nil
 	}
 	if t.RefreshToken == "" {
-		return t, errors.New("凭据已到期，请重新授权")
+		return t, authorizationIssue{"authorization_required", "凭据已到期，请重新授权"}
 	}
 	if cred.Mode == "rclone" {
 		return r.refreshRcloneToken(ctx, id, cred)
 	}
 	refreshed, e := r.tokenExchangeFor(ctx, cred, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {t.RefreshToken}, "scope": {oauthScope}})
 	if e != nil {
-		return t, e
+		if ctx.Err() != nil {
+			return t, ctx.Err()
+		}
+		var cloud cloudError
+		if errors.As(e, &cloud) && (cloud.Status == 400 || cloud.Status == 401 || cloud.Status == 403) {
+			return t, authorizationIssue{"authorization_required", e.Error()}
+		}
+		return t, authorizationIssue{"refresh_failed", e.Error()}
 	}
 	if refreshed.RefreshToken == "" {
 		refreshed.RefreshToken = t.RefreshToken
@@ -125,7 +133,13 @@ func (r *Runtime) graph(ctx context.Context, id, method, path string, body []byt
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, cloudError{res.StatusCode, res.Header.Get("Retry-After")}
+		err := cloudError{res.StatusCode, res.Header.Get("Retry-After")}
+		// Optional /me identity lookup may lack User.Read even when Drive access
+		// works. Only storage access failures create authorization incidents.
+		if strings.HasPrefix(path, "/drives/") || strings.HasPrefix(path, "/me/drives") {
+			r.ObserveAccountAccess(id, err)
+		}
+		return nil, err
 	}
 	b, e := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 	if e != nil {
@@ -134,6 +148,11 @@ func (r *Runtime) graph(ctx context.Context, id, method, path string, body []byt
 	return b, nil
 }
 func cloudFailure(w http.ResponseWriter, e error) {
+	var issue authorizationIssue
+	if errors.As(e, &issue) && issue.category == "authorization_required" {
+		fail(w, 409, "authorization_required", e.Error())
+		return
+	}
 	var c cloudError
 	if errors.As(e, &c) {
 		if c.RetryAfter != "" {
@@ -203,11 +222,13 @@ func (r *Runtime) oauthCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if req.URL.Query().Get("error") != "" || req.URL.Query().Get("code") == "" {
+		r.AccountAuthorizationFailed(flow.AccountID, "authorization_failed")
 		redirect("oauth_error", "authorization_denied")
 		return
 	}
 	t, e := r.tokenExchange(req.Context(), url.Values{"grant_type": {"authorization_code"}, "code": {req.URL.Query().Get("code")}, "redirect_uri": {strings.TrimRight(r.Config.PublicURL, "/") + "/api/oauth/callback"}, "code_verifier": {flow.Verifier}, "scope": {oauthScope}})
 	if e != nil {
+		r.AccountAuthorizationFailed(flow.AccountID, "authorization_failed")
 		redirect("oauth_error", "token_exchange_failed")
 		return
 	}
@@ -641,6 +662,7 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 	a.Version = ver
 	saved(w, 200, e, a)
 	if e == nil {
+		r.AccountAuthorizationHealthy(a.ID, true)
 		_ = r.Store.Audit(req.Context(), "account.verified", a.ID)
 	}
 }
