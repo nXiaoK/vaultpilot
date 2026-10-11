@@ -289,9 +289,46 @@ func (r *Runtime) listDrives(ctx context.Context, id string) ([]Drive, error) {
 	}
 	return drives, nil
 }
+
+// Only the selection list is cached; access and quota checks always contact Graph.
+const driveListTTL = time.Minute
+const profileTimeout = 3 * time.Second
+
+type cachedDrives struct {
+	Version int
+	Expires time.Time
+	Items   []Drive
+}
+
+// Caller holds accountMu. Cache contains no authorization credentials.
+func (r *Runtime) rememberDrives(a Account, items []Drive) {
+	if r.recentDrives == nil {
+		r.recentDrives = make(map[string]cachedDrives)
+	}
+	now := time.Now()
+	for id, entry := range r.recentDrives {
+		if !entry.Expires.After(now) {
+			delete(r.recentDrives, id)
+		}
+	}
+	if len(r.recentDrives) >= 128 {
+		for id := range r.recentDrives {
+			delete(r.recentDrives, id)
+			break
+		}
+	}
+	r.recentDrives[a.ID] = cachedDrives{a.Version, now.Add(driveListTTL), items}
+}
+
+func (r *Runtime) verificationDrives(ctx context.Context, a Account) ([]Drive, error) {
+	if entry, ok := r.recentDrives[a.ID]; ok && entry.Version == a.Version && entry.Expires.After(time.Now()) {
+		return entry.Items, nil
+	}
+	delete(r.recentDrives, a.ID)
+	return r.listDrives(ctx, a.ID)
+}
+
 func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
-	r.accountMu.Lock()
-	defer r.accountMu.Unlock()
 	var a Account
 	if r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &a) != nil {
 		fail(w, 404, "account_not_found", "账号不存在")
@@ -301,30 +338,60 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "invalid_backend", "本地联调账号没有 Drive 列表")
 		return
 	}
+	// Refresh once before starting concurrent reads, so optional profile lookup
+	// cannot exhaust its short deadline while waiting for token renewal.
+	if _, e := r.accessToken(req.Context(), a.ID); e != nil {
+		cloudFailure(w, e)
+		return
+	}
+	profileCtx, cancel := context.WithTimeout(req.Context(), profileTimeout)
+	defer cancel()
+	profileResult := make(chan []byte, 1)
+	if a.AccountEmail == "" {
+		go func() {
+			b, _ := r.graph(profileCtx, a.ID, "GET", "/me?$select=displayName,mail,userPrincipalName", nil, "")
+			profileResult <- b
+		}()
+	} else {
+		profileResult <- nil
+	}
 	items, e := r.listDrives(req.Context(), a.ID)
 	if e != nil {
 		cloudFailure(w, e)
 		return
 	}
+	var profileBytes []byte
+	select {
+	case profileBytes = <-profileResult:
+	case <-profileCtx.Done():
+	}
+	// Remote reads do not hold the global account lock. Reject results if the
+	// account was edited, deleted or reauthorized while those reads were running.
+	r.accountMu.Lock()
+	defer r.accountMu.Unlock()
+	var current Account
+	if r.Store.Get(req.Context(), "accounts", a.ID, &current) != nil || current.Version != a.Version {
+		fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
+		return
+	}
 	// Profile is optional: older authorizations may lack User.Read.
-	if b, err := r.graph(req.Context(), a.ID, "GET", "/me?$select=displayName,mail,userPrincipalName", nil, ""); err == nil {
-		var profile struct{ DisplayName, Mail, UserPrincipalName string }
-		if json.Unmarshal(b, &profile) == nil {
-			email := profile.Mail
-			if email == "" && strings.Contains(profile.UserPrincipalName, "@") && !strings.Contains(profile.UserPrincipalName, "#EXT#") {
-				email = profile.UserPrincipalName
+	var profile struct{ DisplayName, Mail, UserPrincipalName string }
+	if len(profileBytes) > 0 && json.Unmarshal(profileBytes, &profile) == nil {
+		email := profile.Mail
+		if email == "" && strings.Contains(profile.UserPrincipalName, "@") && !strings.Contains(profile.UserPrincipalName, "#EXT#") {
+			email = profile.UserPrincipalName
+		}
+		if (email != "" || profile.DisplayName != "") && (a.AccountEmail != email || a.AccountDisplayName != profile.DisplayName) {
+			a.AccountEmail, a.AccountDisplayName = email, profile.DisplayName
+			version, err := r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
+			if err != nil {
+				fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
+				return
 			}
-			if (email != "" || profile.DisplayName != "") && (a.AccountEmail != email || a.AccountDisplayName != profile.DisplayName) {
-				a.AccountEmail, a.AccountDisplayName = email, profile.DisplayName
-				version, err := r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
-				if err != nil {
-					fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
-					return
-				}
-				a.Version = version
-			}
+			a.Version = version
 		}
 	}
+	r.rememberDrives(a, items)
 	writeJSON(w, 200, map[string]any{"items": items, "total": len(items), "account": a})
 }
 func (r *Runtime) ensureCloudFolder(ctx context.Context, a Account, parent, name string) (string, error) {
@@ -415,6 +482,24 @@ func (r *Runtime) verifyCloud(ctx context.Context, a *Account) error {
 	return nil
 }
 func (r *Runtime) cloudQuota(ctx context.Context, a *Account) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	projectPath := "/root:/VaultPilot"
+	if r.VaultID() != "" {
+		projectPath += "/" + r.VaultID()
+	}
+	type projectResponse struct {
+		body []byte
+		err  error
+	}
+	projectResult := make(chan projectResponse, 1)
+	accountID, drivePath := a.ID, "/drives/"+url.PathEscape(a.DriveID)
+	// Drive quota and project occupancy are independent reads. Keep all Account
+	// mutation in this goroutine after both responses have passed validation.
+	go func() {
+		b, e := r.graph(ctx, accountID, "GET", drivePath+projectPath, nil, "")
+		projectResult <- projectResponse{b, e}
+	}()
 	b, e := r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID), nil, "")
 	if e != nil {
 		return e
@@ -430,31 +515,32 @@ func (r *Runtime) cloudQuota(ctx context.Context, a *Account) error {
 	if *d.Quota.Total < 0 || *d.Quota.Used < 0 || *d.Quota.Remaining < 0 {
 		return errors.New("OneDrive 配额响应无效")
 	}
-	applyOwner(a, d.Owner)
-	a.TotalBytes = *d.Quota.Total
-	a.UsedBytes = *d.Quota.Used
-	a.FreeBytes = *d.Quota.Remaining
-	projectPath := "/root:/VaultPilot"
-	if r.VaultID() != "" {
-		projectPath += "/" + r.VaultID()
+	var result projectResponse
+	select {
+	case result = <-projectResult:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	b, e = r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+projectPath, nil, "")
-	if e != nil {
+	projectUsed := int64(0)
+	if result.err != nil {
 		var c cloudError
-		if errors.As(e, &c) && c.Status == 404 {
-			a.ProjectUsedBytes = 0
-		} else {
-			return e
+		if !errors.As(result.err, &c) || c.Status != 404 {
+			return result.err
 		}
 	} else {
 		var p struct {
 			Size *int64 `json:"size"`
 		}
-		if json.Unmarshal(b, &p) != nil || p.Size == nil || *p.Size < 0 {
+		if json.Unmarshal(result.body, &p) != nil || p.Size == nil || *p.Size < 0 {
 			return errors.New("无法核对 OneDrive 项目占用")
 		}
-		a.ProjectUsedBytes = *p.Size
+		projectUsed = *p.Size
 	}
+	applyOwner(a, d.Owner)
+	a.TotalBytes = *d.Quota.Total
+	a.UsedBytes = *d.Quota.Used
+	a.FreeBytes = *d.Quota.Remaining
+	a.ProjectUsedBytes = projectUsed
 	a.QuotaAt = time.Now().UTC().Format(time.RFC3339)
 	return nil
 }
@@ -501,7 +587,7 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 			fail(w, 400, "drive_selection_required", "必须显式选择 Drive，不会默认选择列表第一项")
 			return
 		}
-		list, err := r.listDrives(req.Context(), a.ID)
+		list, err := r.verificationDrives(req.Context(), a)
 		if err != nil {
 			cloudFailure(w, err)
 			return

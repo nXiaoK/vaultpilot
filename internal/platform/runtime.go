@@ -57,6 +57,7 @@ type Runtime struct {
 	rcloneMu          sync.Mutex
 	credentialsMu     sync.Mutex
 	accountMu         sync.Mutex
+	recentDrives      map[string]cachedDrives // guarded by accountMu
 	accountTransferMu sync.Mutex
 	rclonePath        string
 	rclonePaths       []string

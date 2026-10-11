@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -44,8 +45,11 @@ func TestCloudReaderAccountVerificationUsesOnlyReads(t *testing.T) {
 				projectPath += "/" + h.r.VaultID()
 			}
 			calls := []string{}
+			var callsMu sync.Mutex
 			h.r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				callsMu.Lock()
 				calls = append(calls, req.Method+" "+req.URL.Path)
+				callsMu.Unlock()
 				if req.Method != "GET" {
 					t.Errorf("recovery account verification wrote to Graph: %s %s", req.Method, req.URL.Path)
 					return cloudResponse(405, ""), nil

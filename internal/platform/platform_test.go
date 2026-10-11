@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -319,10 +320,10 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 	if u.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(hash[:]) || u.Query().Get("code_challenge_method") != "S256" {
 		t.Fatal("missing PKCE")
 	}
-	calls := 0
+	var calls atomic.Int64
 	var uploaded []byte
 	h.r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		calls++
+		calls.Add(1)
 		if req.URL.Host == "login.microsoftonline.com" {
 			req.ParseForm()
 			if req.Form.Get("grant_type") == "authorization_code" && req.Form.Get("code_verifier") != flow.Verifier {
@@ -359,7 +360,7 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 		}
 	})}
 	res = h.call("GET", "/api/oauth/callback?state=wrong&code=code", nil, false)
-	if calls != 0 || !strings.Contains(res.Header().Get("Location"), "state_invalid") {
+	if calls.Load() != 0 || !strings.Contains(res.Header().Get("Location"), "state_invalid") {
 		t.Fatal("invalid state exchanged token")
 	}
 	res = h.call("GET", "/api/oauth/callback?state="+state+"&code=code", nil, false)

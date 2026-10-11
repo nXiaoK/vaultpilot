@@ -41,6 +41,8 @@ Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常�
 
 仅当希望使用自己的应用时配置 `VP_OAUTH_CLIENT_ID`、`VP_OAUTH_CLIENT_SECRET`。在 Microsoft Entra 应用注册中选择适合个人账号的账户类型，添加 Web 回调：`<VP_PUBLIC_URL>/api/oauth/callback`，填写 Client ID 和适用的 Client Secret。应用使用授权码、state、PKCE 和离线权限。公开 URL、注册回调与实际访问地址必须一致；开发环境可使用微软允许的 localhost 回调。
 
+读取 Drive 会并行查询列表与账号身份；可选的身份查询最多等待 3 秒，已取得邮箱时跳过。验证会复用 1 分钟内且账号版本未变化的列表，同时并行查询配额和项目占用，网页直接使用返回的账号资料更新列表。读写探测仍会实际执行；恢复节点只读验证。重新授权、修改配置、超过 1 分钟或服务重启后会重新读取 Drive 列表。微软响应延迟、限流及过期 Token 的 Rclone 刷新仍可能造成等待。
+
 网页授权结束后必须手动选择 Drive。授权成功不代表该 Drive 通过备份访问验证；例如 `ODCMetadataArchive` 不能被自动当成业务存储。企业版及 SharePoint 未经真实验收不承诺支持。
 
 ## 多节点恢复（相同备份密码）
