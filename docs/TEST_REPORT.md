@@ -101,3 +101,11 @@ VP_TEST_RCLONE=/path/to/rclone go test -race ./internal/platform -run TestRealRc
 - 临时 QA 服务曾因工具等待超过服务生命周期而中断，重新启动后导入全流程完成；这不是功能回归失败。QA 服务、临时测试代码及虚拟凭据文件在完成后清理。
 
 界面截图：[步骤连线](screenshots/account-stepper.png)、[B 账号导入完成](screenshots/account-import.png)。真实 Microsoft 账号跨机器与长期 Token 刷新仍需部署后演练。
+
+## 2026-10-11 全局加载反馈
+
+为前台 API 请求增加统一的加载状态，页面、登录和弹窗显示旋转图标、具体操作提示与处理中说明。读取 Drive 按钮共享父层忙碌状态，显示“正在读取 Drive…”并禁用，授权方式切换和其他授权入口也暂时禁用。手动刷新、分页、搜索、日志、配置保存、账号导入/导出、预检查和任务提交统一反馈。网络指标及后台账号/任务/授权/云端状态轮询使用 silent 标志，不显示全局提示。
+
+`npm test` 12 项通过（新增 7 项），覆盖并发请求分别完成、响应 JSON 解码期间保持加载、静默请求、网络/HTTP/JSON/取消失败后清除状态并可重试、订阅解除及提示不包含路径/Token。Vue/TypeScript/Vite 生产构建通过。
+
+浏览器在本机模拟服务器对 Drive 请求人为延迟 20 秒：首次返回 502，核对提示和禁用状态、错误后按钮恢复；第二次重试返回成功，核对进入 Drive 选择与加载提示消失，服务记录仅两个 Drive 请求。此验证未调用真实微软账号。截图：[读取 Drive 加载状态](screenshots/loading-drive.png)。临时服务和脚本已清理。

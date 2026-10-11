@@ -22,20 +22,52 @@ function taskKey(): string {
   // Task deduplication only; this fallback must not be used for secrets or tokens.
   return `task-${Date.now().toString(36)}-${(++taskSequence).toString(36)}-${Math.random().toString(36).slice(2)}`
 }
-export async function api<T = any>(path: string, options: { method?: string; body?: unknown; task?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+export type RequestActivity = { id: number; label: string }
+const activeRequests = new Map<number, RequestActivity>()
+const activityListeners = new Set<(items: RequestActivity[]) => void>()
+let requestSequence = 0
+function publishActivity() { for (const listener of activityListeners) listener([...activeRequests.values()]) }
+export function subscribeActivity(listener: (items: RequestActivity[]) => void) {
+  activityListeners.add(listener); listener([...activeRequests.values()])
+  return () => { activityListeners.delete(listener) }
+}
+function requestLabel(path: string, method: string) {
+  if (/\/accounts\/[^/]+\/drives(?:\?|$)/.test(path)) return '正在读取 OneDrive 账号身份与 Drive 列表…'
+  if (path.includes('/rclone/authorize')) return '正在启动或更新微软授权…'
+  if (path.includes('/rclone/import') || path.includes('/accounts/import')) return '正在解析或导入账号配置…'
+  if (/\/accounts\/[^/]+\/verify/.test(path)) return '正在验证云端访问，请稍候…'
+  if (path.includes('/quota')) return '正在查询云端容量…'
+  if (path.includes('/files') || path.includes('/browse')) return '正在读取文件目录…'
+  if (path.includes('/content')) return '正在读取文件预览…'
+  if (path.includes('/logs')) return '正在读取任务日志…'
+  if (path.includes('/preview')) return '正在执行预检查，请稍候…'
+  if (path.includes('/export') || path.includes('/recovery-kit')) return '正在加密并导出资料…'
+  if (path.includes('/auth/login') || path.includes('/setup')) return '正在验证并加载工作空间…'
+  if (path.includes('/unlock')) return '正在验证密码并解锁备份库…'
+  if (path.includes('/cloud-vaults')) return '正在查找云端备份库…'
+  if (path.includes('/cloud-connect') && !path.includes('/cloud-connection')) return '正在验证密码并连接云端备份库…'
+  if (path.includes('/cloud-connection')) return method === 'POST' ? '正在加密并发布云端连接资料…' : method === 'PUT' ? '正在保存自动发现设置…' : '正在读取云端连接状态…'
+  if (/\/(run|restore|discover|check|migrate|retention)(?:\?|$)/.test(path)) return '正在提交任务，请稍候…'
+  return method === 'GET' ? '正在加载数据…' : '正在处理请求，请稍候…'
+}
+export async function api<T = any>(path: string, options: { method?: string; body?: unknown; task?: boolean; signal?: AbortSignal; silent?: boolean } = {}): Promise<T> {
   const method = options.method ?? 'GET'
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
-  if (method !== 'GET') headers['X-CSRF-Token'] = csrf
-  if (options.task) headers['Idempotency-Key'] = taskKey()
-  let response: Response
-  try { response = await fetch('/api' + path, { method, headers, credentials: 'same-origin', body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: options.signal }) }
-  catch { throw new ApiError('无法连接服务，请检查网络后重试。', 'network_unavailable', true, 0) }
-  if (response.status === 204) return undefined as T
-  let data: any
-  try { data = await response.json() } catch { throw new ApiError('服务响应无法读取，请检查服务日志。', 'invalid_response', true, response.status) }
-  if (!response.ok) throw new ApiError(data.error ?? '操作未完成', data.code ?? 'request_failed', Boolean(data.retryable), response.status)
-  return data
+  const requestID = ++requestSequence
+  if (!options.silent) { activeRequests.set(requestID, {id: requestID, label: requestLabel(path, method)}); publishActivity() }
+  try {
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+    if (method !== 'GET') headers['X-CSRF-Token'] = csrf
+    if (options.task) headers['Idempotency-Key'] = taskKey()
+    let response: Response
+    try { response = await fetch('/api' + path, { method, headers, credentials: 'same-origin', body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: options.signal }) }
+    catch { throw new ApiError('无法连接服务，请检查网络后重试。', 'network_unavailable', true, 0) }
+    if (response.status === 204) return undefined as T
+    let data: any
+    try { data = await response.json() } catch { throw new ApiError('服务响应无法读取，请检查服务日志。', 'invalid_response', true, response.status) }
+    if (!response.ok) throw new ApiError(data.error ?? '操作未完成', data.code ?? 'request_failed', Boolean(data.retryable), response.status)
+    return data
+  } finally { if (activeRequests.delete(requestID)) publishActivity() }
 }
 export function bytes(value: unknown): string {
   if (value === undefined || value === null || !Number.isFinite(Number(value))) return '—'

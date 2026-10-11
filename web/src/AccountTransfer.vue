@@ -18,6 +18,7 @@ const results = ref<{account: Entity; state: string; error: string}[]>([])
 const available = computed(() => props.accounts.filter(a => a.backend === 'onedrive' && a.verified))
 watch(password, () => { if (props.mode === 'import') { preview.value = []; selected.value = [] }; failure.value = '' })
 async function run(fn: () => Promise<void>) {
+  if (working.value) return
   working.value = true; emit('busy', true); failure.value = ''; message.value = ''
   try { await fn() } catch (e) { failure.value = e instanceof Error ? e.message : '操作未完成' }
   finally { working.value = false; emit('busy', false) }

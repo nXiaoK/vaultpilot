@@ -58,7 +58,7 @@ async function refresh() {
   if (refreshing) { refreshAgain = true; return }
   refreshing = true
   try {
-    const result = await request<ConnectionState>('/security/cloud-connection')
+    const result = await request<ConnectionState>('/security/cloud-connection',{silent:state.value!==null})
     if (!stopped) {
       const hadState = state.value !== null
       const previousSuccess = state.value?.last_success

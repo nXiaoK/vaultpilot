@@ -34,7 +34,7 @@ function inspect(event: PointerEvent) {
 }
 async function refresh() {
   request = new AbortController()
-  try { const result = await api<Metrics>('/metrics/network', { signal: request.signal }); if (!stopped) { metrics.value = result; disconnected.value = false; selected.value = null } }
+  try { const result = await api<Metrics>('/metrics/network', { signal: request.signal, silent: true }); if (!stopped) { metrics.value = result; disconnected.value = false; selected.value = null } }
   catch { if (!stopped) disconnected.value = true }
   finally { if (!stopped) timer = setTimeout(refresh, 2000) }
 }
