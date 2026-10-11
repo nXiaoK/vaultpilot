@@ -25,6 +25,7 @@ type RestoreRequest struct {
 	SourceIDs    []string        `json:"source_ids"`
 	Paths        []PathSelection `json:"paths"`
 	Target       string          `json:"target"`
+	Layout       string          `json:"layout"`
 	Overwrite    bool            `json:"overwrite"`
 	AllowPartial bool            `json:"allow_partial"`
 }
@@ -36,13 +37,14 @@ func (r *RestoreRequest) UnmarshalJSON(b []byte) error {
 		SourceIDs    []string        `json:"source_ids"`
 		Paths        json.RawMessage `json:"paths"`
 		Target       string          `json:"target"`
+		Layout       string          `json:"layout"`
 		Overwrite    bool            `json:"overwrite"`
 		AllowPartial bool            `json:"allow_partial"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	*r = RestoreRequest{PointID: raw.PointID, SourceIDs: raw.SourceIDs, Target: raw.Target, Overwrite: raw.Overwrite, AllowPartial: raw.AllowPartial}
+	*r = RestoreRequest{PointID: raw.PointID, SourceIDs: raw.SourceIDs, Target: raw.Target, Layout: raw.Layout, Overwrite: raw.Overwrite, AllowPartial: raw.AllowPartial}
 	if len(raw.Paths) == 0 || string(raw.Paths) == "null" {
 		return nil
 	}
@@ -66,19 +68,21 @@ func (r *RestoreRequest) UnmarshalJSON(b []byte) error {
 }
 
 type RestorePreview struct {
-	FileCount        int64           `json:"file_count"`
-	LogicalBytes     int64           `json:"logical_bytes"`
-	ScratchBytes     int64           `json:"scratch_bytes"`
-	RequiredBytes    int64           `json:"required_bytes"`
-	Conflicts        []PathSelection `json:"conflicts"`
-	ConflictCount    int64           `json:"conflict_count"`
-	MissingAccounts  []string        `json:"missing_accounts"`
-	MissingFiles     []PathSelection `json:"missing_files"`
-	MissingFileCount int64           `json:"missing_file_count"`
-	Target           string          `json:"target"`
-	AllowPartial     bool            `json:"allow_partial"`
-	Blocked          bool            `json:"blocked"`
-	Code             string          `json:"code,omitempty"`
+	FileCount        int64               `json:"file_count"`
+	LogicalBytes     int64               `json:"logical_bytes"`
+	ScratchBytes     int64               `json:"scratch_bytes"`
+	RequiredBytes    int64               `json:"required_bytes"`
+	Conflicts        []PathSelection     `json:"conflicts"`
+	ConflictCount    int64               `json:"conflict_count"`
+	MissingAccounts  []string            `json:"missing_accounts"`
+	MissingFiles     []PathSelection     `json:"missing_files"`
+	MissingFileCount int64               `json:"missing_file_count"`
+	Target           string              `json:"target"`
+	Layout           string              `json:"layout"`
+	OutputRoots      []RestoreOutputRoot `json:"output_roots"`
+	AllowPartial     bool                `json:"allow_partial"`
+	Blocked          bool                `json:"blocked"`
+	Code             string              `json:"code,omitempty"`
 }
 
 func safeID(id string) bool {
@@ -238,6 +242,10 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 	if err != nil {
 		return preview, err
 	}
+	preview.Layout, preview.OutputRoots, err = s.resolveRestoreLayout(ctx, req, where, args)
+	if err != nil {
+		return preview, err
+	}
 	var stat syscall.Statfs_t
 	if err = syscall.Statfs(root.Name(), &stat); err != nil {
 		return preview, err
@@ -256,6 +264,10 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 		}
 		offset += len(entries)
 		for _, e := range entries {
+			rel, err := restoreOutputPath(e, preview.Layout)
+			if err != nil {
+				return preview, err
+			}
 			preview.FileCount++
 			preview.LogicalBytes += e.Size
 			if e.Size > maxFile {
@@ -271,12 +283,12 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 				missing[repo.AccountID] = true
 				continue
 			}
-			rel := filepath.Join(e.SourceID, filepath.FromSlash(e.Path)) // Query only; no target writes during preview.
+			// Query only; no target writes during preview.
 			if err = checkRestoreDirectoryWritable(root, filepath.Dir(filepath.Join(targetRel, rel)), checkedDirectories); err != nil {
 				return preview, err
 			}
 			path := filepath.Join(target, rel)
-			_, err := os.Lstat(path)
+			_, err = os.Lstat(path)
 			if err == nil {
 				if e.Kind == "dir" {
 					info, err := os.Lstat(path)
@@ -429,11 +441,11 @@ func setFileTimes(file *os.File, ns int64) error {
 	tv := unix.NsecToTimeval(ns)
 	return unix.Futimes(int(file.Fd()), []unix.Timeval{tv, tv})
 }
-func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) error {
-	if !safeID(e.SourceID) || !safeLogical(e.Path) {
-		return fail("RESTORE_PATH_INVALID", "恢复清单路径无效")
+func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool, layout string) error {
+	target, err := restoreOutputPath(e, layout)
+	if err != nil {
+		return err
 	}
-	target := filepath.Join(e.SourceID, filepath.FromSlash(e.Path))
 	outputPath := filepath.Join(out.Name(), target)
 	if err := assertParents(out, target); err != nil {
 		return restoreTargetError(err, outputPath)
@@ -581,7 +593,7 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 		} else if verificationErrors > 0 {
 			verificationStatus = "failed"
 		}
-		t.Result = map[string]any{"restored": restored, "skipped": skipped, "conflicts": conflicts, "failed": failed, "unattempted": remaining, "verification_errors": verificationCount, "verification_status": verificationStatus, "failure_entries": failures, "failure_entry_count": failureCount, "failure_entries_truncated": failureCount > int64(len(failures)), "target": req.Target, "point_id": req.PointID, "verification": "Restic --verify + file size + link target"}
+		t.Result = map[string]any{"restored": restored, "skipped": skipped, "conflicts": conflicts, "failed": failed, "unattempted": remaining, "verification_errors": verificationCount, "verification_status": verificationStatus, "failure_entries": failures, "failure_entry_count": failureCount, "failure_entries_truncated": failureCount > int64(len(failures)), "target": preview.Target, "layout": preview.Layout, "output_roots": preview.OutputRoots, "point_id": req.PointID, "verification": "Restic --verify + file size + link target"}
 		if resultErr != nil && restored > 0 {
 			t.partialRestore = true
 		}
@@ -674,7 +686,7 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 				return fail("RESTORE_ENGINE_FAILED", "Restic 恢复或校验失败："+err.Error())
 			}
 			for _, e := range entries {
-				if err = s.copyRestored(out, private, e, req.Overwrite); err != nil {
+				if err = s.copyRestored(out, private, e, req.Overwrite, preview.Layout); err != nil {
 					var f *failure
 					code := "RESTORE_WRITE_FAILED"
 					if errors.As(err, &f) {
@@ -712,19 +724,33 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 		unlockAccount()
 	}
 	// Apply directory permissions and timestamps after every descendant is written.
-	rows, err := s.rt.Store.DB.QueryContext(ctx, "SELECT source_id,path,mode,mtime_ns FROM file_entries WHERE "+where+" AND kind=\x27dir\x27 ORDER BY length(path) DESC,path DESC", args...)
+	rows, err := s.rt.Store.DB.QueryContext(ctx, "SELECT source_id,path,mode,mtime_ns,repo_id FROM file_entries WHERE "+where+" AND kind=\x27dir\x27 ORDER BY length(path) DESC,path DESC", args...)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var source, path string
+		var source, path, repoID string
 		var mode uint32
 		var ns int64
-		if err = rows.Scan(&source, &path, &mode, &ns); err != nil {
+		if err = rows.Scan(&source, &path, &mode, &ns, &repoID); err != nil {
 			rows.Close()
 			return err
 		}
-		file, e := out.Open(filepath.Join(source, filepath.FromSlash(path)))
+		repo, exists := repos[repoID]
+		if _, ready := accounts[repo.AccountID]; !exists || !ready {
+			continue // Partial restore must not change existing unavailable-source directories.
+		}
+		// The direct layout shares the user-selected target directory. Preserve
+		// that directory's own permissions/timestamps instead of copying A's root.
+		if preview.Layout == restoreLayoutDirect && path == "" {
+			continue
+		}
+		rel, e := restoreOutputPath(Entry{SourceID: source, Path: path, Kind: "dir"}, preview.Layout)
+		if e != nil {
+			rows.Close()
+			return e
+		}
+		file, e := out.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 		if errors.Is(e, os.ErrNotExist) {
 			continue
 		}
@@ -736,7 +762,13 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 			}
 			return e
 		}
-		e = file.Chmod(os.FileMode(mode).Perm())
+		info, e := file.Stat()
+		if e == nil && !info.IsDir() {
+			e = fail("RESTORE_UNSAFE_PARENT", "恢复目录元数据目标不是普通目录")
+		}
+		if e == nil {
+			e = file.Chmod(os.FileMode(mode).Perm())
+		}
 		if e == nil {
 			e = setFileTimes(file, ns)
 		}

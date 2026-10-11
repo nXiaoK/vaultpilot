@@ -57,7 +57,7 @@ func TestRestoreFailurePreservesExistingFile(t *testing.T) {
 	defer private.Close()
 	s := &Service{}
 	entry := Entry{SourceID: "s", Path: "file", Kind: "file", Size: 1, Mode: 0600, SnapshotPath: "/file"}
-	if err := s.copyRestored(out, private, entry, true); err == nil {
+	if err := s.copyRestored(out, private, entry, true, restoreLayoutBySource); err == nil {
 		t.Fatal("expected size mismatch")
 	}
 	got, _ := os.ReadFile(original)
@@ -65,14 +65,14 @@ func TestRestoreFailurePreservesExistingFile(t *testing.T) {
 		t.Fatal("failed restore modified pre-existing target")
 	}
 	entry.Size = int64(len("wrong-size"))
-	if err := s.copyRestored(out, private, entry, false); err == nil {
+	if err := s.copyRestored(out, private, entry, false, restoreLayoutBySource); err == nil {
 		t.Fatal("expected conflict")
 	}
 	got, _ = os.ReadFile(original)
 	if string(got) != "original" {
 		t.Fatal("non-overwrite restore modified target")
 	}
-	if err := s.copyRestored(out, private, entry, true); err != nil {
+	if err := s.copyRestored(out, private, entry, true, restoreLayoutBySource); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = os.ReadFile(original)
@@ -90,7 +90,7 @@ func TestRestoreLinkParentCannotEscape(t *testing.T) {
 	defer private.Close()
 	s := &Service{}
 	e := Entry{SourceID: "s", Path: "file", Kind: "file", Size: 4, Mode: 0600, SnapshotPath: "/file"}
-	if err := s.copyRestored(out, private, e, true); err == nil {
+	if err := s.copyRestored(out, private, e, true, restoreLayoutBySource); err == nil {
 		t.Fatal("symlink parent accepted")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "file")); !os.IsNotExist(err) {
@@ -148,10 +148,10 @@ func TestTransactionalReservationsPreventOverselling(t *testing.T) {
 }
 func TestRestoreSelectionStringCompatibility(t *testing.T) {
 	var r RestoreRequest
-	if err := json.Unmarshal([]byte(`{"point_id":"p","paths":["s/中文/a.txt"]}`), &r); err != nil {
+	if err := json.Unmarshal([]byte(`{"point_id":"p","layout":"by_source","paths":["s/中文/a.txt"]}`), &r); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Paths) != 1 || r.Paths[0].Path != "中文/a.txt" {
+	if len(r.Paths) != 1 || r.Paths[0].Path != "中文/a.txt" || r.Layout != restoreLayoutBySource {
 		t.Fatalf("unexpected selection %#v", r)
 	}
 }

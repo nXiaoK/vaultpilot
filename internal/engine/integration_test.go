@@ -172,14 +172,14 @@ func TestRealResticMidRunRestoreReportsPartialOutput(t *testing.T) {
 	if final.Status != "partial_failed" || final.Code != "RESTORE_UNSAFE_LINK" {
 		t.Fatalf("partial result lost original failure code: %#v", final)
 	}
-	output, err := os.ReadFile(filepath.Join(target, source.ID, "a-first.txt"))
+	output, err := os.ReadFile(filepath.Join(target, "a-first.txt"))
 	if err != nil || string(output) != "original business data" {
 		t.Fatalf("completed output was not preserved: %q %v", output, err)
 	}
-	if _, err = os.Lstat(filepath.Join(target, source.ID, "b-unsafe-link")); !os.IsNotExist(err) {
+	if _, err = os.Lstat(filepath.Join(target, "b-unsafe-link")); !os.IsNotExist(err) {
 		t.Fatalf("unsafe link was published: %v", err)
 	}
-	if _, err = os.Lstat(filepath.Join(target, source.ID, "z-unattempted.txt")); !os.IsNotExist(err) {
+	if _, err = os.Lstat(filepath.Join(target, "z-unattempted.txt")); !os.IsNotExist(err) {
 		t.Fatalf("later entry was written despite prior failure: %v", err)
 	}
 	stats := final.Result.(map[string]any)

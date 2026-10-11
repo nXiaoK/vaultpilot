@@ -67,7 +67,7 @@ schedule 为5字段 Cron 或固定间隔 `@every 6h`；timezone 为 IANA 名称�
 | GET | /recovery-points | 完整历史恢复点，附完整快照引用和commit_id |
 | GET | /recovery-points/{id}/files | source_id/prefix/search/limit/offset；返回该点独立版本的目录视图 |
 | POST | /recovery-points/{id}/protect | protected, version → 更新保护状态并提交目录 |
-| POST | /restore/preview | point_id, source_ids[], paths[], target, overwrite, allow_partial → 空间、冲突及缺失范围 |
+| POST | /restore/preview | point_id, source_ids[], paths[], target, layout, overwrite, allow_partial → 空间、冲突、缺失范围及实际输出目录 |
 | POST | /restore | 相同请求 → 异步恢复任务 |
 | POST | /maintenance/check | repository_ids[]（省略表示全部仓库）, mode（structure/sample/full）, sample（抽查比例，例如10%） → 检查任务 |
 | POST | /maintenance/retention/preview | plan_id → 全局保留与删除集合及阻塞项 |
@@ -76,7 +76,9 @@ schedule 为5字段 Cron 或固定间隔 `@every 6h`；timezone 为 IANA 名称�
 
 paths 元素为 `{source_id, path}`，路径是该源的相对路径；省略范围恢复整个点。target 必须为授权RestoreRoots之内的绝对路径。默认overwrite=false、allow_partial=false。覆盖和清理需要网页风险确认，API不接受任意引擎命令。
 
-Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份完成不是全量完整性读取检查已通过。`result` 随任务种类变化。恢复开始执行后，恢复报告提供 `restored`、`skipped`、`conflicts`、`failed`、`unattempted`，以及 `target`、`point_id` 和 `verification`；预检查即拒绝的任务可能尚无恢复报告。已复制部分条目后发生错误，任务标记 `partial_failed` 并保留实际错误的稳定 `code`；不会统一改成未知错误或完整成功。
+`layout` 默认为 `auto`，按实际选中范围包含的备份源决定输出：单源直接写入 `target/<原相对路径>`，多源写入 `target/<source_id>/<原相对路径>`，避免同名路径混合。显式 `direct` 仅允许所选范围最多包含一个备份源，多源返回 `RESTORE_LAYOUT_REQUIRES_SINGLE_SOURCE`；显式 `by_source` 保留按备份源 ID 分目录的布局。预检查和恢复任务结果的 `layout` 返回解析后的 `direct` 或 `by_source`，`output_roots` 返回每个源的实际输出目录 `{source_id,path}`。预检查 `conflicts` 的 `path` 仍为源内相对路径，实际冲突位置由该源的 `output_roots.path` 拼接得到；布局不改变历史路径索引。
+
+Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份完成不是全量完整性读取检查已通过。`result` 随任务种类变化。恢复开始执行后，恢复报告提供 `restored`、`skipped`、`conflicts`、`failed`、`unattempted`，以及 `target`、`layout`、`output_roots`、`point_id` 和 `verification`；预检查即拒绝的任务可能尚无恢复报告。已复制部分条目后发生错误，任务标记 `partial_failed` 并保留实际错误的稳定 `code`；不会统一改成未知错误或完整成功。
 
 恢复报告的 `verification_status` 为 `passed`、`not_started`、`partial`、`unknown` 或 `failed`。`verification_errors` 是已识别的校验异常数；Restic 错误无法区分发生在恢复还是校验阶段时返回 `null`，同时标记 `unknown`，不能将其显示为零异常。`failure_entries` 列出 `{source_id,path,code,stage,error?}`；`failure_entry_count` 给出完整异常条目数量，`failure_entries_truncated` 明确列表是否被截断。部分账号不可用时另行报告跳过及缺失范围。
 

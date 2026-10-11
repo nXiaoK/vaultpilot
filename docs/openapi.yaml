@@ -3638,16 +3638,36 @@ components:
         target:
           type: string
           description: RestoreRoots允许范围内的绝对路径
+        layout:
+          type: string
+          enum:
+          - auto
+          - direct
+          - by_source
+          default: auto
+          description: auto按实际所选范围判断：单源直接写入target/原相对路径，多源写入target/source_id/原相对路径。direct仅允许最多一个备份源，否则返回RESTORE_LAYOUT_REQUIRES_SINGLE_SOURCE；by_source保留按源分目录布局。
         overwrite:
           type: boolean
           default: false
         allow_partial:
           type: boolean
           default: false
-      description: 省略source_ids和paths表示整个点；两个范围同时指定时取交集。默认不覆盖已有文件，不允许部分恢复。
+      description: 省略source_ids和paths表示整个点；两个范围同时指定时取交集。默认layout=auto，不覆盖已有文件，不允许部分恢复。
       required:
       - point_id
       - target
+    RestoreOutputRoot:
+      type: object
+      description: 实际选中的备份源及其恢复输出目录；历史路径仍相对于备份源。
+      properties:
+        source_id:
+          type: string
+        path:
+          type: string
+          description: 该源的实际输出绝对目录。direct为target，by_source为target/source_id。
+      required:
+      - source_id
+      - path
     RestoreFailureEntry:
       type: object
       properties:
@@ -3722,6 +3742,16 @@ components:
           description: 异常条目列表是否被截断
         target:
           type: string
+        layout:
+          type: string
+          enum:
+          - direct
+          - by_source
+          description: 已解析的实际输出布局
+        output_roots:
+          type: array
+          items:
+            "$ref": "#/components/schemas/RestoreOutputRoot"
         point_id:
           type: string
         verification:
@@ -3739,6 +3769,8 @@ components:
       - failure_entry_count
       - failure_entries_truncated
       - target
+      - layout
+      - output_roots
       - point_id
       - verification
     RestorePreview:
@@ -3758,6 +3790,7 @@ components:
           minimum: 0
         conflicts:
           type: array
+          description: 冲突path为源内相对路径，实际位置由对应output_roots.path拼接得到。
           items:
             "$ref": "#/components/schemas/PathSelection"
         conflict_count:
@@ -3778,6 +3811,16 @@ components:
           minimum: 0
         target:
           type: string
+        layout:
+          type: string
+          enum:
+          - direct
+          - by_source
+          description: 已解析的实际输出布局
+        output_roots:
+          type: array
+          items:
+            "$ref": "#/components/schemas/RestoreOutputRoot"
         allow_partial:
           type: boolean
         blocked:
@@ -3795,6 +3838,8 @@ components:
       - missing_files
       - missing_file_count
       - target
+      - layout
+      - output_roots
       - allow_partial
       - blocked
     CheckRequest:

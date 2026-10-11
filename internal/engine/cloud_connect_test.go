@@ -221,7 +221,7 @@ func TestRealResticCloudPasswordConnectAndAutomaticDiscovery(t *testing.T) {
 	if task.Status != "completed" {
 		t.Fatalf("restore failed: %+v", task)
 	}
-	content, err := os.ReadFile(filepath.Join(target, "from-a", "test-source", "file.txt"))
+	content, err := os.ReadFile(filepath.Join(target, "from-a", "file.txt"))
 	if err != nil || string(content) != "new content from node A" {
 		t.Fatalf("restored content: %q %v", content, err)
 	}

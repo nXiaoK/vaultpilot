@@ -74,7 +74,7 @@ func TestRestorePreflightChecksExistingAndMissingTargetPermissions(t *testing.T)
 				locked = filepath.Join(req.Target, "locked-parent")
 				req.Target = filepath.Join(locked, "new", "target")
 			case "source-parent":
-				locked = filepath.Join(req.Target, "s", "nested")
+				locked = filepath.Join(req.Target, "nested")
 			}
 			if err := os.MkdirAll(locked, 0700); err != nil {
 				t.Fatal(err)
@@ -144,8 +144,8 @@ func TestRestoreWritePermissionChangePreservesSpecificError(t *testing.T) {
 	}
 	defer os.Chmod(req.Target, 0700)
 	e := Entry{SourceID: "s", Path: "nested/file.txt", Kind: "file", Size: 4, SnapshotPath: "/file.txt"}
-	requireRestorePermissionError(t, s.copyRestored(out, private, e, false))
-	if _, err := os.Lstat(filepath.Join(req.Target, "s")); !errors.Is(err, os.ErrNotExist) {
+	requireRestorePermissionError(t, s.copyRestored(out, private, e, false, restoreLayoutDirect))
+	if _, err := os.Lstat(filepath.Join(req.Target, "nested")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unexpected partial output: %v", err)
 	}
 }
