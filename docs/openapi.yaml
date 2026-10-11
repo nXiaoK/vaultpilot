@@ -364,6 +364,102 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/AccountCreate"
+  "/accounts/export":
+    post:
+      summary: 导出密码加密的已验证 OneDrive 账号包
+      operationId: export_accounts
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      description: 密码 12–1024 字节，请求最多 2 MiB，密码尝试限速。导入账号仍需调用 verify 重新验证原 Drive。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountExportRequest"
+      responses:
+        '200':
+          description: 导出密码加密的已验证 OneDrive 账号包
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountPackage"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+  "/accounts/import/preview":
+    post:
+      summary: 解密账号包并返回不含凭据的预览
+      operationId: preview_account_import
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      description: 密码 12–1024 字节，请求最多 2 MiB，密码尝试限速。导入账号仍需调用 verify 重新验证原 Drive。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountImportRequest"
+      responses:
+        '200':
+          description: 解密账号包并返回不含凭据的预览
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountImportPreview"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
+  "/accounts/import":
+    post:
+      summary: 原子导入所选账号和本地加密凭据，跳过重复 Drive
+      operationId: import_accounts
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      description: 密码 12–1024 字节，请求最多 2 MiB，密码尝试限速。导入账号仍需调用 verify 重新验证原 Drive。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountImportRequest"
+      responses:
+        '201':
+          description: 原子导入所选账号和本地加密凭据，跳过重复 Drive
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountImportResult"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+        '500':
+          "$ref": "#/components/responses/APIError"
   "/accounts/{id}":
     put:
       summary: 修改账号名称、启用状态与预算
@@ -2584,6 +2680,86 @@ components:
       - name
       - version
       - budget_bytes
+    AccountPackage:
+      type: object
+      description: 仅含密码加密负载，无明文账号或凭据；不包含备份主密钥。
+      required: [format, version, kdf, salt, time, memory_kib, parallelism, ciphertext]
+      properties:
+        format: {type: string, const: vaultpilot-accounts}
+        version: {type: integer, const: 1}
+        kdf: {type: string, const: argon2id}
+        salt: {type: string, contentEncoding: base64}
+        time: {type: integer, const: 3}
+        memory_kib: {type: integer, const: 65536}
+        parallelism: {type: integer, const: 2}
+        ciphertext: {type: string, contentEncoding: base64}
+    AccountExportRequest:
+      type: object
+      required: [password, account_ids]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true}
+        account_ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: {type: string}
+    AccountImportRequest:
+      type: object
+      required: [password, package]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true}
+        package:
+          "$ref": "#/components/schemas/AccountPackage"
+        drive_ids:
+          description: import 必填，preview 忽略。必须显式选择包内 Drive。
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: {type: string}
+    AccountImportPreview:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [account, duplicate]
+            properties:
+              account:
+                "$ref": "#/components/schemas/PortableAccount"
+              duplicate: {type: boolean}
+        total: {type: integer}
+    PortableAccount:
+      type: object
+      description: 仅含名称、身份、Drive 和预算，不含本地 ID、配额、验证状态或凭据。
+      properties:
+        name: {type: string}
+        backend: {type: string, const: onedrive}
+        drive_id: {type: string}
+        drive_name: {type: string}
+        drive_type: {type: string, const: personal}
+        account_email: {type: string}
+        account_display_name: {type: string}
+        enabled: {type: boolean}
+        budget_bytes: {type: integer}
+        cloud_reserve_bytes: {type: integer}
+        maintenance_reserve_bytes: {type: integer}
+    AccountImportResult:
+      type: object
+      required: [items, skipped, total]
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Account"
+        skipped:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PortableAccount"
+        total: {type: integer}
     Account:
       type: object
       properties:
@@ -2597,6 +2773,13 @@ components:
           readOnly: true
         name:
           type: string
+        account_email:
+          type: string
+          readOnly: true
+          description: 微软返回的邮箱；未提供时为空
+        account_display_name:
+          type: string
+          readOnly: true
         backend:
           type: string
           enum:
@@ -2730,6 +2913,8 @@ components:
     DrivePage:
       type: object
       properties:
+        account:
+          "$ref": "#/components/schemas/Account"
         items:
           type: array
           items:

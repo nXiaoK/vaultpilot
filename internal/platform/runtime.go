@@ -43,27 +43,28 @@ type oauthState struct {
 	Version                        int
 }
 type Runtime struct {
-	Config        Config
-	Store         *store.Store
-	Keys          *Keyring
-	mu            sync.Mutex
-	setupMu       sync.Mutex
-	sessions      map[string]session
-	attempts      map[string]loginAttempt
-	oauth         map[string]oauthState
-	client        *http.Client
-	nodeKey       []byte
-	vaultID, mode string
-	rcloneMu      sync.Mutex
-	credentialsMu sync.Mutex
-	accountMu     sync.Mutex
-	rclonePath    string
-	rclonePaths   []string
-	rcloneAuthMu  sync.Mutex
-	rcloneAuth    map[string]*rcloneAuthFlow
-	rcloneAuthWG  sync.WaitGroup
-	closing       bool
-	network       *networkMonitor
+	Config            Config
+	Store             *store.Store
+	Keys              *Keyring
+	mu                sync.Mutex
+	setupMu           sync.Mutex
+	sessions          map[string]session
+	attempts          map[string]loginAttempt
+	oauth             map[string]oauthState
+	client            *http.Client
+	nodeKey           []byte
+	vaultID, mode     string
+	rcloneMu          sync.Mutex
+	credentialsMu     sync.Mutex
+	accountMu         sync.Mutex
+	accountTransferMu sync.Mutex
+	rclonePath        string
+	rclonePaths       []string
+	rcloneAuthMu      sync.Mutex
+	rcloneAuth        map[string]*rcloneAuthFlow
+	rcloneAuthWG      sync.WaitGroup
+	closing           bool
+	network           *networkMonitor
 }
 
 func New(c Config) (*Runtime, error) {
@@ -320,6 +321,9 @@ func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("POST /api/security/recovery-kit", r.exportKit)
 	m.HandleFunc("GET /api/accounts", r.listAccounts)
 	m.HandleFunc("POST /api/accounts", r.createAccount)
+	m.HandleFunc("POST /api/accounts/export", r.exportAccounts)
+	m.HandleFunc("POST /api/accounts/import/preview", r.previewAccounts)
+	m.HandleFunc("POST /api/accounts/import", r.importAccounts)
 	m.HandleFunc("PUT /api/accounts/{id}", r.updateAccount)
 	m.HandleFunc("PATCH /api/accounts/{id}", r.updateAccount)
 	m.HandleFunc("DELETE /api/accounts/{id}", r.deleteAccount)

@@ -27,3 +27,11 @@
 
 .cloud-setup-options { grid-template-columns: repeat(3,minmax(0,1fr)); }
 @media (max-width:600px) { .cloud-setup-options { grid-template-columns: 1fr; } }
+
+.account-transfer-actions { justify-content: flex-end; margin-bottom: 16px; }
+.account-transfer .alert, .account-transfer .small-note { margin-bottom: 20px; }
+.transfer-results { margin-top: 24px; }
+.transfer-result { display: flex; gap: 12px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.transfer-result > div { flex: 1; min-width: 180px; overflow-wrap: anywhere; }
+.transfer-result p { margin: 6px 0; color: var(--muted); }
+.account-card-head > div, .capacity-row > div { min-width: 0; overflow-wrap: anywhere; }

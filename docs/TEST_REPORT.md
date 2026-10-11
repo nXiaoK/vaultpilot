@@ -90,3 +90,14 @@ python3 scripts/smoke_docker.py
 ```sh
 VP_TEST_RCLONE=/path/to/rclone go test -race ./internal/platform -run TestRealRclone -v
 ```
+
+## 2026-10-11 账号身份与加密迁移
+
+- 授权步骤连接线构建通过；浏览器检查桌面和 390px 窄屏下步骤布局，Drive 同 ID 别名合并，微软邮箱显示。
+- `go test -race ./...` 全部通过（包含真实本地 Restic/Rclone 引擎回归）；`npm test` 5 项通过，Vue/TypeScript/Vite 生产构建通过，OpenAPI YAML 解析通过。
+- 新增账号身份测试覆盖客户端伪造邮箱拒绝、可选 /me 权限失败、身份更新版本、重新授权清空旧身份。
+- 加密迁移测试覆盖 A/B 独立节点密钥、Rclone 和 custom 原应用参数保留、无明文凭据泄露、待验证状态、未知选择原子拒绝、重复导入跳过、恢复节点只读验证、错误密码/篡改/恶意 KDF/租户及配置行注入拒绝、恢复包域隔离。
+- 浏览器用自建虚拟账号走通导出选择/密码不一致提示/导出完成提示，以及加密文件上传 → 预览 → B 两账号导入并自动验证完成；云端由模拟 Microsoft Graph 响应提供，未使用真实个人 OneDrive Token。浏览器下载事件的文件落地未由工具确认，导出 API 的完整加密响应由集成测试确认。
+- 临时 QA 服务曾因工具等待超过服务生命周期而中断，重新启动后导入全流程完成；这不是功能回归失败。QA 服务、临时测试代码及虚拟凭据文件在完成后清理。
+
+界面截图：[步骤连线](screenshots/account-stepper.png)、[B 账号导入完成](screenshots/account-import.png)。真实 Microsoft 账号跨机器与长期 Token 刷新仍需部署后演练。
