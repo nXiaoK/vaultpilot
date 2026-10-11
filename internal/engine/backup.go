@@ -723,9 +723,10 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 		offset += len(entries)
 		for _, e := range entries {
 			path := filepath.FromSlash(e.SnapshotPath)
-			if err = os.Chmod(path, os.FileMode(e.Mode).Perm()); err != nil {
-				return "", err
-			}
+			// Keep the private staging tree at 0700. Source permissions can rely
+			// on a different owner/group or ACL; copying them here can prevent
+			// traversal, Restic reads and cleanup. The encrypted manifest retains
+			// the original mode for restore's final directory metadata pass.
 			at := time.Unix(0, e.MtimeNS)
 			if err = os.Chtimes(path, at, at); err != nil {
 				return "", err
