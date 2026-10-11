@@ -129,6 +129,9 @@ func New(c Config) (*Runtime, error) {
 			return nil, e
 		}
 	}
+	if e = cleanupStaleManifestDirs(c.CacheDir); e != nil {
+		return nil, e
+	}
 	s, e := store.Open(filepath.Join(c.StateDir, "vaultpilot.db"))
 	if e != nil {
 		return nil, e

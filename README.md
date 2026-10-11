@@ -29,6 +29,16 @@ docker compose up -d
 
 自定义 `VP_RESTORE_HOST` 后，需要为那个真实宿主机目录设置 `VP_UID`/`VP_GID` 的写入权限，上面的示例目录授权不会自动应用到它。出现 `mkdirat …: permission denied` 时，查看 [恢复目录权限排查](docs/RECOVERY.md#恢复目录权限错误)。
 
+如果旧版备份失败后出现 `无法核对引擎缓存占用：open /app/cache/manifest-dirs-…：permission denied`，更新并重建容器。新版在启动任务前修复并清理遗留的 `manifest-dirs-<数字>` 目录；这些目录只用于临时目录占位，恢复资料保存在云端和状态数据库中。正常运行中的缓存检查不会删除正在使用的目录，也不会清理 Restic 缓存或同步凭据。
+
+如果遗留目录属于其他 UID，应用无法自行修复，先停止服务，再由宿主机管理员仅删除日志指定的临时目录。例如日志为 `manifest-dirs-3841998261`，使用默认 Compose 挂载时，在项目目录执行：
+
+```sh
+docker compose stop vaultpilot
+sudo rm -rf -- ./cache/manifest-dirs-3841998261
+docker compose up -d vaultpilot
+```
+
 ## OneDrive 授权（无需 Azure）
 
 在「存储账号 → 添加账号」创建名称，默认选择「Rclone 标准授权」，打开微软页面，用 Microsoft 365 Family 的个人账号登录并同意权限。成功后选择实际 Drive 并完成读写验证。
