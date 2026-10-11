@@ -300,15 +300,21 @@ func (r *Runtime) verifyLocal(ctx context.Context, a *Account) error {
 			return errors.New("本地仓库目录与现有账号重叠")
 		}
 	}
-	test := filepath.Join(path, ".vaultpilot-verify-"+newID())
-	content := randomBytes(32)
-	if e = os.WriteFile(test, content, 0600); e != nil {
-		return errors.New("本地目录无法写入")
-	}
-	defer os.Remove(test)
-	read, e := os.ReadFile(test)
-	if e != nil || string(read) != string(content) {
-		return errors.New("本地目录读回验证失败")
+	if r.RecoveryMode() {
+		if _, e = os.ReadDir(filepath.Join(path, "VaultPilot")); e != nil {
+			return errors.New("本地目录无法读取已有备份")
+		}
+	} else {
+		test := filepath.Join(path, ".vaultpilot-verify-"+newID())
+		content := randomBytes(32)
+		if e = os.WriteFile(test, content, 0600); e != nil {
+			return errors.New("本地目录无法写入")
+		}
+		defer os.Remove(test)
+		read, e := os.ReadFile(test)
+		if e != nil || string(read) != string(content) {
+			return errors.New("本地目录读回验证失败")
+		}
 	}
 	a.LocalPath = path
 	a.DriveID = "local:" + path

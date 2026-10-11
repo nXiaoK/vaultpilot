@@ -8,8 +8,8 @@
 
 | Method | Path | 请求/响应 |
 |---|---|---|
-| GET | /status | initialized, authenticated, csrf_token（已登录）, unlocked, vault_id, mode, engines, oauth_configured, source_roots, restore_roots, allow_local；已登录另返回 cache_max_bytes, log_max_rows, maintenance_window, maintenance_timezone |
-| POST | /setup | username, password, recovery_password, mode=create/recovery；recovery 模式加 recovery_kit 对象或完整JSON字符串 |
+| GET | /status | initialized, authenticated, csrf_token（已登录）, unlocked, vault_id, mode, cloud_pending, engines, oauth_configured, source_roots, restore_roots, allow_local；已登录另返回 cache_max_bytes, log_max_rows, maintenance_window, maintenance_timezone |
+| POST | /setup | username, password, mode=create/recovery/cloud；create/recovery 要求 recovery_password，recovery 另加 recovery_kit 对象或完整JSON字符串；cloud 仅建立本地管理员 |
 | POST | /auth/login | username, password → csrf_token, unlocked |
 | POST | /auth/logout | 结束当前会话 |
 | POST | /security/unlock | password（当前库恢复密码） |
@@ -98,3 +98,19 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 标准授权状态：starting → waiting → exchanging（粘贴回调时）→ completed / failed；取消经 cancelling → cancelled。有效期 10 分钟，同一实例仅一个活动授权。重启使未完成会话失效，临时配置在完成、取消和重启时删除。已保存凭据跨重启保留。
 
 导入和授权不会把 `drive_id` 参考信息直接登记为已验证身份，仍需调用 `/drives` 与 `/verify`。已有账号必须选原 Drive；其他 Drive 应创建新账号。重新授权同时原子保存账号状态与凭据；冲突时不覆盖已有凭据。旧引擎配置仅能同步同一授权版本的刷新结果。
+
+## 多节点密码连接
+
+`/api/security/cloud-*` 接口要求登录；写接口还要求 CSRF。`/api/setup` 为首次初始化公开接口，`/api/status` 可公开读取基本状态。密码不写入任务记录，密码验证沿用每 IP 尝试限速。
+
+| 接口 | 请求/返回 |
+|---|---|
+| `POST /api/setup` | 新增 `mode: "cloud"`：仅需 `username`、本地管理员 `password`，不要求恢复包或备份密码；初始化待连接恢复节点。 |
+| `GET /api/status` | 新增 `cloud_pending`；待连接节点 `initialized=true`、`mode=cloud`、`vault_id=""`、`unlocked=false`，允许授权账号。 |
+| `GET /api/security/cloud-connection` | 返回 `pending`、`recovery`、`enabled`（写入入口已发布）、`auto_discover`、`interval_seconds=60`、`last_checked`、`last_success`、`last_error`。不返回加密资料本体。 |
+| `POST /api/security/cloud-connection` | 写入节点以 `{password}` 验证原备份密码并发布连接入口，读回校验；返回 `verified_accounts` 和 `failed_accounts`（账号 ID 数组），至少一份成功才返回成功。 |
+| `GET /api/security/cloud-vaults` | 待连接节点扫描已授权/验证账号，返回 `items:[{vault_id,account_ids}]` 和 `failed_accounts`，不解密。最多检查100个候选目录。 |
+| `POST /api/security/cloud-connect` | 待连接节点提交 `{vault_id,password}`，严格认证加密身份后接入 recovery 模式并启用自动发现，返回 `connected`、`vault_id`、初次发现 `task`；任务未能入队时仍返回已连接及 `discovery_error`。 |
+| `PUT /api/security/cloud-connection` | 已接入恢复节点以 `{enabled:true/false}` 控制自动发现。 |
+
+恢复节点保持禁止备份、清理、迁移和保护状态写入。已有恢复包接入节点也可开启自动发现。发现任务结果新增 `unchanged`，表明认证提交、账号映射和保护状态都未变化。

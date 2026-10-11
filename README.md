@@ -43,6 +43,10 @@ Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常�
 
 网页授权结束后必须手动选择 Drive。授权成功不代表该 Drive 通过备份访问验证；例如 `ODCMetadataArchive` 不能被自动当成业务存储。企业版及 SharePoint 未经真实验收不承诺支持。
 
+## 多节点恢复（相同备份密码）
+
+A 在「安全与维护 → 多节点密码连接」用原备份密码发布加密连接入口。B/C 首次启动选择「从云端连接」，设置独立管理员、授权原 OneDrive 账号，再选择 A 的备份库并输入相同备份密码，无需导出/导入恢复包。恢复节点默认每分钟发现新恢复点，文件恢复仍由用户选择执行。支持一个备份写入节点和多个恢复节点，详细操作见 [多节点指南](docs/MULTI_NODE.md)。
+
 ## 开发与本地验证
 
 需要 Go 1.26、Node 20.20+、Restic 和 Rclone。可以把引擎安装到 PATH，或通过环境变量指定绝对路径。
@@ -78,6 +82,6 @@ python3 scripts/e2e_local.py --extended --restic /path/to/restic --rclone /path/
 ## 文档
 
 - [架构决策](docs/ARCHITECTURE.md)、[任务状态机](docs/STATE_MACHINE.md)、[恢复协议](docs/RECOVERY_PROTOCOL.md)
-- [部署与配置](docs/CONFIGURATION.md)、[恢复手册](docs/RECOVERY.md)、[安全边界](docs/SECURITY.md)
+- [部署与配置](docs/CONFIGURATION.md)、[恢复手册](docs/RECOVERY.md)、[多节点指南](docs/MULTI_NODE.md)、[安全边界](docs/SECURITY.md)
 - [API](docs/API.md)、[OpenAPI](docs/openapi.yaml)、[数据库迁移](docs/MIGRATIONS.md)
 - [验收计划](docs/ACCEPTANCE.md)、[测试报告](docs/TEST_REPORT.md)、[已知限制](docs/LIMITATIONS.md)

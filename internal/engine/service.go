@@ -80,6 +80,23 @@ func (s *Service) Start(ctx context.Context) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		s.pollCloud()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.ctx.Done():
+				return
+			case <-ticker.C:
+				s.pollCloud()
+			}
+		}
+	}()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
 		for {
 			select {
 			case <-ctx.Done():
@@ -153,6 +170,11 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 		err := s.rt.Store.Get(s.ctx, "backup_runs", s.active[plan], &t)
 		return t, err
 	}
+	if kind == "discover" && s.active["discover"] != "" {
+		var task Task
+		err := s.rt.Store.Get(s.ctx, "backup_runs", s.active["discover"], &task)
+		return task, err
+	}
 	b, err := json.Marshal(request)
 	if err != nil {
 		return Task{}, err
@@ -170,6 +192,9 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 	if kind == "backup" {
 		s.active[plan] = t.ID
 	}
+	if kind == "discover" {
+		s.active["discover"] = t.ID
+	}
 	select {
 	case s.queue <- t.ID:
 	default:
@@ -178,6 +203,9 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 		t.Error = "任务队列已满"
 		s.save(&t)
 		delete(s.active, plan)
+		if kind == "discover" {
+			delete(s.active, "discover")
+		}
 		return Task{}, fail(t.Code, t.Error)
 	}
 	return t, nil
@@ -202,6 +230,9 @@ func (s *Service) execute(id string) {
 		s.mu.Lock()
 		delete(s.cancels, id)
 		delete(s.cancelled, id)
+		if t.Kind == "discover" {
+			delete(s.active, "discover")
+		}
 		pending := false
 		if t.Kind == "backup" {
 			delete(s.active, t.PlanID)
@@ -233,6 +264,8 @@ func (s *Service) execute(id string) {
 		}
 	}
 	if err != nil {
+	} else if s.rt.CloudPending() {
+		err = fail("CLOUD_CONNECTION_REQUIRED", "请先授权账号并使用原备份密码连接云端备份库")
 	} else if !s.rt.Keys.Unlocked() {
 		err = fail("VAULT_LOCKED", "请先解锁备份库")
 	} else if s.rt.RecoveryMode() && (t.Kind == "backup" || t.Kind == "retention" || t.Kind == "migrate") {
@@ -304,6 +337,21 @@ func (s *Service) execute(id string) {
 	}
 	t.FinishedAt = now()
 	s.save(&t)
+	if t.Kind == "discover" && s.rt.RecoveryMode() {
+		_ = s.rt.Store.SetMeta(context.Background(), "cloud_last_checked", now())
+		if err == nil {
+			_ = s.rt.Store.SetMeta(context.Background(), "cloud_last_success", now())
+			_ = s.rt.Store.SetMeta(context.Background(), "cloud_last_error", "")
+			var request struct {
+				Signature string `json:"cloud_signature"`
+			}
+			if json.Unmarshal(t.Request, &request) == nil && request.Signature != "" {
+				_ = s.rt.Store.SetMeta(context.Background(), "cloud_auto_signature", request.Signature)
+			}
+		} else {
+			_ = s.rt.Store.SetMeta(context.Background(), "cloud_last_error", t.Error)
+		}
+	}
 }
 func (s *Service) lock(key string) func() {
 	v, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
@@ -448,6 +496,11 @@ func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/restore/preview", s.restorePreviewHTTP)
 	mux.HandleFunc("POST /api/restore", s.submit("restore"))
 	mux.HandleFunc("POST /api/security/discover", s.submit("discover"))
+	mux.HandleFunc("GET /api/security/cloud-connection", s.cloudState)
+	mux.HandleFunc("POST /api/security/cloud-connection", s.cloudPublish)
+	mux.HandleFunc("PUT /api/security/cloud-connection", s.cloudAutoSave)
+	mux.HandleFunc("GET /api/security/cloud-vaults", s.cloudVaults)
+	mux.HandleFunc("POST /api/security/cloud-connect", s.cloudJoin)
 	mux.HandleFunc("POST /api/maintenance/check", s.submit("check"))
 	mux.HandleFunc("POST /api/maintenance/retention/preview", s.retentionPreviewHTTP)
 	mux.HandleFunc("POST /api/maintenance/retention", s.submit("retention"))
@@ -759,6 +812,8 @@ func (s *Service) catalogPool(ctx context.Context, planID string) (Pool, error) 
 	return pool, nil
 }
 func (s *Service) pointFiles(w http.ResponseWriter, r *http.Request) {
+	unlockIndex := s.lock("recovery-index")
+	defer unlockIndex()
 	var p Point
 	if err := s.rt.Store.Get(r.Context(), "recovery_points", r.PathValue("id"), &p); err != nil {
 		problem(w, err)

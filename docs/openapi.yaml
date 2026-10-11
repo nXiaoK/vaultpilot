@@ -40,14 +40,14 @@ paths:
           "$ref": "#/components/responses/APIError"
   "/setup":
     post:
-      summary: 创建新的备份库或导入恢复包建立恢复节点
+      summary: 创建备份库、导入恢复包或建立待连接云端恢复节点
       operationId: post_setup
       tags:
       - 安全
       security: []
       responses:
         '201':
-          description: 创建新的备份库或导入恢复包建立恢复节点
+          description: 创建备份库、导入恢复包或建立待连接云端恢复节点
           content:
             application/json:
               schema:
@@ -2050,6 +2050,131 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/MigrationRequest"
+  "/security/cloud-connection":
+    get:
+      summary: 多节点连接及自动发现状态
+      operationId: get_cloud_connection
+      tags: [安全]
+      responses:
+        '200':
+          description: 状态不包含密码、密钥或加密连接资料本体
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/CloudConnectionState"
+    post:
+      summary: 写入节点验证原备份密码并发布加密连接入口
+      operationId: publish_cloud_connection
+      tags: [安全]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CloudPassword"
+      responses:
+        '200':
+          description: 至少一个账号发布和读回成功；失败账号另行报告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  verified_accounts: {type: array, items: {type: string}}
+                  failed_accounts: {type: array, items: {type: string}}
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
+    put:
+      summary: 恢复节点启停每分钟自动发现
+      operationId: set_cloud_auto_discovery
+      tags: [安全]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: 自动发现开关已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auto_discover: {type: boolean}
+  "/security/cloud-vaults":
+    get:
+      summary: 待连接节点扫描已验证账号中的云端连接入口
+      operationId: list_cloud_vaults
+      tags: [安全]
+      description: 不解密候选；最多检查100个库目录，扫描限时50秒。
+      responses:
+        '200':
+          description: 候选备份库与账号标识
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        vault_id: {type: string}
+                        account_ids: {type: array, items: {type: string}}
+                  failed_accounts: {type: array, items: {type: string}}
+  "/security/cloud-connect":
+    post:
+      summary: 使用原备份密码认证云端身份并建立恢复节点
+      operationId: join_cloud_vault
+      tags: [安全]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+              - "$ref": "#/components/schemas/CloudPassword"
+              - type: object
+                required: [vault_id]
+                properties:
+                  vault_id:
+                    type: string
+                    pattern: '^[0-9a-f]{32}$'
+      responses:
+        '200':
+          description: 已连接并默认开启自动发现；发现未入队时以discovery_error另行报告
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected: {type: boolean}
+                  vault_id: {type: string}
+                  task:
+                    "$ref": "#/components/schemas/Task"
+                  discovery_error: {type: string}
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '429':
+          "$ref": "#/components/responses/APIError"
 components:
   securitySchemes:
     SessionAuth:
@@ -2102,6 +2227,25 @@ components:
           schema:
             "$ref": "#/components/schemas/Error"
   schemas:
+    CloudPassword:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          writeOnly: true
+          description: 原备份库保护密码，12至1024 Bytes；不会保存到任务或日志
+    CloudConnectionState:
+      type: object
+      properties:
+        pending: {type: boolean}
+        recovery: {type: boolean}
+        enabled: {type: boolean}
+        auto_discover: {type: boolean}
+        interval_seconds: {type: integer, const: 60}
+        last_checked: {type: string}
+        last_success: {type: string}
+        last_error: {type: string}
     RcloneAuthFlow:
       type: object
       properties:
@@ -2138,6 +2282,9 @@ components:
     Status:
       type: object
       properties:
+        cloud_pending:
+          type: boolean
+          description: 已初始化管理员但尚未连接云端备份库
         initialized:
           type: boolean
         authenticated:
@@ -2154,6 +2301,7 @@ components:
           enum:
           - create
           - recovery
+          - cloud
         engines:
           type: object
           properties:
@@ -2265,13 +2413,14 @@ components:
           enum:
           - create
           - recovery
+          - cloud
           default: create
         recovery_kit:
           oneOf:
           - "$ref": "#/components/schemas/RecoveryKit"
           - type: string
             description: 完整恢复包JSON字符串
-      description: 密码分别最少12 Bytes且必须不同。recovery模式需提供恢复包及该包保护密码；导入强制恢复节点。
+      description: create/recovery模式的密码分别最少12 Bytes且必须不同。recovery需提供恢复包及该包保护密码。cloud模式仅创建本地管理员，连接云端后安装原备份库身份。
       allOf:
       - if:
           properties:
@@ -2282,13 +2431,24 @@ components:
         then:
           required:
           - recovery_kit
+      - if:
+          not:
+            properties:
+              mode:
+                const: cloud
+            required:
+            - mode
+        then:
+          required:
+          - recovery_password
       required:
       - username
       - password
-      - recovery_password
     SetupResult:
       type: object
       properties:
+        cloud_pending:
+          type: boolean
         vault_id:
           type: string
         mode:
@@ -2296,6 +2456,7 @@ components:
           enum:
           - create
           - recovery
+          - cloud
         csrf_token:
           type: string
         unlocked:

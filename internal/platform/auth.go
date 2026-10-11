@@ -105,7 +105,7 @@ func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	mode := r.mode
 	r.mu.Unlock()
-	v := map[string]any{"initialized": r.VaultID() != "", "authenticated": ok, "unlocked": r.Keys.Unlocked(), "vault_id": r.VaultID(), "mode": mode, "oauth_configured": r.Config.OAuthClientID != "" && r.Config.PublicURL != "", "allow_local": r.Config.AllowLocal, "engines": map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}, "source_roots": r.Config.SourceRoots, "restore_roots": r.Config.RestoreRoots}
+	v := map[string]any{"initialized": r.Initialized(), "authenticated": ok, "unlocked": r.Keys.Unlocked(), "vault_id": r.VaultID(), "mode": mode, "cloud_pending": r.CloudPending(), "oauth_configured": r.Config.OAuthClientID != "" && r.Config.PublicURL != "", "allow_local": r.Config.AllowLocal, "engines": map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}, "source_roots": r.Config.SourceRoots, "restore_roots": r.Config.RestoreRoots}
 	if ok {
 		v["csrf_token"] = s.CSRF
 		v["cache_max_bytes"] = r.Config.CacheMaxBytes
@@ -139,7 +139,7 @@ func (r *Runtime) throttled(req *http.Request) bool {
 func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 	r.setupMu.Lock()
 	defer r.setupMu.Unlock()
-	if r.VaultID() != "" {
+	if r.Initialized() {
 		fail(w, 409, "already_initialized", "实例已初始化")
 		return
 	}
@@ -159,18 +159,22 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	input.Username = strings.TrimSpace(input.Username)
-	if input.Username == "" || len(input.Username) > 128 || len(input.Password) < 12 || len(input.Password) > 1024 || len(input.RecoveryPassword) < 12 || len(input.RecoveryPassword) > 1024 {
+	if input.Username == "" || len(input.Username) > 128 || len(input.Password) < 12 || len(input.Password) > 1024 || input.Mode != "cloud" && (len(input.RecoveryPassword) < 12 || len(input.RecoveryPassword) > 1024) {
 		fail(w, 400, "weak_credentials", "管理员名称不能为空；登录密码与恢复密码分别至少 12 个字符")
 		return
 	}
-	if input.Password == input.RecoveryPassword {
+	if input.RecoveryPassword != "" && input.Password == input.RecoveryPassword {
 		fail(w, 400, "separate_credentials", "请使用与登录密码不同的恢复密码")
 		return
 	}
 	var p RecoveryPayload
 	var kit RecoveryKit
 	var e error
-	if input.Mode == "recovery" {
+	if input.Mode == "cloud" {
+		// Credentials are local to this node. The original vault and master key
+		// are installed only after authenticating a cloud bootstrap.
+		p.Entries = []DiscoveryEntry{}
+	} else if input.Mode == "recovery" {
 		b := input.Kit
 		if len(b) > 0 && b[0] == '"' {
 			var s string
@@ -192,7 +196,7 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		p = RecoveryPayload{Version: 1, VaultID: newID(), MasterKey: base64.StdEncoding.EncodeToString(randomBytes(32)), Entries: []DiscoveryEntry{}}
 		kit, e = protectRecovery(p, input.RecoveryPassword)
 	} else {
-		fail(w, 400, "invalid_mode", "请选择创建备份库或恢复已有备份库")
+		fail(w, 400, "invalid_mode", "请选择创建备份库、连接云端备份库或导入恢复包")
 		return
 	}
 	if e != nil {
@@ -203,13 +207,17 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 	hashJSON, _ := json.Marshal(hash)
 	kitJSON, _ := json.Marshal(kit)
 	entriesJSON, _ := json.Marshal(p.Entries)
+	metadata := map[string]string{"admin_username": input.Username, "admin_password": string(hashJSON), "discovery_entries": string(entriesJSON), "mode": input.Mode, "vault_id": p.VaultID}
+	if input.Mode != "cloud" {
+		metadata["recovery_kit"] = string(kitJSON)
+	}
 	tx, e := r.Store.DB.BeginTx(req.Context(), nil)
 	if e != nil {
 		fail(w, 500, "database_error", "初始化失败")
 		return
 	}
 	defer tx.Rollback()
-	for key, value := range map[string]string{"admin_username": input.Username, "admin_password": string(hashJSON), "recovery_kit": string(kitJSON), "discovery_entries": string(entriesJSON), "mode": input.Mode, "vault_id": p.VaultID} {
+	for key, value := range metadata {
 		if _, e = tx.ExecContext(req.Context(), "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value); e != nil {
 			fail(w, 500, "database_error", "初始化失败")
 			return
@@ -223,13 +231,15 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 	r.vaultID = p.VaultID
 	r.mode = input.Mode
 	r.mu.Unlock()
-	key, _ := base64.StdEncoding.DecodeString(p.MasterKey)
-	_ = r.Keys.set(key)
-	for i := range key {
-		key[i] = 0
+	if input.Mode != "cloud" {
+		key, _ := base64.StdEncoding.DecodeString(p.MasterKey)
+		_ = r.Keys.set(key)
+		for i := range key {
+			key[i] = 0
+		}
 	}
 	s := r.makeSession(w, input.Username)
-	writeJSON(w, 201, map[string]any{"vault_id": p.VaultID, "mode": input.Mode, "csrf_token": s.CSRF, "unlocked": true})
+	writeJSON(w, 201, map[string]any{"vault_id": p.VaultID, "mode": input.Mode, "cloud_pending": input.Mode == "cloud", "csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
 func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 	if r.throttled(req) {
@@ -252,7 +262,7 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 	b, _ := r.meta("admin_password")
 	var h PasswordHash
 	valid := json.Unmarshal([]byte(b), &h) == nil && verifyPassword(v.Password, h)
-	if !valid || username != v.Username || r.VaultID() == "" {
+	if !valid || username != v.Username || !r.Initialized() {
 		fail(w, 401, "credentials_invalid", "用户名或密码错误")
 		return
 	}

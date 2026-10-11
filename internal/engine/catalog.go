@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -446,6 +447,9 @@ func (s *Service) commit(ctx context.Context, t *Task, pool Pool, newPoint *Poin
 				okCount++
 			}
 		}
+		if err := s.syncCloudBootstrap(ctx, a); err != nil {
+			s.log(t, "云端节点连接信息同步失败："+a.Name)
+		}
 	}
 	if okCount == 0 {
 		return fail("CATALOG_COMMIT_INCOMPLETE", "控制目录完成证书未持久化")
@@ -462,7 +466,58 @@ func (s *Service) commit(ctx context.Context, t *Task, pool Pool, newPoint *Poin
 	_ = s.rt.Store.SetMeta(ctx, "catalog_last", commitID)
 	return nil
 }
+
+// A cached control is only reusable after the exact, previously authenticated
+// completion certificate is observed again. A newer invalid marker cannot hide
+// the latest valid commit, and account changes still refresh repository mappings.
+type discoveredCatalog struct {
+	Control      catalogControl `json:"control"`
+	Receipt      []byte         `json:"receipt"`
+	Digest       string         `json:"digest"`
+	Accounts     string         `json:"accounts"`
+	Protection   string         `json:"protection"`
+	Certificates int            `json:"certificates"`
+}
+
+func catalogManifestSignature(point Point) string {
+	point.Version = 0
+	point.Name = ""
+	point.Status = ""
+	point.Protected = false
+	point.DeletedAt = ""
+	point.ProtectionStatus = ""
+	raw, _ := json.Marshal(point)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+// Catalog publication is one transaction, so a failed manifest import leaves
+// all previously published points and repository mappings available for restore.
+func saveCatalogEntity(ctx context.Context, tx *sql.Tx, table, id string, value any) error {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var object map[string]any
+	if err = json.Unmarshal(raw, &object); err != nil {
+		return err
+	}
+	var version int
+	if err = tx.QueryRowContext(ctx, "SELECT version FROM "+table+" WHERE id=?", id).Scan(&version); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	object["id"], object["version"] = id, version+1
+	raw, err = json.Marshal(object)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO "+table+"(id,version,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,data=excluded.data,updated_at=excluded.updated_at", id, version+1, string(raw), now())
+	return err
+}
+
 func (s *Service) discover(ctx context.Context, t *Task) error {
+	unlock := s.lock("recovery-index")
+	defer unlock()
 	s.catalogMu.Lock()
 	defer s.catalogMu.Unlock()
 	s.stage(t, "discovering")
@@ -471,12 +526,29 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 		return err
 	}
 	accounts := []Account{}
+	mapping := []string{}
 	for _, raw := range raws {
 		var a Account
-		_ = json.Unmarshal(raw, &a)
+		if json.Unmarshal(raw, &a) != nil {
+			continue
+		}
 		if a.Verified && a.Enabled {
 			accounts = append(accounts, a)
+			// Resource versions also invalidate the cache after reauthorization.
+			var version struct {
+				Version int `json:"version"`
+			}
+			_ = json.Unmarshal(raw, &version)
+			signature, _ := json.Marshal([]any{a.ID, version.Version, a.Backend, a.Remote, a.LocalPath, a.Region, a.TenantID, a.DriveID, a.Status})
+			mapping = append(mapping, string(signature))
 		}
+	}
+	sort.Strings(mapping)
+	mappingDigest := sha256.Sum256([]byte(strings.Join(mapping, "\n")))
+	accountSignature := hex.EncodeToString(mappingDigest[:])
+	var prior discoveredCatalog
+	if raw, e := s.rt.Store.Meta(ctx, "catalog_discovered"); e == nil {
+		_ = json.Unmarshal([]byte(raw), &prior)
 	}
 	dir, err := os.MkdirTemp(s.rt.Config.CacheDir, "discover-")
 	if err != nil {
@@ -484,12 +556,18 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 	}
 	defer os.RemoveAll(dir)
 	var best *catalogControl
-	var bestZip string
+	var bestZip, bestDigest string
 	var bestReceipt []byte
 	repoAccounts := map[string]Account{}
 	for _, a := range accounts {
 		repoAccounts[a.Region+":"+a.TenantID+":"+a.DriveID] = a
 	}
+	type candidate struct {
+		account Account
+		marker  catalogMarker
+		receipt []byte
+	}
+	candidates := []candidate{}
 	base := "VaultPilot/" + s.rt.VaultID() + "/catalog/"
 	for _, a := range accounts {
 		names := []string{}
@@ -509,7 +587,6 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 			}
 			names = strings.Split(strings.TrimSpace(string(out)), "\n")
 		}
-		sort.Strings(names)
 		for _, name := range names {
 			if !strings.HasSuffix(name, ".ok") || strings.ContainsAny(name, "/\\") {
 				continue
@@ -519,7 +596,7 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 				continue
 			}
 			markerPath := filepath.Join(dir, uid()+".ok")
-			if err = s.getFile(ctx, a, base+name, markerPath); err != nil {
+			if s.getFile(ctx, a, base+name, markerPath) != nil {
 				continue
 			}
 			sealed, e := os.ReadFile(markerPath)
@@ -534,65 +611,65 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 			if json.Unmarshal(opened, &marker) != nil || marker.Format != 1 || marker.VaultID != s.rt.VaultID() || marker.CommitID != id || marker.State != "committed" || marker.PreparedReplicas < 1 {
 				continue
 			}
-			if best != nil && marker.CreatedAt <= best.CreatedAt {
-				continue
-			}
-			encrypted := filepath.Join(dir, uid()+".vpc")
-			if err = s.getFile(ctx, a, base+id+".vpc", encrypted); err != nil {
-				continue
-			}
-			digest, e := fileDigest(encrypted)
-			if e != nil || digest != marker.SHA256 {
-				continue
-			}
-			plain := filepath.Join(dir, uid()+".zip")
-			if err = openCatalog(s.rt.Keys, encrypted, plain); err != nil {
-				continue
-			}
-			z, e := zip.OpenReader(plain)
-			if e != nil {
-				continue
-			}
-			var control catalogControl
-			valid := false
-			for _, file := range z.File {
-				if file.Name == "control.json" {
-					f, e := file.Open()
-					if e == nil {
-						e = json.NewDecoder(io.LimitReader(f, 32<<20)).Decode(&control)
-						f.Close()
-						valid = e == nil
-					}
-					break
-				}
-			}
-			z.Close()
-			if !valid || control.Format != 1 || control.VaultID != s.rt.VaultID() || control.CommitID != id || len(marker.Drives) < control.Replicas || marker.PreparedReplicas < control.Replicas {
-				continue
-			}
-			control.CreatedAt = marker.CreatedAt
-			best = &control
-			bestZip = plain
-			bestReceipt = append([]byte{}, sealed...)
+			candidates = append(candidates, candidate{a, marker, sealed})
 		}
 	}
+	// Try newest certificates first, but only accept one after full validation.
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].marker.CreatedAt > candidates[j].marker.CreatedAt })
+	for _, candidate := range candidates {
+		marker, a, sealed := candidate.marker, candidate.account, candidate.receipt
+		if bytes.Equal(prior.Receipt, sealed) && prior.Digest == marker.SHA256 && prior.Control.Format == 1 && prior.Control.VaultID == marker.VaultID && prior.Control.CommitID == marker.CommitID && len(marker.Drives) >= prior.Control.Replicas && marker.PreparedReplicas >= prior.Control.Replicas {
+			control := prior.Control
+			best, bestReceipt, bestDigest = &control, sealed, marker.SHA256
+			break
+		}
+		encrypted := filepath.Join(dir, uid()+".vpc")
+		if s.getFile(ctx, a, base+marker.CommitID+".vpc", encrypted) != nil {
+			continue
+		}
+		digest, e := fileDigest(encrypted)
+		if e != nil || digest != marker.SHA256 {
+			continue
+		}
+		plain := filepath.Join(dir, uid()+".zip")
+		if openCatalog(s.rt.Keys, encrypted, plain) != nil {
+			continue
+		}
+		z, e := zip.OpenReader(plain)
+		if e != nil {
+			continue
+		}
+		var control catalogControl
+		valid := false
+		for _, file := range z.File {
+			if file.Name == "control.json" {
+				f, e := file.Open()
+				if e == nil {
+					e = json.NewDecoder(io.LimitReader(f, 32<<20)).Decode(&control)
+					f.Close()
+					valid = e == nil
+				}
+				break
+			}
+		}
+		z.Close()
+		if !valid || control.Format != 1 || control.VaultID != s.rt.VaultID() || control.CommitID != marker.CommitID || len(marker.Drives) < control.Replicas || marker.PreparedReplicas < control.Replicas {
+			continue
+		}
+		control.CreatedAt = marker.CreatedAt
+		best, bestZip, bestReceipt, bestDigest = &control, plain, sealed, digest
+		break
+	}
 	if best == nil {
-		return fail("CATALOG_NOT_FOUND", "未发现已认证提交的控制目录；请接入恢复包所列的正确 Drive")
+		return fail("CATALOG_NOT_FOUND", "未发现已认证提交的控制目录；请接入备份库所用的正确 Drive")
 	}
 	verifiedCertificates := 0
 	seenCertificateDrives := map[string]bool{}
-	for _, account := range accounts {
-		if seenCertificateDrives[account.DriveID] {
-			continue
-		}
-		path := filepath.Join(dir, uid()+"-receipt.ok")
-		if s.getFile(ctx, account, base+best.CommitID+".ok", path) != nil {
-			continue
-		}
-		read, e := os.ReadFile(path)
-		if e == nil && bytes.Equal(read, bestReceipt) {
+	for _, candidate := range candidates {
+		key := candidate.account.Region + ":" + candidate.account.TenantID + ":" + candidate.account.DriveID
+		if !seenCertificateDrives[key] && bytes.Equal(candidate.receipt, bestReceipt) {
 			verifiedCertificates++
-			seenCertificateDrives[account.DriveID] = true
+			seenCertificateDrives[key] = true
 		}
 	}
 	protection := "complete"
@@ -600,57 +677,64 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 		protection = "degraded"
 		s.log(t, "当前可验证完成证书副本少于配置要求；恢复点保护降级，请检查其他 Drive")
 	}
+	unchanged := prior.Control.CommitID == best.CommitID && prior.Digest == bestDigest && bytes.Equal(prior.Receipt, bestReceipt) && prior.Accounts == accountSignature && prior.Protection == protection && prior.Certificates == verifiedCertificates
+	t.Result = map[string]any{"commit_id": best.CommitID, "recovery_points": len(best.Points), "repositories": len(best.Repositories), "discovered_at": time.Now().UTC(), "protection_status": protection, "certificate_replicas": verifiedCertificates, "unchanged": unchanged}
+	if unchanged {
+		return nil
+	}
 	s.stage(t, "rebuilding_index")
-	z, err := zip.OpenReader(bestZip)
-	if err != nil {
-		return err
-	}
-	defer z.Close()
 	files := map[string]*zip.File{}
-	for _, f := range z.File {
-		files[f.Name] = f
+	if bestZip != "" {
+		z, e := zip.OpenReader(bestZip)
+		if e != nil {
+			return e
+		}
+		defer z.Close()
+		for _, f := range z.File {
+			files[f.Name] = f
+		}
 	}
-	for _, repo := range best.Repositories {
-		found := false
-		for i := len(repo.Locations) - 1; i >= 0; i-- {
-			loc := repo.Locations[i]
-			a, ok := repoAccounts[loc.Region+":"+loc.TenantID+":"+loc.DriveID]
-			if ok && loc.Verified {
-				repo.AccountID = a.ID
-				repo.Path = loc.Path
-				found = true
-				break
+	newRuns, obsoleteRuns := []string{}, []string{}
+	published := false
+	defer func() {
+		if !published {
+			for _, run := range newRuns {
+				_, _ = s.rt.Store.DB.ExecContext(context.Background(), "DELETE FROM file_entries WHERE run_id=?", run)
 			}
 		}
-		if !found {
-			repo.AccountID = ""
-			repo.Status = "account_missing"
-		}
-		if _, err = s.rt.Store.Save(ctx, "repositories", repo.ID, -1, repo); err != nil {
-			return err
-		}
-	}
+	}()
+	points := make([]Point, 0, len(best.Points))
+	manifestSignatures := map[string]string{}
 	for _, point := range best.Points {
+		signature := catalogManifestSignature(point)
+		manifestSignatures[point.ID] = signature
+		var existing Point
+		existingErr := s.rt.Store.Get(ctx, "recovery_points", point.ID, &existing)
+		oldSignature, _ := s.rt.Store.Meta(ctx, "catalog_manifest:"+point.ID)
 		point.ProtectionStatus = protection
-		point.RunID = "import-" + uid()
 		if point.DeletedAt != "" {
-			_, err = s.rt.Store.Save(ctx, "recovery_points", point.ID, -1, point)
-			if err != nil {
-				return err
+			if existingErr == nil {
+				point.RunID = existing.RunID
+				if strings.HasPrefix(existing.RunID, "import-") {
+					obsoleteRuns = append(obsoleteRuns, existing.RunID)
+				}
 			}
+			points = append(points, point)
 			continue
 		}
+		if existingErr == nil && existing.DeletedAt == "" && (oldSignature == signature || catalogManifestSignature(existing) == signature) {
+			point.RunID = existing.RunID
+			points = append(points, point)
+			continue
+		}
+		point.RunID = "import-" + uid()
+		newRuns = append(newRuns, point.RunID)
 		file := files["points/"+point.ID+".jsonl"]
 		if file == nil {
 			return fail("CATALOG_MANIFEST_MISSING", "控制目录缺少恢复点清单")
 		}
 		reader, err := file.Open()
 		if err != nil {
-			return err
-		}
-		_, err = s.rt.Store.DB.ExecContext(ctx, "DELETE FROM file_entries WHERE run_id=?", point.RunID)
-		if err != nil {
-			reader.Close()
 			return err
 		}
 		decoder := json.NewDecoder(bufio.NewReader(reader))
@@ -705,11 +789,58 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 		if fileCount != point.FileCount || logicalBytes != point.LogicalBytes {
 			return fail("CATALOG_COVERAGE_MISMATCH", "控制目录文件数量或大小与恢复点不符")
 		}
-		if _, err = s.rt.Store.Save(ctx, "recovery_points", point.ID, -1, point); err != nil {
+		if existingErr == nil && strings.HasPrefix(existing.RunID, "import-") {
+			obsoleteRuns = append(obsoleteRuns, existing.RunID)
+		}
+		points = append(points, point)
+	}
+	tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, repo := range best.Repositories {
+		found := false
+		for i := len(repo.Locations) - 1; i >= 0; i-- {
+			loc := repo.Locations[i]
+			a, ok := repoAccounts[loc.Region+":"+loc.TenantID+":"+loc.DriveID]
+			if ok && loc.Verified {
+				repo.AccountID, repo.Path = a.ID, loc.Path
+				found = true
+				break
+			}
+		}
+		if !found {
+			repo.AccountID, repo.Status = "", "account_missing"
+		}
+		if err = saveCatalogEntity(ctx, tx, "repositories", repo.ID, repo); err != nil {
 			return err
 		}
 	}
-	t.Result = map[string]any{"commit_id": best.CommitID, "recovery_points": len(best.Points), "repositories": len(best.Repositories), "discovered_at": time.Now().UTC(), "protection_status": protection, "certificate_replicas": verifiedCertificates}
+	for _, point := range points {
+		if err = saveCatalogEntity(ctx, tx, "recovery_points", point.ID, point); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", "catalog_manifest:"+point.ID, manifestSignatures[point.ID]); err != nil {
+			return err
+		}
+	}
+	cache, err := json.Marshal(discoveredCatalog{*best, bestReceipt, bestDigest, accountSignature, protection, verifiedCertificates})
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES('catalog_discovered',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", string(cache)); err != nil {
+		return err
+	}
+	for _, run := range obsoleteRuns {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM file_entries WHERE run_id=?", run); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	published = true
 	return s.rt.Store.Audit(ctx, "catalog.discover", best.CommitID)
 }
 

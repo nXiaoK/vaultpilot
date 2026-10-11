@@ -366,6 +366,8 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 	return preview, nil
 }
 func (s *Service) restorePreviewHTTP(w http.ResponseWriter, r *http.Request) {
+	unlockIndex := s.lock("recovery-index")
+	defer unlockIndex()
 	var req RestoreRequest
 	if err := decode(r, &req); err != nil {
 		problem(w, err)
@@ -540,6 +542,8 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool) e
 	return restoreTargetError(out.Rename(temp, target), outputPath)
 }
 func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
+	unlockIndex := s.lock("recovery-index")
+	defer unlockIndex()
 	var req RestoreRequest
 	if err := json.Unmarshal(t.Request, &req); err != nil {
 		return err

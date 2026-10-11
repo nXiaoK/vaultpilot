@@ -23,3 +23,6 @@
 .callback-help p { color: var(--text-secondary, #617081); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .callback-help summary { cursor: pointer; font-size: 13px; }
 .auth-methods button:disabled { opacity: .6; cursor: default; }
+
+.cloud-setup-options { grid-template-columns: repeat(3,minmax(0,1fr)); }
+@media (max-width:600px) { .cloud-setup-options { grid-template-columns: 1fr; } }

@@ -315,6 +315,19 @@ func (r *Runtime) verifyCloud(ctx context.Context, a *Account) error {
 	if _, e := r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+"/root", nil, ""); e != nil {
 		return e
 	}
+	if r.RecoveryMode() {
+		// Recovery nodes validate read access without creating or probing a
+		// writer's vault directory (pending cloud nodes have no vault ID yet).
+		if _, e := r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+"/root:/VaultPilot", nil, ""); e != nil {
+			return e
+		}
+		if e := r.cloudQuota(ctx, a); e != nil {
+			return e
+		}
+		a.Verified = true
+		a.Status = "ready"
+		return nil
+	}
 	root, e := r.ensureCloudFolder(ctx, *a, "/root", "VaultPilot")
 	if e != nil {
 		return e
@@ -369,7 +382,11 @@ func (r *Runtime) cloudQuota(ctx context.Context, a *Account) error {
 	a.TotalBytes = *d.Quota.Total
 	a.UsedBytes = *d.Quota.Used
 	a.FreeBytes = *d.Quota.Remaining
-	b, e = r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+"/root:/VaultPilot/"+r.VaultID(), nil, "")
+	projectPath := "/root:/VaultPilot"
+	if r.VaultID() != "" {
+		projectPath += "/" + r.VaultID()
+	}
+	b, e = r.graph(ctx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+projectPath, nil, "")
 	if e != nil {
 		var c cloudError
 		if errors.As(e, &c) && c.Status == 404 {

@@ -44,10 +44,65 @@ func (b *lockedBuffer) Bytes() []byte {
 func Output(ctx context.Context, bin string, args []string, env []string) ([]byte, error) {
 	return Run(ctx, bin, args, env, nil)
 }
-func Run(ctx context.Context, bin string, args []string, env []string, onLine func(string)) ([]byte, error) {
+
+// ErrOutputLimitExceeded indicates that a subprocess exceeded the combined
+// stdout and stderr limit. OutputLimited stops the entire process group as
+// soon as this happens, retaining at most the requested number of bytes.
+var ErrOutputLimitExceeded = errors.New("process output limit exceeded")
+
+type boundedOutput struct {
+	sync.Mutex
+	buffer   bytes.Buffer
+	maximum  int
+	exceeded bool
+	cancel   context.CancelFunc
+}
+
+func (b *boundedOutput) Write(p []byte) (int, error) {
+	b.Lock()
+	defer b.Unlock()
+	if b.exceeded {
+		return 0, ErrOutputLimitExceeded
+	}
+	remaining := b.maximum - b.buffer.Len()
+	if len(p) > remaining {
+		_, _ = b.buffer.Write(p[:remaining])
+		b.exceeded = true
+		b.cancel()
+		return remaining, ErrOutputLimitExceeded
+	}
+	return b.buffer.Write(p)
+}
+
+// OutputLimited bounds the total output before returning it to a caller. This
+// is suitable for small untrusted metadata; stdout and stderr share one budget.
+func OutputLimited(ctx context.Context, bin string, args []string, env []string, maxBytes int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if maxBytes <= 0 {
+		return nil, errors.New("process output limit must be greater than zero")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := processCommand(runCtx, bin, args, env)
+	output := &boundedOutput{maximum: maxBytes, cancel: cancel}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	err := cmd.Run()
+	output.Lock()
+	data := append([]byte(nil), output.buffer.Bytes()...)
+	exceeded := output.exceeded
+	output.Unlock()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	} else if exceeded {
+		err = ErrOutputLimitExceeded
+	}
+	return data, err
+}
+
+func processCommand(ctx context.Context, bin string, args []string, env []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -62,6 +117,14 @@ func Run(ctx context.Context, bin string, args []string, env []string, onLine fu
 		return err
 	}
 	cmd.WaitDelay = 5 * time.Second
+	return cmd
+}
+
+func Run(ctx context.Context, bin string, args []string, env []string, onLine func(string)) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cmd := processCommand(ctx, bin, args, env)
 	var output lockedBuffer
 	if onLine == nil {
 		cmd.Stdout = &output

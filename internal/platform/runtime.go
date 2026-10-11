@@ -230,8 +230,21 @@ func (r *Runtime) Close() error {
 	}
 	return r.Store.DB.Close()
 }
-func (r *Runtime) VaultID() string    { r.mu.Lock(); defer r.mu.Unlock(); return r.vaultID }
-func (r *Runtime) RecoveryMode() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.mode == "recovery" }
+func (r *Runtime) VaultID() string { r.mu.Lock(); defer r.mu.Unlock(); return r.vaultID }
+func (r *Runtime) Initialized() bool {
+	username, err := r.meta("admin_username")
+	return err == nil && username != ""
+}
+func (r *Runtime) RecoveryMode() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.mode == "recovery" || r.mode == "cloud"
+}
+func (r *Runtime) CloudPending() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.mode == "cloud"
+}
 func (r *Runtime) meta(key string) (string, error) {
 	v, e := r.Store.Meta(context.Background(), key)
 	if errors.Is(e, sql.ErrNoRows) {
