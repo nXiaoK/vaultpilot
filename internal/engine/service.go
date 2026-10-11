@@ -20,23 +20,24 @@ import (
 )
 
 type Service struct {
-	rt          *platform.Runtime
-	mu          sync.Mutex
-	runMu       sync.Mutex
-	catalogMu   sync.Mutex
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	sem         chan struct{}
-	queue       chan string
-	active      map[string]string
-	pending     map[string]bool
-	cancels     map[string]context.CancelFunc
-	cancelled   map[string]bool
-	locks       sync.Map
-	scheduler   *cron.Cron
-	scheduleIDs map[string]cron.EntryID
-	started     bool
+	rt              *platform.Runtime
+	mu              sync.Mutex
+	runMu           sync.Mutex
+	catalogMu       sync.Mutex
+	configurationMu sync.RWMutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	sem             chan struct{}
+	queue           chan string
+	active          map[string]string
+	pending         map[string]bool
+	cancels         map[string]context.CancelFunc
+	cancelled       map[string]bool
+	locks           sync.Map
+	scheduler       *cron.Cron
+	scheduleIDs     map[string]cron.EntryID
+	started         bool
 }
 
 func New(rt *platform.Runtime) (*Service, error) {
@@ -160,6 +161,22 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 			return Task{}, err
 		}
 	}
+	if s.active["account-clear"] != "" {
+		return Task{}, fail("ACCOUNT_CLEAR_RUNNING", "网盘清空任务正在执行，请等待完成后再操作")
+	}
+	pendingClear, pendingErr := s.rt.Store.Meta(s.ctx, "account_clear_pending")
+	if pendingErr != nil && !errors.Is(pendingErr, sql.ErrNoRows) {
+		return Task{}, pendingErr
+	}
+	if pendingClear != "" && kind != "account-clear" {
+		return Task{}, fail("ACCOUNT_CLEAR_PENDING", "网盘清空尚未完成，请在存储账号中选择原账号重新清空，完成后再运行其他任务")
+	}
+	if kind == "account-clear" {
+		if err := s.noActiveTasks(s.ctx, ""); err != nil {
+			return Task{}, err
+		}
+	}
+
 	if kind == "backup" && s.active[plan] != "" {
 		s.pending[plan] = true
 		_ = s.rt.Store.SetMeta(context.Background(), "pending:"+plan, "1")
@@ -192,6 +209,9 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 	if kind == "backup" {
 		s.active[plan] = t.ID
 	}
+	if kind == "account-clear" {
+		s.active["account-clear"] = t.ID
+	}
 	if kind == "discover" {
 		s.active["discover"] = t.ID
 	}
@@ -203,6 +223,9 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 		t.Error = "任务队列已满"
 		s.save(&t)
 		delete(s.active, plan)
+		if kind == "account-clear" {
+			delete(s.active, "account-clear")
+		}
 		if kind == "discover" {
 			delete(s.active, "discover")
 		}
@@ -230,6 +253,9 @@ func (s *Service) execute(id string) {
 		s.mu.Lock()
 		delete(s.cancels, id)
 		delete(s.cancelled, id)
+		if t.Kind == "account-clear" {
+			delete(s.active, "account-clear")
+		}
 		if t.Kind == "discover" {
 			delete(s.active, "discover")
 		}
@@ -255,7 +281,7 @@ func (s *Service) execute(id string) {
 	var err error
 	if resourceErr := s.rt.CheckCacheBudget(); resourceErr != nil {
 		err = fail("CACHE_LIMIT_EXCEEDED", resourceErr.Error())
-	} else if t.Kind == "check" || t.Kind == "retention" || t.Kind == "migrate" {
+	} else if t.Kind == "check" || t.Kind == "retention" || t.Kind == "migrate" || t.Kind == "account-clear" {
 		allowed, e := s.rt.AllowedMaintenance(time.Now())
 		if e != nil {
 			err = fail("INVALID_MAINTENANCE_WINDOW", e.Error())
@@ -268,7 +294,7 @@ func (s *Service) execute(id string) {
 		err = fail("CLOUD_CONNECTION_REQUIRED", "请先授权账号并使用原备份密码连接云端备份库")
 	} else if !s.rt.Keys.Unlocked() {
 		err = fail("VAULT_LOCKED", "请先解锁备份库")
-	} else if s.rt.RecoveryMode() && (t.Kind == "backup" || t.Kind == "retention" || t.Kind == "migrate") {
+	} else if s.rt.RecoveryMode() && (t.Kind == "backup" || t.Kind == "retention" || t.Kind == "migrate" || t.Kind == "account-clear") {
 		err = fail("RECOVERY_READ_ONLY", "恢复节点禁止备份、清理和迁移")
 	} else {
 		switch t.Kind {
@@ -307,6 +333,8 @@ func (s *Service) execute(id string) {
 			err = s.retain(ctx, &t)
 		case "migrate":
 			err = s.migrate(ctx, &t)
+		case "account-clear":
+			err = s.clearAccounts(ctx, &t)
 		default:
 			err = fail("UNKNOWN_TASK", "不支持此任务类型")
 		}
@@ -325,7 +353,7 @@ func (s *Service) execute(id string) {
 			t.Code = f.Code
 			t.Retryable = f.Retryable
 		}
-		if t.Code == "RESTORE_PARTIAL" || t.Code == "PROTECTION_DEGRADED" || t.partialRestore {
+		if t.Code == "ACCOUNT_CLEAR_PARTIAL" || t.Code == "RESTORE_PARTIAL" || t.Code == "PROTECTION_DEGRADED" || t.partialRestore {
 			t.Status = "partial_failed"
 		}
 		if ctx.Err() != nil {
@@ -505,6 +533,8 @@ func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/maintenance/retention/preview", s.retentionPreviewHTTP)
 	mux.HandleFunc("POST /api/maintenance/retention", s.submit("retention"))
 	mux.HandleFunc("POST /api/maintenance/migrate", s.submit("migrate"))
+	mux.HandleFunc("POST /api/accounts/clear/preview", s.clearPreviewHTTP)
+	mux.HandleFunc("POST /api/accounts/clear", s.clearSubmitHTTP)
 }
 func (s *Service) submit(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +568,13 @@ func (s *Service) plansList(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": out, "total": total})
 }
 func (s *Service) planSave(w http.ResponseWriter, r *http.Request) {
+	s.configurationMu.RLock()
+	defer s.configurationMu.RUnlock()
+	if err := s.clearMutationAllowed(r.Context()); err != nil {
+		problem(w, err)
+		return
+	}
+
 	var p Plan
 	if err := decode(r, &p); err != nil {
 		problem(w, err)
@@ -602,6 +639,13 @@ func (s *Service) planSave(w http.ResponseWriter, r *http.Request) {
 	write(w, 201, p)
 }
 func (s *Service) planDelete(w http.ResponseWriter, r *http.Request) {
+	s.configurationMu.RLock()
+	defer s.configurationMu.RUnlock()
+	if err := s.clearMutationAllowed(r.Context()); err != nil {
+		problem(w, err)
+		return
+	}
+
 	s.mu.Lock()
 	active := s.active[r.PathValue("id")]
 	s.mu.Unlock()
@@ -703,19 +747,39 @@ func (s *Service) events(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Service) repositoriesList(w http.ResponseWriter, r *http.Request) {
 	l, o := paging(r)
-	raws, n, err := s.rt.Store.List(r.Context(), "repositories", l, o)
+	const predicate = "coalesce(json_extract(data,'$.status'),'') <> 'retired'"
+	rows, err := s.rt.Store.DB.QueryContext(r.Context(), "SELECT data FROM repositories WHERE "+predicate+" ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?", l, o)
 	if err != nil {
 		problem(w, err)
 		return
 	}
 	items := []Repository{}
-	for _, raw := range raws {
+	for rows.Next() {
+		var raw []byte
 		var repo Repository
-		_ = json.Unmarshal(raw, &repo)
+		if err = rows.Scan(&raw); err != nil {
+			break
+		}
+		if err = json.Unmarshal(raw, &repo); err != nil {
+			break
+		}
 		repo.Password = ""
 		items = append(items, repo)
 	}
-	write(w, 200, map[string]any{"items": items, "total": n})
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		problem(w, err)
+		return
+	}
+	var total int
+	if err = s.rt.Store.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM repositories WHERE "+predicate).Scan(&total); err != nil {
+		problem(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"items": items, "total": total})
 }
 func (s *Service) pointsList(w http.ResponseWriter, r *http.Request) {
 	l, o := paging(r)
@@ -738,6 +802,13 @@ func (s *Service) pointsList(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": items, "total": n})
 }
 func (s *Service) protect(w http.ResponseWriter, r *http.Request) {
+	s.configurationMu.RLock()
+	defer s.configurationMu.RUnlock()
+	if err := s.clearMutationAllowed(r.Context()); err != nil {
+		problem(w, err)
+		return
+	}
+
 	if s.rt.RecoveryMode() {
 		problem(w, fail("RECOVERY_READ_ONLY", "恢复节点禁止修改云端保护状态"))
 		return
@@ -759,6 +830,10 @@ func (s *Service) protect(w http.ResponseWriter, r *http.Request) {
 	var p Point
 	if err := s.rt.Store.Get(r.Context(), "recovery_points", r.PathValue("id"), &p); err != nil {
 		problem(w, err)
+		return
+	}
+	if p.DeletedAt != "" {
+		problem(w, fail("POINT_DELETED", "恢复点已删除"))
 		return
 	}
 	if body.Version < 1 || body.Version != p.Version {

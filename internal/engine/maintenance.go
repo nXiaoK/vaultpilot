@@ -38,7 +38,9 @@ func (s *Service) check(ctx context.Context, t *Task) error {
 		for _, raw := range raws {
 			var repo Repository
 			_ = json.Unmarshal(raw, &repo)
-			req.RepositoryIDs = append(req.RepositoryIDs, repo.ID)
+			if repo.Status != "retired" {
+				req.RepositoryIDs = append(req.RepositoryIDs, repo.ID)
+			}
 		}
 	}
 	results := []map[string]any{}
@@ -47,6 +49,9 @@ func (s *Service) check(ctx context.Context, t *Task) error {
 		var repo Repository
 		if err := s.rt.Store.Get(ctx, "repositories", id, &repo); err != nil {
 			return err
+		}
+		if repo.Status == "retired" {
+			return fail("REPOSITORY_RETIRED", "所选仓库已清空退役，请选择现有仓库")
 		}
 		var account Account
 		if err := s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil {
@@ -372,6 +377,9 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 
 	if err := s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
 		return err
+	}
+	if repo.Status == "retired" {
+		return fail("REPOSITORY_RETIRED", "仓库已清空退役，不能迁移或清理旧副本")
 	}
 	if req.CleanupOld {
 		return s.cleanupOld(ctx, t, repo, req)

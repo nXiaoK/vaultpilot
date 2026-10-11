@@ -172,6 +172,8 @@ func (r *Runtime) createAccount(w http.ResponseWriter, req *http.Request) {
 	}
 }
 func (r *Runtime) updateAccount(w http.ResponseWriter, req *http.Request) {
+	r.accountMu.Lock()
+	defer r.accountMu.Unlock()
 	var old Account
 	if e := r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &old); e != nil {
 		fail(w, 404, "account_not_found", "账号不存在")

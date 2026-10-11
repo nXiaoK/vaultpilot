@@ -59,6 +59,7 @@ type Account struct {
 	QuotaAt            string `json:"quota_at"`
 }
 type Pool struct {
+	includeDisabled bool     // internal maintenance only; never accepted from JSON
 	ID              string   `json:"id"`
 	AccountIDs      []string `json:"account_ids"`
 	CatalogReplicas int      `json:"catalog_replicas"`

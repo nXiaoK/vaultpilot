@@ -354,3 +354,10 @@ func (r *Runtime) Register(m *http.ServeMux) {
 	m.HandleFunc("GET /api/browse", r.browse)
 	m.HandleFunc("GET /api/audit-events", func(w http.ResponseWriter, req *http.Request) { r.list(w, req, "audit_events") })
 }
+
+// LockAccountConfiguration serializes destructive storage maintenance with
+// account edits, deletion, verification and credential installation.
+func (r *Runtime) LockAccountConfiguration() func() {
+	r.accountMu.Lock()
+	return r.accountMu.Unlock
+}

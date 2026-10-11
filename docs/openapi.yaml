@@ -364,6 +364,65 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/AccountCreate"
+  "/accounts/clear/preview":
+    post:
+      summary: 预览所选账号当前库的备份清空范围
+      operationId: preview_account_clear
+      tags: [账号]
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountClearSelection"
+      responses:
+        '200':
+          description: 账号、退役仓库、失效恢复点及暂停计划；受保护点或活动任务导致 blocked
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountClearPreview"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+  "/accounts/clear":
+    post:
+      summary: 提交单账号或批量清空备份任务
+      operationId: submit_account_clear
+      tags: [账号]
+      description: 仅已解锁写入节点。执行时重新核对 preview_token、保护与任务状态；只清理服务器构造的当前库仓库和旧 catalog，保留授权、连接入口与最新删除记录。先暂停计划和同步所有已验证 Drive 的删除目录，再开始删除。失败或重启后必须选择原账号组重试。
+      security:
+      - SessionAuth: []
+        CSRFToken: []
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountClearRequest"
+      responses:
+        '202':
+          description: account-clear 后台任务，结果记录每个账号的 cleared/error/warning 及 cleanup_pending
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Task"
+        '400':
+          "$ref": "#/components/responses/APIError"
+        '401':
+          "$ref": "#/components/responses/APIError"
+        '403':
+          "$ref": "#/components/responses/APIError"
+        '409':
+          "$ref": "#/components/responses/APIError"
   "/accounts/export":
     post:
       summary: 导出密码加密的已验证 OneDrive 账号包
@@ -2437,6 +2496,10 @@ components:
         maintenance_window:
           type: string
           description: 仅已登录返回；空表示不限，否则HH:MM-HH:MM，可跨午夜
+        account_clear_pending:
+          type: array
+          items: {type: string}
+          description: 仅登录后返回，未完成清空的原账号组；重试完成前其他任务被阻止
         maintenance_timezone:
           type: string
           description: 仅已登录返回，IANA时区
@@ -4148,3 +4211,47 @@ components:
       - "$ref": "#/components/schemas/MigrateRepositoryRequest"
       - "$ref": "#/components/schemas/CleanupOldCopyRequest"
       description: 正常迁移保留旧副本；cleanup_old=true是另一次明确确认后的旧副本清理，先验证新位置及引用，再登记退休并提交目录，最后删除旧位置。
+
+    AccountClearSelection:
+      type: object
+      required: [account_ids]
+      properties:
+        account_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+    AccountClearRequest:
+      allOf:
+      - "$ref": "#/components/schemas/AccountClearSelection"
+      - type: object
+        required: [preview_token, confirmation]
+        properties:
+          preview_token: {type: string, pattern: '^[a-f0-9]{64}$'}
+          confirmation: {type: string, const: 清空所选备份}
+    AccountClearPreview:
+      type: object
+      required: [vault_id, path, items, repository_ids, point_ids, protected_point_ids, pause_plan_ids, catalog_account_count, blocked, reasons, preview_token, resume]
+      properties:
+        vault_id: {type: string}
+        path: {type: string, description: 当前库目录；不接受客户端自定义路径}
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              email: {type: string}
+              drive_id: {type: string}
+              estimated_bytes: {type: integer, description: 上次查询的项目占用，不是实时测量或保证释放空间}
+        repository_ids: {type: array, items: {type: string}}
+        point_ids: {type: array, items: {type: string}}
+        protected_point_ids: {type: array, items: {type: string}}
+        pause_plan_ids: {type: array, items: {type: string}}
+        catalog_account_count: {type: integer}
+        blocked: {type: boolean}
+        reasons: {type: array, items: {type: string}}
+        preview_token: {type: string}
+        resume: {type: boolean}

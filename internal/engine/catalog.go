@@ -353,7 +353,7 @@ func (s *Service) commit(ctx context.Context, t *Task, pool Pool, newPoint *Poin
 			return err
 		}
 		key := a.Region + ":" + a.TenantID + ":" + a.DriveID
-		if !a.Verified || !a.Enabled || a.DriveID == "" || drives[key] {
+		if !a.Verified || (!a.Enabled && !pool.includeDisabled) || a.DriveID == "" || drives[key] {
 			continue
 		}
 		drives[key] = true
@@ -810,7 +810,7 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 				break
 			}
 		}
-		if !found {
+		if !found && repo.Status != "retired" {
 			repo.AccountID, repo.Status = "", "account_missing"
 		}
 		if err = saveCatalogEntity(ctx, tx, "repositories", repo.ID, repo); err != nil {

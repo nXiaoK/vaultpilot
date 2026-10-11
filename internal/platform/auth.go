@@ -112,6 +112,10 @@ func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 		v["log_max_rows"] = r.Config.LogMaxRows
 		v["maintenance_window"] = r.Config.MaintenanceWindow
 		v["maintenance_timezone"] = r.Config.MaintenanceTimezone
+		var pending []string
+		if raw, e := r.Store.Meta(req.Context(), "account_clear_pending"); e == nil && json.Unmarshal([]byte(raw), &pending) == nil {
+			v["account_clear_pending"] = pending
+		}
 	}
 	writeJSON(w, 200, v)
 }
