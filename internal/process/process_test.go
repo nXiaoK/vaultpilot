@@ -29,8 +29,26 @@ func TestProcessHelper(t *testing.T) {
 	case "stderr-too-long":
 		_, _ = os.Stderr.WriteString(strings.Repeat("x", 1024*1024))
 		time.Sleep(30 * time.Second)
+	case "oversized-line":
+		_, _ = os.Stdout.WriteString(strings.Repeat("x", 5*1024*1024))
+		_, _ = os.Stdout.WriteString("tail\n")
+		_, _ = os.Stderr.WriteString(strings.Repeat("y", 128*1024) + "\n")
 	}
 	os.Exit(0)
+}
+
+func TestRunDrainsOversizedLines(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	var lines []string
+	data, err := Run(ctx, os.Args[0], []string{"-test.run=TestProcessHelper"}, []string{"VP_PROCESS_HELPER=1", "VP_HELPER_MODE=oversized-line"}, func(line string) { lines = append(lines, line) })
+	if !errors.Is(err, ErrOutputLineTooLong) || ctx.Err() != nil || time.Since(start) >= 5*time.Second {
+		t.Fatalf("oversized line did not drain promptly: %v (context: %v)", err, ctx.Err())
+	}
+	if strings.Contains(string(data), "x") || len(lines) != 1 || lines[0] != strings.Repeat("y", 128*1024) {
+		t.Fatal("partial oversized line reached output or callback")
+	}
 }
 
 func TestOutputLimitedAcceptsNormalAndExactLimitOutput(t *testing.T) {

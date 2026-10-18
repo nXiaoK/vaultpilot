@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -49,6 +50,8 @@ func Output(ctx context.Context, bin string, args []string, env []string) ([]byt
 // stdout and stderr limit. OutputLimited stops the entire process group as
 // soon as this happens, retaining at most the requested number of bytes.
 var ErrOutputLimitExceeded = errors.New("process output limit exceeded")
+
+var ErrOutputLineTooLong = errors.New("process output line exceeds 4 MiB")
 
 type boundedOutput struct {
 	sync.Mutex
@@ -149,6 +152,8 @@ func Run(ctx context.Context, bin string, args []string, env []string, onLine fu
 	}
 	var wg sync.WaitGroup
 	var callbacks sync.Mutex
+	var scanOnce sync.Once
+	var scanErr error
 	scan := func(reader io.Reader) {
 		defer wg.Done()
 		s := bufio.NewScanner(reader)
@@ -160,6 +165,10 @@ func Run(ctx context.Context, bin string, args []string, env []string, onLine fu
 			onLine(line)
 			callbacks.Unlock()
 		}
+		if err := s.Err(); err != nil {
+			scanOnce.Do(func() { scanErr = err })
+		}
+		_, _ = io.Copy(io.Discard, reader)
 	}
 	wg.Add(2)
 	go scan(stdout)
@@ -168,6 +177,8 @@ func Run(ctx context.Context, bin string, args []string, env []string, onLine fu
 	err = cmd.Wait()
 	if ctx.Err() != nil {
 		err = ctx.Err()
+	} else if err == nil && scanErr != nil {
+		err = fmt.Errorf("%w: %v", ErrOutputLineTooLong, scanErr)
 	}
 	return output.Bytes(), err
 }
