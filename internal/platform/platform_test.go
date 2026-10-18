@@ -107,7 +107,7 @@ func TestRecoveryKitRejectsTamperingAndFreshInstanceRecovers(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if strings.Contains(string(res.Body.Bytes()), "master_key") || payload.VaultID != h.r.VaultID() {
+	if strings.Contains(res.Body.String(), "master_key") || payload.VaultID != h.r.VaultID() {
 		t.Fatal("recovery kit exposed or lost master key")
 	}
 	dir := t.TempDir()

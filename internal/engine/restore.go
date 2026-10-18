@@ -31,7 +31,6 @@ type RestoreRequest struct {
 }
 
 func (r *RestoreRequest) UnmarshalJSON(b []byte) error {
-	type request RestoreRequest
 	var raw struct {
 		PointID      string          `json:"point_id"`
 		SourceIDs    []string        `json:"source_ids"`

@@ -52,9 +52,11 @@ func (r *Runtime) telegramConfig() (telegramConfig, error) {
 	}
 	plain, err := r.openNotification("config", raw)
 	if err != nil {
+		//lint:ignore ST1005 Telegram 为展示给用户的产品名称。
 		return c, errors.New("Telegram 配置无法解密")
 	}
 	if json.Unmarshal(plain, &c) != nil {
+		//lint:ignore ST1005 Telegram 为展示给用户的产品名称。
 		return c, errors.New("Telegram 配置无效")
 	}
 	return c, nil

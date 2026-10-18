@@ -15,8 +15,6 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const formatVersion = 1
-
 // SetMaster installs a verified master key for trusted offline recovery tools.
 // HTTP handlers must never expose this capability directly.
 func (k *Keyring) SetMaster(key []byte) error { return k.set(key) }
