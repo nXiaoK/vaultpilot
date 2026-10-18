@@ -212,7 +212,7 @@ func TestQuotaReadsOverlapAndRejectIncompleteResponse(t *testing.T) {
 func TestDriveCacheBounded(t *testing.T) {
 	r := &Runtime{}
 	for i := 0; i < 256; i++ {
-		r.rememberDrives(Account{ID: newID(), Version: 1}, nil)
+		r.rememberDrives(Account{ID: newID(), Version: 1}, nil, nil)
 	}
 	if len(r.recentDrives) != 128 {
 		t.Fatalf("unbounded cache: %d", len(r.recentDrives))
@@ -222,7 +222,7 @@ func TestDriveCacheBounded(t *testing.T) {
 func TestCachedDrivesCannotAuthorizeUnknownOrUnsupportedSelection(t *testing.T) {
 	h := newPendingCloudHarness(t, adminPassword)
 	a := performanceAccount(t, h)
-	h.r.rememberDrives(a, []Drive{{ID: "metadata", DriveType: "documentLibrary", Supported: false}})
+	h.r.rememberDrives(a, []Drive{{ID: "metadata", DriveType: "documentLibrary", Supported: false}}, nil)
 	h.r.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		t.Errorf("invalid selection contacted Graph: %s", req.URL.Path)
 		return cloudResponse(500, `{}`), nil

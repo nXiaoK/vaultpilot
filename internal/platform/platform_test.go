@@ -342,6 +342,8 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 		switch {
 		case req.URL.Path == "/v1.0/me/drives":
 			return cloudResponse(200, `{"value":[{"id":"metadata","name":"ODCMetadataArchive","driveType":"documentLibrary"},{"id":"personal-drive","name":"Documents","driveType":"personal"}]}`), nil
+		case req.URL.Path == "/v1.0/me":
+			return cloudResponse(403, `{}`), nil
 		case req.URL.Path == "/v1.0/drives/personal-drive":
 			return cloudResponse(200, `{"id":"personal-drive","quota":{"total":10000000,"used":100000,"remaining":9900000}}`), nil
 		case req.URL.Path == "/v1.0/drives/personal-drive/root":

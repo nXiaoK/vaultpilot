@@ -39,8 +39,15 @@ func TestAccountIdentityAndUniqueDrives(t *testing.T) {
 			t.Fatalf("duplicate drive: %+v", result.Items)
 		}
 		if profileAvailable {
-			if result.Account.AccountEmail != "member@outlook.com" || result.Account.Version != a.Version+1 {
+			if result.Account.AccountEmail != "member@outlook.com" || result.Account.Version != a.Version {
 				t.Fatalf("identity: %+v", result.Account)
+			}
+			var persisted Account
+			if err := h.r.Store.Get(t.Context(), "accounts", a.ID, &persisted); err != nil {
+				t.Fatal(err)
+			}
+			if persisted.AccountEmail != "" || persisted.AccountDisplayName != "" || persisted.Version != a.Version {
+				t.Fatalf("GET persisted identity: %+v", persisted)
 			}
 			_, err := h.r.installCredential(t.Context(), a.ID, result.Account.Version, h.r.customCredential(OAuthToken{AccessToken: "new"}), "test")
 			if err != nil {

@@ -63,6 +63,8 @@ func TestCloudReaderAccountVerificationUsesOnlyReads(t *testing.T) {
 				switch req.URL.Path {
 				case "/v1.0/me/drives":
 					return cloudResponse(200, `{"value":[{"id":"shared-personal-drive","name":"Documents","driveType":"personal"}]}`), nil
+				case "/v1.0/me":
+					return cloudResponse(403, `{}`), nil
 				case base + "/root":
 					return cloudResponse(200, `{"id":"root","folder":{}}`), nil
 				case base:
@@ -89,7 +91,7 @@ func TestCloudReaderAccountVerificationUsesOnlyReads(t *testing.T) {
 			if !a.Verified || a.Status != "ready" || a.DriveID != "shared-personal-drive" || a.Region != "global" || a.TenantID != "consumers" || a.QuotaDomain != "global:personal:shared-personal-drive" || a.FreeBytes != 9900000 || a.ProjectUsedBytes != expectedSize {
 				t.Fatalf("verification lost cloud identity or quota: %+v", a)
 			}
-			if len(calls) != 5 {
+			if len(calls) != 6 {
 				t.Fatalf("unexpected verification calls: %v", calls)
 			}
 			if !connected && (!h.r.CloudPending() || h.r.VaultID() != "" || h.r.Keys.Unlocked()) {
