@@ -1,7 +1,9 @@
 {
-  "backend": "local directories, real Restic",
-  "restic_version": "restic 0.18.1 compiled with go1.25.1 on darwin/arm64",
-  "original_state_used_for_recovery": false,
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "passed": true,
+  "rclone_version": "rclone v1.70.3\n- os/version: darwin 26.6.2 (64 bit)\n- os/kernel: 25.6.0 (arm64)\n- os/type: darwin\n- os/arch: arm64 (ARMv8 compatible)\n- go/version: go1.24.4\n- go/linking: dynamic\n- go/tags: cmount",
+  "canonical_report": "local-e2e-report.json",
   "checks": [
     "first backup, two catalog replicas, idempotency, allocation preview",
     "incremental unchanged data, protected retention/forget/prune, real whole-repository migration and full data check",
@@ -12,63 +14,5 @@
     "recovery kit exported before later repository creation discovers new repository key and restores added file",
     "repeat discovery, single-file restore, conflict preservation, explicit overwrite and partial offline-account restore"
   ],
-  "allocation_evidence": {
-    "single_account_budget_bytes": 35651584,
-    "single_source_logical_bytes": 41943109,
-    "allocated_account_count": 2
-  },
-  "recovery_kit_evidence": {
-    "exported_before_repository_count": 2,
-    "later_repository_count": 3,
-    "kit_reexported": false
-  },
-  "restore_expectations": [
-    {
-      "point_id": "008e479d1228728adca435b92f241b42",
-      "source_id": "dbd8385a07a611c73f051b6d48697158",
-      "files": {
-        "中文 文件.txt": "98e8e9fd46393dd2320e7543eaa5c429f4e993adf550f8ff0561da90267b34d9",
-        "换行\n文件.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
-        "删除.txt": "f76feeaf6921acbd039a1000a848980288a983d34a02a8af4d9e37efd247ab8e",
-        "大文件 A.bin": "a81631ba78062e134f5ed8585b71c324db0d05029101244f6631c976055ae29a",
-        "大文件 B.bin": "eaa539b4ffe40e60ff76d70476f1fbae090aff28bbc3fda97cf366b46c715374"
-      },
-      "absent": [
-        "skip.tmp",
-        "重命名.txt",
-        "恢复包导出后新增.bin"
-      ],
-      "directories": [
-        "",
-        "空目录"
-      ],
-      "symlinks": {
-        "链接": "中文 文件.txt"
-      }
-    },
-    {
-      "point_id": "156e3216b29d3698fc3156833d2e24d6",
-      "source_id": "dbd8385a07a611c73f051b6d48697158",
-      "files": {
-        "大文件 A.bin": "a81631ba78062e134f5ed8585b71c324db0d05029101244f6631c976055ae29a",
-        "大文件 B.bin": "eaa539b4ffe40e60ff76d70476f1fbae090aff28bbc3fda97cf366b46c715374",
-        "中文 文件.txt": "dabf9024dbfce8a57298111cf697fb7b8ac2797dc9c32eb2e035e72ec1a9ef9e",
-        "重命名.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
-        "恢复包导出后新增.bin": "b8b63b0c033ab22f4a2366818d720cea29cba8ec680c5c9088bd7ce326cf3e2b"
-      },
-      "absent": [
-        "删除.txt",
-        "换行\n文件.txt",
-        "skip.tmp"
-      ],
-      "directories": [
-        "",
-        "空目录"
-      ],
-      "symlinks": {
-        "链接": "中文 文件.txt"
-      }
-    }
-  ],
-  "passed": true
+  "real_onedrive_verified": false
 }

@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "node_version": "v22.23.3",
+  "npm_ci": "passed",
+  "production_build": "passed",
+  "tests": {
+    "tests": 44,
+    "pass": 44,
+    "fail": 0,
+    "skipped": 0
+  },
+  "browser": {
+    "frontend_merge_commit": "a6fb384",
+    "backend_test_commit": "9cbb141",
+    "fixture": "isolated disposable state",
+    "initial_admin_password_focus": true,
+    "escape_restores_trigger_focus": true,
+    "actual_encrypted_json_download_completed": true,
+    "downloads_copy_removed": true,
+    "server_and_tab_closed": true,
+    "screenshot": "../screenshots/fix-validation.jpg",
+    "scope": "in-app browser; no separate Firefox or screen-reader verification"
+  }
+}

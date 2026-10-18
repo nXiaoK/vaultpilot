@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "rows": 200000,
+  "repositories": 4,
+  "page_size": 512,
+  "final_keyset_elapsed": "280.204792ms",
+  "final_go_version": "go version go1.26.9 darwin/arm64",
+  "final_index_version": 3,
+  "matched_previous_sample": {
+    "go_version": "go1.27.1",
+    "indexes": "original pre-v3 indexes",
+    "offset_seconds": 14.637802833,
+    "keyset_seconds": 0.698913541
+  },
+  "scope": "synthetic local SQLite traversal only; different-toolchain/final-index samples are not a controlled comparison"
+}

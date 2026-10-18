@@ -24,14 +24,14 @@
   },
   "restore_expectations": [
     {
-      "point_id": "b84aa0bc18e9c91d865db6cd6289b89c",
-      "source_id": "bdade8f3fd4726ddc146427f8aa7e575",
+      "point_id": "82212ae068d9955b1cecf888a7ee28df",
+      "source_id": "8719ee0fdc420a97fc06b033639cfcc6",
       "files": {
         "中文 文件.txt": "98e8e9fd46393dd2320e7543eaa5c429f4e993adf550f8ff0561da90267b34d9",
         "换行\n文件.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
         "删除.txt": "f76feeaf6921acbd039a1000a848980288a983d34a02a8af4d9e37efd247ab8e",
-        "大文件 A.bin": "e94d2b056e39d9dfe752a93fb74a61ff57e288b005a9b7d55a13ee9082204ab5",
-        "大文件 B.bin": "234a36c0ce88eebbd088a569a366f4d98974ee038a091ba10c6b5532260b2b4a"
+        "大文件 A.bin": "457243d2ee1911fcec789b41cd4316888a2b814d25c64711ba0fddbaf4671149",
+        "大文件 B.bin": "5ea9df91515c154eccdc712591d37c80e057aa45e621726c213658782adfdd78"
       },
       "absent": [
         "skip.tmp",
@@ -47,14 +47,14 @@
       }
     },
     {
-      "point_id": "bf8580faa86ee90304496abfeb0cb537",
-      "source_id": "bdade8f3fd4726ddc146427f8aa7e575",
+      "point_id": "d7fd3615414af3370c3e0508303963a6",
+      "source_id": "8719ee0fdc420a97fc06b033639cfcc6",
       "files": {
-        "大文件 A.bin": "e94d2b056e39d9dfe752a93fb74a61ff57e288b005a9b7d55a13ee9082204ab5",
-        "大文件 B.bin": "234a36c0ce88eebbd088a569a366f4d98974ee038a091ba10c6b5532260b2b4a",
+        "大文件 A.bin": "457243d2ee1911fcec789b41cd4316888a2b814d25c64711ba0fddbaf4671149",
+        "大文件 B.bin": "5ea9df91515c154eccdc712591d37c80e057aa45e621726c213658782adfdd78",
         "中文 文件.txt": "dabf9024dbfce8a57298111cf697fb7b8ac2797dc9c32eb2e035e72ec1a9ef9e",
         "重命名.txt": "a3c354f7a51d467e9d41af086b4eac6db973aa412a6158b5a8a93ca5f0498a00",
-        "恢复包导出后新增.bin": "f7d273f6f5a7d54a47c07cd9f28481b93f68a5951aa9136338f7029afbe5dc23"
+        "恢复包导出后新增.bin": "e3e4eca38a221095298fd2bf7253043cacbae7a898d44ee2a52723b5df2847ce"
       },
       "absent": [
         "删除.txt",
@@ -70,5 +70,9 @@
       }
     }
   ],
-  "passed": true
+  "passed": true,
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "rclone_version": "rclone v1.70.3\n- os/version: darwin 26.6.2 (64 bit)\n- os/kernel: 25.6.0 (arm64)\n- os/type: darwin\n- os/arch: arm64 (ARMv8 compatible)\n- go/version: go1.24.4\n- go/linking: dynamic\n- go/tags: cmount",
+  "real_onedrive_verified": false
 }

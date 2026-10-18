@@ -1,13 +1,15 @@
 {
-  "at": "2026-10-10T09:22:52Z",
-  "database_bytes": 285380608,
-  "go_heap_alloc_bytes": 2912856,
-  "go_version": "go1.26.4",
-  "insert_seconds": 7.065065584,
-  "page_100_seconds": 0.000153709,
+  "at": "2026-10-18T14:53:03Z",
+  "database_bytes": 257961984,
+  "go_heap_alloc_bytes": 4262528,
+  "go_version": "go1.26.9",
+  "insert_seconds": 4.957366709,
+  "page_100_seconds": 8.5292e-05,
   "physical_backup_verified": false,
   "platform": "darwin/arm64",
   "rows": 1000000,
   "synthetic_logical_bytes": 5242880000000,
-  "test": "synthetic SQLite file index, no cloud I/O"
+  "test": "synthetic SQLite file index, no cloud I/O",
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8"
 }

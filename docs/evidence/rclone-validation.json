@@ -1,36 +1,18 @@
 {
-  "date": "2026-10-10T13:34:12.285888+00:00",
-  "go_race_all_packages": "passed; real Restic failure cases enabled",
-  "go_vet": "passed",
-  "backend_build": "passed",
-  "frontend_typecheck_build": "passed",
-  "openapi_yaml": "parsed; 562 local references resolved",
-  "rclone_version": "1.70.3",
-  "unit_checks": [
-    "INI, dump JSON, token JSON, Base64 and marked authorize output",
-    "encrypted/unsafe configuration rejection and allowlisted engine configuration",
-    "encrypted credential persistence and restart",
-    "explicit remote and Drive selection, CSRF and account version conflict",
-    "original custom client retained for refresh",
-    "imported Rclone refresh protocol fixture and environment isolation",
-    "old task grant cannot replace new credentials",
-    "callback SSRF rejection, state, expiry, session binding and replay rejection"
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "passed": true,
+  "rclone_version": "rclone v1.70.3\n- os/version: darwin 26.6.2 (64 bit)\n- os/kernel: 25.6.0 (arm64)\n- os/type: darwin\n- os/arch: arm64 (ARMv8 compatible)\n- go/version: go1.24.4\n- go/linking: dynamic\n- go/tags: cmount",
+  "restic_version": "restic 0.18.1 compiled with go1.25.1 on darwin/arm64",
+  "real_cli_test_names": [
+    "TestRealRcloneClearCatalogFilterPreservesCurrentCertificate",
+    "TestRealRclonePreservesCredentialGeneration",
+    "TestRealRcloneStandardAuthorizeAndCancel",
+    "TestRealResticRcloneTransport",
+    "TestRealResticRcloneTransport/cache_with_spaces,_\"quotes\",_'apostrophe',_\\backslash_and-newline",
+    "TestRealResticRcloneTransport/ordinary-cache"
   ],
-  "real_engine_checks": [
-    "standard shared-app authorization start and cancellation",
-    "remote callback relay using access_denied; no Microsoft code exchange",
-    "actual Rclone config parse/rewrite preserves grant marker"
-  ],
-  "browser_checks": [
-    "account creation with no custom OAuth configured",
-    "standard link and callback form",
-    "unsafe callback rejection and cancel",
-    "configuration file upload and preview",
-    "remote selection required before save",
-    "encrypted config actionable rejection"
-  ],
-  "container_report": "rclone-docker-regression.json",
-  "local_regression_report": "rclone-local-regression.json",
-  "real_microsoft_login_and_drive_read_write": "not executed",
-  "real_microsoft_long_term_refresh": "not executed; protocol fixture only"
+  "successful_microsoft_consent_verified": false,
+  "real_onedrive_verified": false,
+  "scope": "native authorization startup/cancellation, credential marker, and real local-backend Restic/Rclone transport"
 }

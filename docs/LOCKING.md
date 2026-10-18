@@ -4,7 +4,7 @@
 
 实现基线为 `5c4a746ec36cffa8e1a0a2368817d3ae7466dec6`，已含 T05、T10、T13、T14 及后续 NULL/并发边界补修。已基于合并后的 `entry_cleanup.go` 重新检索锁调用点。
 
-## 1. 建议确认的方案
+## 1. 已确认并实施的方案
 
 1. `catalogMu` 只串行化目录生成/认证发布及相应本地恢复点、仓库映射、待清理状态的变更。复制整仓、全量 Restic 校验、forget/prune、删除旧物理副本期间不持有它。目录文件的上传、读回、prepare/ok 认证本身仍在此锁内，不能承诺所有网络等待都消失。
 2. 恢复索引使用支持 context 的读写锁。restore 全程、文件列表和恢复预览持读锁；discover、账号清空持写锁；T14 清扫逐批持写锁。retain 的删除决策短持写锁，排空已开始的 restore，再切换到读锁执行 prune 与最终发布；不进行读写锁升级。
@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | `Service.mu` | active/pending/cancels/cancelled、任务取消标记与执行器保存的合并顺序 | 保留 T10 语义；不在持有它时等待计划、索引、catalog 或资源锁，不改任务保存协议 |
 | `runMu` | cron 注册表、scheduleIDs 的重载 | 保留；调度回调只 enqueue，不在其中获取计划/仓库锁 |
-| `configurationMu` | 计划编辑/删除/保护操作与账号清空之间的排他关系 | 范围不扩大，等待改为 context 可取消 |
+| `configurationMu` | 计划编辑/删除/保护、迁移发布、旧副本删除与账号清空之间的排他关系 | 保留已有范围，新增迁移发布和旧副本 purge 的读门禁；等待可取消 |
 | `Runtime.accountMu` | 账号编辑、删除、验证、授权安装与清空之间的配置一致性；recentDrives 缓存 | 保留原阻塞 Lock/Unlock 方法；为引擎新增 context 入口。迁移最终验证/发布使用此配置门禁，阻止验证后立即停用/替换目标账号 |
 | `plan:<id>` | 同计划备份、预览、retain、migrate/cleanupOld 的互斥；待清理快照集合的计划内生命周期 | 继续覆盖整个相应任务，等待使用任务 context |
 | `recoveryIndex` | 文件清单被读取期间不被 discover 换代、T14 删除或账号清空；旧恢复地址在被使用期间不被物理清除 | 从字符串互斥锁变为专用读写锁。迁移切换当前映射保留旧副本，因此可在索引读锁下完成；删除旧副本前先写锁排空持旧地址的恢复读者 |
@@ -41,7 +41,7 @@
 
 ## 3. 可实现的 context 锁
 
-建议新增 `internal/ctxlock`，仅实现 Mutex、RWMutex 两种原语，以便 engine 与 platform 共用，避免包循环。不是引入新的业务公共接口。
+已新增 `internal/ctxlock`，仅实现 Mutex、RWMutex 两种原语，以便 engine 与 platform 共用，避免包循环。不是引入新的业务公共接口。
 
 ### Mutex
 
@@ -69,7 +69,7 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 
 ## 4. 每个获取点的前后范围
 
-| 获取点 | 当前范围 | 建议范围 |
+| 获取点 | 改动前范围 | 改动后范围 |
 | --- | --- | --- |
 | `backup` 计划锁 | 全备份/预览 | 保持，仅取消等待可响应 context |
 | `backup` 每分片 account→repo | 单次 backupShard，发布目录前已释放 | 保持；显式保证任何路径均释放后再等 catalog |
@@ -120,7 +120,7 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 1. **只读校验**：计划→索引 R→排序 account→repo；校验当前位置、完整 read-data 和所有有效快照引用。记录 repo 版本、当前/待删旧位置、账号物理身份、引用集合摘要；没有 catalog。
 2. **退休决策**：先释放资源锁及索引 R，再获取配置门禁→索引 W→catalog→排序 account→repo。W 排空此前可能仍持旧地址的 restore。重新验证版本、位置、账号与引用集合；有变化中止，保留旧副本。发布旧位置 Verified=false、cleanup_pending 与认证目录；保持现有先提交退休再删除的顺序。
 3. **物理删除**：释放上一阶段的资源/catalog/W，再按配置门禁→索引 R→排序 account→repo 获取；重验当前有效位置和待删位置仍完全一致且旧位置绝不是当前地址。执行旧位置 purge，无 catalog。阶段间若 discover 改过映射，停止删除，不能沿用旧内存快照。
-4. **完成发布**：先释放 account/repo，保持或按顺序重新取得索引 R，再取 catalog→排序 account→repo，重新读取并以 CAS 标记旧位置 deleted，发布认证目录。purge 后取消/提交失败时保留 durable cleanup_pending，重试沿用现有“目录不存在”处理；不重新激活已删除位置。
+4. **完成发布**：先释放 account/repo，保持或按顺序重新取得索引 R，再取 catalog→排序 account→repo，重新读取并以 CAS 标记旧位置 deleted，发布认证目录。purge 后取消或非降级提交失败时保留 durable cleanup_pending，重试沿用现有“目录不存在”处理；PROTECTION_DEGRADED 已逻辑提交，保留 deleted 状态并报告保护降级，不重新激活已删除位置。
 
 ## 6. retain：保留 T05 的决策持久性，释放 prune 的 catalog
 
@@ -128,7 +128,7 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 2. 在锁内重新预览并检查保护、保留策略和全局引用；认证发布删除决策后，使用 T05 已有的有界 WithoutCancel 本地事务记录 tombstone 和 pending_forget。这个原子边界不能被用户取消拆开。
 3. 释放 catalog 和索引 W；重新取得索引 R。W→R 不是原子降级，因此重新读当前仓库、pending_forget 和全局有效引用。若 discover 在间隙换代，必须基于新状态重新判断，不能使用阶段 1 的旧引用集合。
 4. prune 阶段保持索引 R，逐仓库 account→repo 执行 snapshots/forget/prune，不持 catalog。索引 R 防 discover 重建引用与账号清空；计划锁防本计划备份/迁移增加同仓库快照引用。其他计划备份只发布自己仓库的新快照；protect 只改变保护位，其他 retain 只减少引用。仍按每仓库最新全局引用排除任何被引用的 snapshot，不把“不同计划”当作一定没有共享历史引用。
-5. 完成物理清理后先释放所有 account/repo，才重新取 catalog。保持索引 R，重新读取仓库，基于真实处理过的 ID 发布完成目录，再以单条批量 UPDATE 的版本校验仅移除本任务处理的集合，保留期间新增的其他 pending ID。任何发布失败保留 pending，允许原有 retry。
+5. 完成物理清理后先释放所有 account/repo，才重新取 catalog。保持索引 R，重新读取仓库，基于真实处理过的 ID 发布完成目录，再以单条批量 UPDATE 的版本校验仅移除本任务处理的集合，保留期间新增的其他 pending ID。非降级发布失败保留 pending，允许原有 retry；PROTECTION_DEGRADED 已逻辑提交，移除已处理集合并报告保护降级。
 6. `t.prunedSnapshots` 和 pending_removals 的快照不能跨阶段被当作完整仓库实体回写；最终目录取最新仓库/点状态组装，避免覆盖别的计划在 prune 期间完成的提交。
 7. T14 的已删除清单清扫必须在计划、索引、catalog、账号/仓库锁全部释放后进行；不能在持索引 R 时触发它的 W，否则是锁升级死锁。
 
@@ -136,7 +136,7 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 
 ## 7. T14 接口与公共复用影响
 
-T14 负责者确认的接口为 `cleanupFileEntries`→`deleteEntryBatches(ctx, query, args, lockIndex)`：每次 DELETE 前获取旧字符串锁，执行后释放；入口包括 Start 异步 orphan 清扫、execute 终态后的 task 清扫、retain defer 的 deleted-point 清扫。
+清扫接口为 `cleanupFileEntries`→`deleteEntryBatches(ctx, query, args, lockIndex)`：每批 DELETE 前获取可取消的恢复索引写锁，执行后释放；入口包括 Start 异步 orphan 清扫、backup/preview 终态自有清单清扫、retain defer 的 deleted-point 清扫。
 
 清单写入方核对结果：仅 backup/preview 以任务 ID 建立 `file_entries`，discover 使用独立的 `import-*` RunID。执行器只对 backup/preview 做即时自有清单清理；取消的其他任务不再无谓等待索引写锁。retain 的已删除点清扫沿用任务 context，取消时可留下派生清单并记录日志，由下次启动补扫；快照校验的 defer 仍使用独立有界 context。
 
@@ -146,22 +146,22 @@ T15 仅替换 `lockIndex=true` 分支为专用索引的 `LockContext(ctx)`/Unloc
 
 - engine 的 keyed 锁：backup、restore、check/prune/migrate/cleanupOld、cloud-connect；恢复索引读写调用另见上表。
 - catalog：backup、retain、migrate/cleanupOld、protect、clearPreview、clearAccounts、discover。
-- configuration：planSave、planDelete、protect、clearAccounts。
-- Runtime account 配置：resources 中更新/删除账号，onedrive Drive 缓存/验证，account_transfer 导出读取/导入，rclone_import 凭据安装，以及 engine 的 clearPreview/clearAccounts。
+- configuration：planSave、planDelete、protect、clearAccounts，以及迁移发布和旧副本 purge。
+- Runtime account 配置：resources 中更新/删除账号，onedrive Drive 缓存/验证，account_transfer 导出读取/导入，rclone_import 凭据安装，以及 engine 的 clearPreview/clearAccounts、迁移发布和旧副本 purge。
 
 默认路径保持旧阻塞锁方法可用；context 入口按需启用。取消失败路径必须归还部分获取的锁；异步队列中的任务使用 execute 派生的任务 ctx，不能改成 Background 逃避取消。新增实现只保护同步边界，不改变请求 JSON、null、数字序列化或数据库实体字段。
 
-## 8. 实施后的验证与提交拆分
+## 8. 实现提交与验证
 
-第一实现提交已执行：`go vet ./...`、`go build -buildvcs=false ./cmd/...`、`git diff --check`；启用真实 Restic 0.18.1 的 `go test -race ./...` 全部通过；context 原语、HTTP 门禁、资源锁取消与共享恢复读取的定向 race 测试使用 `-count=5` 通过。此时尚未执行整仓 `-count=5`，未启用真实 Rclone 传输测试；后者与阶段拆分一起在最终验收执行。
+第一实现提交的历史验证：`go vet ./...`、`go build -buildvcs=false ./cmd/...`、`git diff --check`；启用真实 Restic 0.18.1 的 `go test -race ./...` 全部通过；context 原语、HTTP 门禁、资源锁取消与共享恢复读取的定向 race 测试使用 `-count=5` 通过。此时尚未执行整仓 `-count=5`，未启用真实 Rclone 传输测试；后者与阶段拆分一起在最终验收执行。
 
-建议分三次提交，每次完成对应构建/检查后提交，不推送：
+三个功能提交已完成：`238936f`、`ad9de2c`、`5e4cfa9`；测试补强为 `a182de8`、`42f8547`。未推送。
 
 1. context 锁原语、catalog/配置门禁、专用恢复索引读写锁及 T14 对接；取消和读写互斥测试。
 2. migrate 与 cleanupOld 的阶段拆分、CAS 重验和回滚；跨计划提交/锁顺序回归测试。
 3. retain 分阶段发布与 prune、恢复安全边界；整合并发回归和最终 `go test -race -count=5 ./...`。
 
-必须包含的可控并发测试：
+回归覆盖的可控并发边界包括：
 
 - 假 rclone copy、假 restic read-data 阻塞期间，另一个计划的备份能取得 catalog 并完成元数据认证提交；脚本对“数据复制/校验”和“目录小文件发布”分别控制，不能把所有 rclone 命令一起暂停。
 - migrate 复制结束、catalog 被另一协程占用时，复制阶段 account/repo 已释放；该 catalog 持有者能取得同一账号锁，证明不存在 account→catalog 倒序。
@@ -176,7 +176,7 @@ T15 仅替换 `lockIndex=true` 分支为专用索引的 `LockContext(ctx)`/Unloc
 
 ## 9. 尚未验证的边界
 
-本节记录整体方案的验证边界；具体提交实际执行的检查见交付记录。第一实现提交仍保留 maintenance 的长持 catalog 范围，完整阶段拆分及整仓 race 连续五次尚待后续提交与最终验收。真实 OneDrive 长复制/断网/并发重授权、Docker、生产规模大清单耗时均不能由假脚本测试替代。
+三阶段均已实现。最终源码 `d7b6bd6` 的整仓 race 连续五轮和无缓存单轮均通过，启用官方 Restic 0.18.1 / Rclone 1.70.3，详见 [修复与验证报告](REPAIR_REPORT.md) 及 [Go 证据](evidence/go-validation.json)。真实 OneDrive 长复制/断网/并发重授权、Docker、生产规模大清单耗时均不能由假脚本测试替代。
 
 写者排队对新浏览的公平调度、清空/discover 仍长持 catalog、元数据认证发布本身仍有网络等待，是本方案明确保留的限制。尤其 discover 的进一步分阶段不包含在此次实现中，避免把未经评审的目录换代协议一起改动。
 

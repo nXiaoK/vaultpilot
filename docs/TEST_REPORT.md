@@ -1,5 +1,24 @@
 # 实现验证报告
 
+## 2026-10-18 项目修复整合验收
+
+验收源码：`d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8`。完整范围、独立提交、67 个计划子项及真实新增测试声明见 [修复与验证报告](REPAIR_REPORT.md) 和 [逐项证据](evidence/fix-plan-validation.json)。没有自动推送。
+
+- Go 1.26.9：vet、staticcheck、三个后端程序构建通过；govulncheck 未发现可达漏洞，报告的 4 项未调用模块漏洞不等于全部依赖零漏洞。
+- 官方 Restic 0.18.1 / Rclone 1.70.3：全仓 `go test -json -race -count=5 -timeout=30m ./...` 和 `-count=1 -timeout=15m` 均通过；单轮禁用测试结果缓存。包括维护并发、取消、版本冲突、降级、重试与 JSON 完整性回归。
+- Node 22.23.3：npm ci、Vue/TypeScript/Vite 构建、44 项前端测试通过；隔离浏览器自动焦点、Esc 回焦和完整加密恢复包下载通过。
+- 真实本地扩展闭环与独立离线救援通过：跨账号分配、增量与历史版本、清理/迁移/坏包拒删、原状态和源不存在后的发现/恢复及 SHA-256。
+- SQLite 合成规模：百万行插入 4.957 秒，100 行页读取 85.292 微秒，数据库 257,961,984 字节；20 万行、4 仓库键集遍历 280.205 毫秒。逻辑 5 TB 是统计值，无对应物理上传；Go heap 不是 RSS，不能推断生产云端性能。
+- Linux amd64/arm64 三个后端程序交叉编译通过；Compose config、YAML/本地 schema 引用、Python 脚本、JSON 与 diff 检查通过。
+- Docker daemon 未运行，镜像实际构建、tini PID 1/僵尸回收/容器 SIGTERM 均未验证。没有真实微软账号，OneDrive 成功授权/读写/长期刷新、5 TB 上传、百万物理文件、生产并发与多节点均未验收。
+
+当前证据：[全部命令](evidence/validation-summary.json)、[Go](evidence/go-validation.json)、[前端](evidence/frontend-validation.json)、[本地闭环](evidence/local-e2e-report.json)、[离线救援](evidence/offline-rescue-report.json)、[规模](evidence/scale-report.json)、[Docker 未验证](evidence/docker-report.json)。
+
+部署前核对 `VP_PUBLIC_URL` / `VP_ALLOWED_HOSTS` 与可信代理 CIDR；敏感导出新增当前登录密码，初始化请求上限 1 MiB。旧版已删除但未登记 pending_forget 的空间泄漏不自动回填。升级备份、SQLite NORMAL 及索引 v3 边界见 [MIGRATIONS.md](MIGRATIONS.md)。
+
+以下为各自日期的历史记录，不能替代上面的当前源码验收；历史容器结果不代表本轮镜像通过。
+
+
 ## 2026-10-11 遗留备份缓存启动清理
 
 上一项权限修复不会自动解除旧版已留下的受限目录。新增启动清理，仅处理缓存入口下 `manifest-dirs-<数字>` 的实际目录，在任何备份任务启动前按父目录到子目录修复为 `0700` 再删除；缓存预算检查仍只读，避免删除其他运行中任务的占位树。

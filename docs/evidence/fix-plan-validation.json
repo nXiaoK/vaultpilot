@@ -1,0 +1,5253 @@
+{
+  "schema_version": 1,
+  "baseline": "4029295dd8c1642b3f76de29b9737520f9fee18e",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "source_frozen": true,
+  "final_validation_status": "available_checks_passed; Docker and live OneDrive not verified",
+  "method": "按每个非合并feature提交与其首父提交的真实diff列出文件，并对父/子版本测试声明做集合差；不从计划名称推断新增测试。",
+  "plans": [
+    "00-README.md",
+    "T01-go-toolchain-cve.md",
+    "T02-host-allowlist-dns-rebinding.md",
+    "T03-rclone-config-scope.md",
+    "T04-process-oversized-line-hang.md",
+    "T05-retention-retryable-prune.md",
+    "T06-migrate-target-in-pool.md",
+    "T07-process-env-allowlist.md",
+    "T08-container-init.md",
+    "T09-recovery-kit-download.md",
+    "T10-task-cancel-race.md",
+    "T11-quota-refresh-conflicts.md",
+    "T12-auth-throttle-argon.md",
+    "T13-keyset-paging.md",
+    "T14-table-growth.md",
+    "T15-lock-scope.md",
+    "T16-misc-low-priority.md"
+  ],
+  "commits": [
+    {
+      "hash": "3a4dfb952c188e260c73e4335f103451279d8a26",
+      "short": "3a4dfb9",
+      "subject": "fix: build with Go 1.26.9 to pick up net/http and crypto/tls security fixes",
+      "files": [
+        {
+          "status": "M",
+          "path": "Dockerfile"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "46a40377b1e85b37222510ec4b1d6e806c31c870",
+      "short": "46a4037",
+      "subject": "fix: run under tini so orphaned engine subprocesses are reaped",
+      "files": [
+        {
+          "status": "M",
+          "path": "Dockerfile"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "a673666ab8e9b5d4acc59a9b1640e33355a23c1b",
+      "short": "a673666",
+      "subject": "fix: drain subprocess pipes after oversized output lines to prevent task hangs",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/process/process.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/process/process_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/process/process_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/process/process_test.go",
+          "name": "TestRunDrainsOversizedLines",
+          "kind": "go",
+          "line": 40,
+          "present_at_frozen_source": true,
+          "frozen_line": 42
+        }
+      ]
+    },
+    {
+      "hash": "d92fba0e16eb1ab15f99ad9686ae4ccabf2d50ee",
+      "short": "d92fba0",
+      "subject": "fix: build task-scoped rclone configs so one broken account cannot fail every task",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/account_clear.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/catalog.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/rclone_scope_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/rclone.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/rclone_scope_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/rclone_scope_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/rclone_scope_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/rclone_scope_test.go",
+          "name": "TestRcloneHelpersIgnoreUnrelatedBrokenAccount",
+          "kind": "go",
+          "line": 11,
+          "present_at_frozen_source": true,
+          "frozen_line": 11
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForIsScopedAndIsolatesBrokenAccounts",
+          "kind": "go",
+          "line": 13,
+          "present_at_frozen_source": true,
+          "frozen_line": 13
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForAllowsQuotaUpdatesButRejectsRemoteChanges",
+          "kind": "go",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 63
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForPropagatesSyncFailure",
+          "kind": "go",
+          "line": 103,
+          "present_at_frozen_source": true,
+          "frozen_line": 103
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForCancelsTokenRefresh",
+          "kind": "go",
+          "line": 115,
+          "present_at_frozen_source": true,
+          "frozen_line": 115
+        }
+      ]
+    },
+    {
+      "hash": "4e83484e57d600ec42b1fe4e1391df02026628c8",
+      "short": "4e83484",
+      "subject": "fix: restrict repository migration targets to the plan's storage pool",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/LIMITATIONS.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/maintenance.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/maintenance.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestMigrateRejectsTargetOutsidePlanPool",
+          "kind": "go",
+          "line": 266,
+          "present_at_frozen_source": true,
+          "frozen_line": 273
+        },
+        {
+          "path": "web/tests/maintenance.test.mjs",
+          "name": "migration targets belong to the selected repository plan pool and remain enabled and verified",
+          "kind": "node",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10
+        }
+      ]
+    },
+    {
+      "hash": "26255c9e722eb1077867fe45a9d3a74bd3553aaf",
+      "short": "26255c9",
+      "subject": "fix: reject requests with unknown Host headers to block DNS rebinding",
+      "files": [
+        {
+          "status": "M",
+          "path": ".env.example"
+        },
+        {
+          "status": "M",
+          "path": "README.md"
+        },
+        {
+          "status": "M",
+          "path": "cmd/vaultpilot/main.go"
+        },
+        {
+          "status": "M",
+          "path": "compose.yaml"
+        },
+        {
+          "status": "M",
+          "path": "docs/CONFIGURATION.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/SECURITY.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/account_clear_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/notifications_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/runtime.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/account_clear_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/notifications_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestHostAllowlistBlocksRebinding",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 17
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestStatusHidesConfigurationWhenUnauthenticated",
+          "kind": "go",
+          "line": 68,
+          "present_at_frozen_source": true,
+          "frozen_line": 73
+        }
+      ]
+    },
+    {
+      "hash": "c46880e0208b67482e7a1f7d0de217ff8a1dfd3b",
+      "short": "c46880e",
+      "subject": "fix: pass only allowlisted host environment to engine subprocesses",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/SECURITY.md"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/restic_rclone_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/rclone_credentials.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/process/process.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/process/process_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/restic_rclone_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/process/process_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/process/process_test.go",
+          "name": "TestProcessEnvironmentIsAllowlisted",
+          "kind": "go",
+          "line": 56,
+          "present_at_frozen_source": true,
+          "frozen_line": 56
+        }
+      ]
+    },
+    {
+      "hash": "910014f48d054a1ae26e15ab8da2ffc4990de8e2",
+      "short": "910014f",
+      "subject": "fix: merge quota refreshes with optimistic retries and bound post-task refresh time",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/quota_refresh_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/quota_refresh_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestRefreshAccountDoesNotClobberConcurrentEdit",
+          "kind": "go",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 42
+        },
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestAccountQuotaConflictsAreBounded",
+          "kind": "go",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69
+        },
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestPostTaskQuotaRefreshStopsOnShutdown",
+          "kind": "go",
+          "line": 81,
+          "present_at_frozen_source": true,
+          "frozen_line": 81
+        },
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestRefreshAccountCancelledLocalDoesNotWrite",
+          "kind": "go",
+          "line": 134,
+          "present_at_frozen_source": true,
+          "frozen_line": 134
+        }
+      ]
+    },
+    {
+      "hash": "a6b665201d4cc6dc3b56814ede1c300cbcef1ba8",
+      "short": "a6b6652",
+      "subject": "fix: rate limit auth attempts per action and client with trusted proxy support",
+      "files": [
+        {
+          "status": "M",
+          "path": ".env.example"
+        },
+        {
+          "status": "M",
+          "path": "README.md"
+        },
+        {
+          "status": "M",
+          "path": "cmd/vaultpilot/main.go"
+        },
+        {
+          "status": "M",
+          "path": "compose.yaml"
+        },
+        {
+          "status": "M",
+          "path": "docs/CONFIGURATION.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/SECURITY.md"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_transfer.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/cloud_connect.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/runtime.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestLoginSuccessResetsThrottle",
+          "kind": "go",
+          "line": 95,
+          "present_at_frozen_source": true,
+          "frozen_line": 98
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestThrottleIsPerAction",
+          "kind": "go",
+          "line": 113,
+          "present_at_frozen_source": true,
+          "frozen_line": 116
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestTrustedProxyUsesForwardedFor",
+          "kind": "go",
+          "line": 140,
+          "present_at_frozen_source": true,
+          "frozen_line": 143
+        }
+      ]
+    },
+    {
+      "hash": "61c74603cd0a4ffac6f88817013c7aaf1f089ca5",
+      "short": "61c7460",
+      "subject": "fix: delay object URL revocation so recovery kit downloads complete",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/src/AccountTransfer.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/api.ts"
+        },
+        {
+          "status": "M",
+          "path": "web/tests/api.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "web/tests/api.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "downloads attach the link and revoke its URL only after the timer fires",
+          "kind": "node",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 95
+        }
+      ]
+    },
+    {
+      "hash": "39fde3b96787e2002e73ef5e45884455397f7be4",
+      "short": "39fde3b",
+      "subject": "fix: isolate the environment of rclone credential obscuring",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/platform/rclone_auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/rclone_credentials.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/platform/rclone_auth_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/rclone_auth_test.go",
+          "name": "TestRcloneObscureFiltersHostEnvironment",
+          "kind": "go",
+          "line": 26,
+          "present_at_frozen_source": true,
+          "frozen_line": 26
+        }
+      ]
+    },
+    {
+      "hash": "41bb938ff368f543972dfdbc1bda6f08a5b1b4db",
+      "short": "41bb938",
+      "subject": "fix: bound concurrent Argon2 derivations and auth request sizes",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/CONFIGURATION.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/SECURITY.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_transfer.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/crypto.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/runtime.go"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/cloud_connect_test.go",
+          "name": "TestCloudSecretRejectsOversizedBodies",
+          "kind": "go",
+          "line": 322,
+          "present_at_frozen_source": true,
+          "frozen_line": 322
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestLoginRejectsOversizedBody",
+          "kind": "go",
+          "line": 194,
+          "present_at_frozen_source": true,
+          "frozen_line": 194
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSecretRequestLimitsAndEmptyLogout",
+          "kind": "go",
+          "line": 209,
+          "present_at_frozen_source": true,
+          "frozen_line": 209
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSetupRequestLimit",
+          "kind": "go",
+          "line": 231,
+          "present_at_frozen_source": true,
+          "frozen_line": 231
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestDeriveKeyWaitsForGlobalSlot",
+          "kind": "go",
+          "line": 258,
+          "present_at_frozen_source": true,
+          "frozen_line": 258
+        }
+      ]
+    },
+    {
+      "hash": "198b02acc6b2bfe803c02c0c706a9d1060b7c629",
+      "short": "198b02a",
+      "subject": "fix: precheck retention and persist pending prunes so cleanup can be retried",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/RECOVERY.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/catalog.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/model.go"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/ResultReport.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/tests/maintenance.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "web/tests/maintenance.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionPrecheckFailsBeforeCommit",
+          "kind": "go",
+          "line": 305,
+          "present_at_frozen_source": true,
+          "frozen_line": 311
+        },
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionRetrySelectionAndReferenceProtection",
+          "kind": "go",
+          "line": 381,
+          "present_at_frozen_source": true,
+          "frozen_line": 387
+        },
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionRegistrationIsAtomic",
+          "kind": "go",
+          "line": 434,
+          "present_at_frozen_source": true,
+          "frozen_line": 440
+        },
+        {
+          "path": "internal/engine/integration_test.go",
+          "name": "TestRealResticRetentionPruneRetriesAfterFailure",
+          "kind": "go",
+          "line": 200,
+          "present_at_frozen_source": true,
+          "frozen_line": 204
+        },
+        {
+          "path": "web/tests/maintenance.test.mjs",
+          "name": "retry cleanup asks for confirmation and submits only an empty selection for the chosen plan",
+          "kind": "node",
+          "line": 20,
+          "present_at_frozen_source": true,
+          "frozen_line": 20
+        }
+      ]
+    },
+    {
+      "hash": "84a997d95e95c83df7e2d26c73953e9958604645",
+      "short": "84a997d",
+      "subject": "fix: pause dashboard polling while the tab is hidden",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/NetworkActivity.vue"
+        },
+        {
+          "status": "A",
+          "path": "web/src/polling.ts"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/polling.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "web/tests/polling.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/polling.test.mjs",
+          "name": "hidden tabs pause polling and becoming visible refreshes immediately before resuming the interval",
+          "kind": "node",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14
+        },
+        {
+          "path": "web/tests/polling.test.mjs",
+          "name": "polling mounted in a hidden tab waits for visibility and never overlaps an in-flight refresh",
+          "kind": "node",
+          "line": 24,
+          "present_at_frozen_source": true,
+          "frozen_line": 24
+        }
+      ]
+    },
+    {
+      "hash": "73dd4df541cb31a4111a84da951a7cb7f2c347a4",
+      "short": "73dd4df",
+      "subject": "fix: make task cancellation a conditional flag update",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/model.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/task_cancel_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/task_cancel_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelDoesNotOverwriteTerminalStatus",
+          "kind": "go",
+          "line": 27,
+          "present_at_frozen_source": true,
+          "frozen_line": 28
+        },
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelFlagSurvivesExecutorSave",
+          "kind": "go",
+          "line": 52,
+          "present_at_frozen_source": true,
+          "frozen_line": 53
+        }
+      ]
+    },
+    {
+      "hash": "273d5d83fa6ca56706448c01a7b9e85fac068e25",
+      "short": "273d5d8",
+      "subject": "perf: page file entries by key instead of OFFSET",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/entries_scale_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/entries_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/restore.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/entries_scale_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/entries_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entries_scale_test.go",
+          "name": "TestEntryTraversalScale",
+          "kind": "go",
+          "line": 15,
+          "present_at_frozen_source": true,
+          "frozen_line": 15
+        },
+        {
+          "path": "internal/engine/entries_test.go",
+          "name": "TestEachEntryPreservesEmptyKeysAndMutableFilters",
+          "kind": "go",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14
+        },
+        {
+          "path": "internal/engine/entries_test.go",
+          "name": "TestEachEntryStopsOnErrorAndCancellation",
+          "kind": "go",
+          "line": 46,
+          "present_at_frozen_source": true,
+          "frozen_line": 46
+        }
+      ]
+    },
+    {
+      "hash": "a79b13810a03adb6fda4963c7c3af3af4a85ea16",
+      "short": "a79b138",
+      "subject": "build: pin engine checksums and move the frontend build to Node 22",
+      "files": [
+        {
+          "status": "M",
+          "path": "Dockerfile"
+        },
+        {
+          "status": "M",
+          "path": "README.md"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "eedccacbce248843d3a13cd51708ff69427f0a07",
+      "short": "eedccac",
+      "subject": "fix: release active plan slot when task execution fails to start",
+      "files": [
+        {
+          "status": "A",
+          "path": "internal/engine/execution_slot_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/execution_slot_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailureReleasesActivePlan",
+          "kind": "go",
+          "line": 8,
+          "present_at_frozen_source": true,
+          "frozen_line": 8
+        },
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailureMarksExistingRowFailed",
+          "kind": "go",
+          "line": 46,
+          "present_at_frozen_source": true,
+          "frozen_line": 46
+        },
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailurePreservesNewerActiveSlot",
+          "kind": "go",
+          "line": 62,
+          "present_at_frozen_source": true,
+          "frozen_line": 62
+        }
+      ]
+    },
+    {
+      "hash": "434539508a845819d38f47ba75220b4c01b0e641",
+      "short": "4345395",
+      "subject": "fix: require the admin password before exporting recovery or account kits",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/API.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/SECURITY.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_transfer.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_transfer_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/cloud_connect_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "M",
+          "path": "scripts/e2e_local.py"
+        },
+        {
+          "status": "M",
+          "path": "web/src/AccountTransfer.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/sensitive-exports.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/platform/account_transfer_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/auth_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/cloud_connect_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/sensitive-exports.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSensitiveExportsRequireAdminPassword",
+          "kind": "go",
+          "line": 298,
+          "present_at_frozen_source": true,
+          "frozen_line": 298
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestExportReauthenticationThrottleAndReset",
+          "kind": "go",
+          "line": 324,
+          "present_at_frozen_source": true,
+          "frozen_line": 324
+        },
+        {
+          "path": "web/tests/sensitive-exports.test.mjs",
+          "name": "recovery export sends current login password and clears it after ${failed ? 'failure' : 'success'}",
+          "kind": "node_template",
+          "line": 17,
+          "present_at_frozen_source": true,
+          "frozen_line": 17
+        },
+        {
+          "path": "web/tests/sensitive-exports.test.mjs",
+          "name": "account export sends current login password and clears it after ${failed ? 'failure' : 'success'}",
+          "kind": "node_template",
+          "line": 35,
+          "present_at_frozen_source": true,
+          "frozen_line": 35
+        }
+      ]
+    },
+    {
+      "hash": "16a06431c86437556eebe44a19b57e982ddd2696",
+      "short": "16a0643",
+      "subject": "fix: bind the listener before starting the scheduler and honor VP_ADDR in healthcheck",
+      "files": [
+        {
+          "status": "M",
+          "path": "Dockerfile"
+        },
+        {
+          "status": "M",
+          "path": "cmd/healthcheck/main.go"
+        },
+        {
+          "status": "A",
+          "path": "cmd/healthcheck/main_test.go"
+        },
+        {
+          "status": "M",
+          "path": "cmd/vaultpilot/main.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "cmd/healthcheck/main_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "cmd/healthcheck/main_test.go",
+          "name": "TestHealthcheckURLUsesListenAddress",
+          "kind": "go",
+          "line": 5,
+          "present_at_frozen_source": true,
+          "frozen_line": 5
+        }
+      ]
+    },
+    {
+      "hash": "e1ed8c79e176d4f46d7aaaac114ef145b652ca0d",
+      "short": "e1ed8c7",
+      "subject": "fix: delay background polling errors until three consecutive failures",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/background-errors.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "web/tests/background-errors.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "${method} suppresses the first two background failures, resets on success and reports manual failures immediately",
+          "kind": "node_template",
+          "line": 16,
+          "present_at_frozen_source": true,
+          "frozen_line": 16
+        },
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "task and log polling failures are counted independently",
+          "kind": "node",
+          "line": 27,
+          "present_at_frozen_source": true,
+          "frozen_line": 27
+        },
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "status polling shows connection trouble only after three failures and clears the streak on success",
+          "kind": "node",
+          "line": 33,
+          "present_at_frozen_source": true,
+          "frozen_line": 33
+        }
+      ]
+    },
+    {
+      "hash": "ace95995f4867763c9fa5271828ba6c08c8b240c",
+      "short": "ace9599",
+      "subject": "chore: remove unused code and tidy go.mod",
+      "files": [
+        {
+          "status": "M",
+          "path": "go.mod"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/restore.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/crypto.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/notifications.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/onedrive.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/resources.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        }
+      ],
+      "added_tests": []
+    },
+    {
+      "hash": "1e955e106209003e8197a048fa36b7596196e5ad",
+      "short": "1e955e1",
+      "subject": "fix: label icon controls and support modal keyboard navigation",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/RcloneAuthorization.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/SourceBrowser.vue"
+        },
+        {
+          "status": "A",
+          "path": "web/tests/accessibility.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "web/tests/accessibility.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "opening a modal focuses its first enabled input and closing restores the trigger",
+          "kind": "node",
+          "line": 32,
+          "present_at_frozen_source": true,
+          "frozen_line": 32
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "a confirmation without inputs receives focus without replacing the original trigger",
+          "kind": "node",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 43
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "${flag} keeps modal and pending confirmation open",
+          "kind": "node_template",
+          "line": 54,
+          "present_at_frozen_source": true,
+          "frozen_line": 55
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "removed trigger is not focused after closing",
+          "kind": "node",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 65
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "authorization and import requests publish busy state until success or failure",
+          "kind": "node",
+          "line": 71,
+          "present_at_frozen_source": true,
+          "frozen_line": 73
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "icon buttons have explicit accessible names and modal Escape uses the guarded close action",
+          "kind": "node",
+          "line": 91,
+          "present_at_frozen_source": true,
+          "frozen_line": 93
+        }
+      ]
+    },
+    {
+      "hash": "07487a23e0786583cc8ea7c6194b8dd63928f81c",
+      "short": "07487a2",
+      "subject": "fix: handle JSON null API error responses",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/src/api.ts"
+        },
+        {
+          "status": "M",
+          "path": "web/tests/api.test.mjs"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "web/tests/api.test.mjs"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "JSON null error responses become ApiError and release the active request",
+          "kind": "node",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69
+        },
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "structured errors retain their server message, code, retry policy and status",
+          "kind": "node",
+          "line": 85,
+          "present_at_frozen_source": true,
+          "frozen_line": 85
+        },
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "successful JSON null remains null",
+          "kind": "node",
+          "line": 90,
+          "present_at_frozen_source": true,
+          "frozen_line": 90
+        }
+      ]
+    },
+    {
+      "hash": "442acc42d6b13bfce40e55aedcc905ab9b1b0fad",
+      "short": "442acc4",
+      "subject": "fix: bind the development server to localhost by default",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/package.json"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "92f3a31f8ea85eefc41e5b97786ce2709e3cb586",
+      "short": "92f3a31",
+      "subject": "fix: persist cloud account identity only after verification",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/openapi.yaml"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/account_drives_readonly_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_identity_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/cloud_account_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/onedrive.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/onedrive_performance_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/platform/account_drives_readonly_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/account_identity_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/cloud_account_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/onedrive_performance_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/platform_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/account_drives_readonly_test.go",
+          "name": "TestVerificationPersistsOptionalIdentityAfterCloudChecks",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 12
+        },
+        {
+          "path": "internal/platform/account_drives_readonly_test.go",
+          "name": "TestVerificationFailureAndMissingCSRFDoNotPersistIdentity",
+          "kind": "go",
+          "line": 108,
+          "present_at_frozen_source": true,
+          "frozen_line": 108
+        }
+      ]
+    },
+    {
+      "hash": "958960b08644f4e078cb78c4aa9260169513c820",
+      "short": "958960b",
+      "subject": "chore: migrate Vue icons to the maintained lucide package",
+      "files": [
+        {
+          "status": "M",
+          "path": "web/package-lock.json"
+        },
+        {
+          "status": "M",
+          "path": "web/package.json"
+        },
+        {
+          "status": "M",
+          "path": "web/src/AccountClear.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/AccountTransfer.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/App.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/CloudConnection.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/LoadingNotice.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/NetworkActivity.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/RcloneAuthorization.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/ResultReport.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/SourceBrowser.vue"
+        },
+        {
+          "status": "M",
+          "path": "web/src/TelegramNotifications.vue"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "d9f975e2eff5d82a254612b1d09383ce5b15a4d7",
+      "short": "d9f975e",
+      "subject": "fix: enforce account name limits when updating accounts",
+      "files": [
+        {
+          "status": "A",
+          "path": "internal/platform/account_name_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/resources.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/platform/account_name_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/account_name_test.go",
+          "name": "TestUpdateAccountNameMatchesCreateLimits",
+          "kind": "go",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10
+        }
+      ]
+    },
+    {
+      "hash": "564f43d65bf47173ccd73efcedde9fd6076b8a2f",
+      "short": "564f43d",
+      "subject": "fix: restrict existing runtime directories to owner access",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/platform/runtime.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/runtime_permissions_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/platform/runtime_permissions_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/runtime_permissions_test.go",
+          "name": "TestNewRestrictsExistingStateAndCacheDirectories",
+          "kind": "go",
+          "line": 9,
+          "present_at_frozen_source": true,
+          "frozen_line": 9
+        }
+      ]
+    },
+    {
+      "hash": "8d93f61955067d021adba15524283b06133eb171",
+      "short": "8d93f61",
+      "subject": "perf: batch entry writes and shorten allocation transactions",
+      "files": [
+        {
+          "status": "A",
+          "path": "internal/engine/allocation_paging_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/allocation_paging_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/engine_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestAllocationPreservesAssignmentsAcrossPages",
+          "kind": "go",
+          "line": 32,
+          "present_at_frozen_source": true,
+          "frozen_line": 32
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestEntryPageRollsBackOnWriteFailure",
+          "kind": "go",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestReservationRechecksCurrentAccountAndPlanningSnapshot",
+          "kind": "go",
+          "line": 90,
+          "present_at_frozen_source": true,
+          "frozen_line": 90
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestConcurrentReservationsDoNotOversell",
+          "kind": "go",
+          "line": 125,
+          "present_at_frozen_source": true,
+          "frozen_line": 125
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestReservationValidatesWholeAccountBatchBeforeWriting",
+          "kind": "go",
+          "line": 154,
+          "present_at_frozen_source": true,
+          "frozen_line": 154
+        }
+      ]
+    },
+    {
+      "hash": "b34e4147498b0bf8ee7466d7deb6b5a919d234b2",
+      "short": "b34e414",
+      "subject": "perf: replace redundant file_entries indexes",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/MIGRATIONS.md"
+        },
+        {
+          "status": "A",
+          "path": "internal/store/entry_indexes_migration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/store/store.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/store/entry_indexes_migration_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/entry_indexes_migration_test.go",
+          "name": "TestEntryIndexMigrationPreservesRowsAndIsIdempotent",
+          "kind": "go",
+          "line": 9,
+          "present_at_frozen_source": true,
+          "frozen_line": 9
+        }
+      ]
+    },
+    {
+      "hash": "332c339a1dbe7574cd9c4410be8ceeaf45c421a9",
+      "short": "332c339",
+      "subject": "fix: set SQLite pragmas in the DSN and harden audit/log writes",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/MIGRATIONS.md"
+        },
+        {
+          "status": "A",
+          "path": "internal/store/connection_logs_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/store/store.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/store/connection_logs_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestConnectionPragmasSurviveReconnection",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 12
+        },
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestAuditEventsAtSameNanosecondAreDistinct",
+          "kind": "go",
+          "line": 41,
+          "present_at_frozen_source": true,
+          "frozen_line": 41
+        },
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestLogTruncationPreservesUTF8",
+          "kind": "go",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 63
+        }
+      ]
+    },
+    {
+      "hash": "d31a72092414e40901fa04be943d619fa28ef6b9",
+      "short": "d31a720",
+      "subject": "fix: preserve new task pending triggers when cancelling old tasks",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/task_cancel_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/task_cancel_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelOldTaskPreservesNewTaskPending",
+          "kind": "go",
+          "line": 89,
+          "present_at_frozen_source": true,
+          "frozen_line": 89
+        }
+      ]
+    },
+    {
+      "hash": "1dc863273ab53a6d318bee68427d738603c581d3",
+      "short": "1dc8632",
+      "subject": "fix: clean unreferenced run and snapshot verification entries",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/MIGRATIONS.md"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/entry_cleanup.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestFailedRunEntriesAreRemoved",
+          "kind": "go",
+          "line": 44,
+          "present_at_frozen_source": true,
+          "frozen_line": 44
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestStartupSweepPreservesLiveImportedAndActiveEntries",
+          "kind": "go",
+          "line": 73,
+          "present_at_frozen_source": true,
+          "frozen_line": 73
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestStartSweepsInterruptedEntriesAsynchronously",
+          "kind": "go",
+          "line": 110,
+          "present_at_frozen_source": true,
+          "frozen_line": 110
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestCleanupWaitsForImportedIndexPublication",
+          "kind": "go",
+          "line": 136,
+          "present_at_frozen_source": true,
+          "frozen_line": 181
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestDeletedPointCleanupPreservesOtherLiveReferences",
+          "kind": "go",
+          "line": 161,
+          "present_at_frozen_source": true,
+          "frozen_line": 207
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestSnapshotVerificationCleansUpOnEarlyReturn",
+          "kind": "go",
+          "line": 179,
+          "present_at_frozen_source": true,
+          "frozen_line": 225
+        }
+      ]
+    },
+    {
+      "hash": "eadace5994461a9bab38f455e714204fa2693271",
+      "short": "eadace5",
+      "subject": "fix: use null-safe activity guards when cleaning orphan entries",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestCleanupHandlesNullableHistoricalTaskIDs",
+          "kind": "go",
+          "line": 136,
+          "present_at_frozen_source": true,
+          "frozen_line": 136
+        }
+      ]
+    },
+    {
+      "hash": "238936f6a5fd218ff28a8887ecfc44f16db09dfd",
+      "short": "238936f",
+      "subject": "fix: make maintenance locks cancellable and share recovery index reads",
+      "files": [
+        {
+          "status": "A",
+          "path": "docs/LOCKING.md"
+        },
+        {
+          "status": "A",
+          "path": "internal/ctxlock/lock.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/ctxlock/lock_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/account_clear.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/backup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/catalog.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/cloud_connect.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/context_lock_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/restore.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/context_lock_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/platform/runtime.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/ctxlock/lock_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/context_lock_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/platform/context_lock_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexCancellationAndReuse",
+          "kind": "go",
+          "line": 22,
+          "present_at_frozen_source": true,
+          "frozen_line": 62
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexSerializesConcurrentUpdates",
+          "kind": "go",
+          "line": 44,
+          "present_at_frozen_source": true,
+          "frozen_line": 84
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWConcurrentReadersAndCancelledWriter",
+          "kind": "go",
+          "line": 65,
+          "present_at_frozen_source": true,
+          "frozen_line": 105
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWCancelledReaderDoesNotAffectWriter",
+          "kind": "go",
+          "line": 101,
+          "present_at_frozen_source": true,
+          "frozen_line": 141
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWCompetingReadersAndWriters",
+          "kind": "go",
+          "line": 118,
+          "present_at_frozen_source": true,
+          "frozen_line": 164
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestCancelledMaintenanceHTTPWaitsReleaseOuterGates",
+          "kind": "go",
+          "line": 38,
+          "present_at_frozen_source": true,
+          "frozen_line": 38
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestResourceLockCancellationReleasesPartialAcquisition",
+          "kind": "go",
+          "line": 113,
+          "present_at_frozen_source": true,
+          "frozen_line": 113
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestRestoreReadLockAllowsFileBrowsing",
+          "kind": "go",
+          "line": 171,
+          "present_at_frozen_source": true,
+          "frozen_line": 171
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestCleanupIndexWriteWaitCanBeCancelled",
+          "kind": "go",
+          "line": 226,
+          "present_at_frozen_source": true,
+          "frozen_line": 226
+        },
+        {
+          "path": "internal/platform/context_lock_test.go",
+          "name": "TestAccountConfigurationContextCancellationPreservesLegacyLock",
+          "kind": "go",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10
+        },
+        {
+          "path": "internal/platform/context_lock_test.go",
+          "name": "TestContextConfigurationLockExcludesLegacyCaller",
+          "kind": "go",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 42
+        }
+      ]
+    },
+    {
+      "hash": "ad9de2c31c5052be423bcb147de723f951cc820e",
+      "short": "ad9de2c",
+      "subject": "fix: separate migration data work from catalog publication",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/LOCKING.md"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/maintenance_concurrency_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/migration_state.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/migration_state_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "A",
+          "path": "internal/engine/maintenance_concurrency_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/migration_state_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationDataWorkAllowsOtherPlanCommit",
+          "kind": "go",
+          "line": 178,
+          "present_at_frozen_source": true,
+          "frozen_line": 187
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationReleasesResourcesBeforeCatalogWait",
+          "kind": "go",
+          "line": 197,
+          "present_at_frozen_source": true,
+          "frozen_line": 206
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationRejectsChangesDuringCopy",
+          "kind": "go",
+          "line": 218,
+          "present_at_frozen_source": true,
+          "frozen_line": 227
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyDataWorkAllowsOtherPlanCommit",
+          "kind": "go",
+          "line": 271,
+          "present_at_frozen_source": true,
+          "frozen_line": 280
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyRejectsMappingChangeBeforeRetirement",
+          "kind": "go",
+          "line": 294,
+          "present_at_frozen_source": true,
+          "frozen_line": 303
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyPublicationFailureRemainsRetryable",
+          "kind": "go",
+          "line": 320,
+          "present_at_frozen_source": true,
+          "frozen_line": 329
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyRejectsUnusableCurrentAccountAtHandoff",
+          "kind": "go",
+          "line": 359,
+          "present_at_frozen_source": true,
+          "frozen_line": 368
+        },
+        {
+          "path": "internal/engine/migration_state_test.go",
+          "name": "TestMaintenanceRepositoryCASPreservesConcurrentChanges",
+          "kind": "go",
+          "line": 11,
+          "present_at_frozen_source": true,
+          "frozen_line": 11
+        },
+        {
+          "path": "internal/engine/migration_state_test.go",
+          "name": "TestMaintenanceRepositoryCASChecksValidationAndAffectedRows",
+          "kind": "go",
+          "line": 56,
+          "present_at_frozen_source": true,
+          "frozen_line": 56
+        }
+      ]
+    },
+    {
+      "hash": "df15de9b3dc9105acca63c5f5f62cd9d6fe765eb",
+      "short": "df15de9",
+      "subject": "build: exclude local worktrees from the Docker build context",
+      "files": [
+        {
+          "status": "M",
+          "path": ".dockerignore"
+        }
+      ],
+      "test_files": [],
+      "added_tests": []
+    },
+    {
+      "hash": "a182de81c3464917cdd8fdea93df71600325a807",
+      "short": "a182de8",
+      "subject": "test: cover cancellation immediately after lock acquisition",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/ctxlock/lock_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/ctxlock/lock_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexCancellationAfterAcquisitionReturnsToken",
+          "kind": "go",
+          "line": 25,
+          "present_at_frozen_source": true,
+          "frozen_line": 25
+        }
+      ]
+    },
+    {
+      "hash": "5e4cfa95cb1416983d510f982909310ef97008a9",
+      "short": "5e4cfa9",
+      "subject": "fix: separate retention decisions and publication from prune",
+      "files": [
+        {
+          "status": "M",
+          "path": "docs/LOCKING.md"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance_concurrency_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/retention_state.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/retention_state_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/service.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/engine/entry_cleanup_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/integration_test.go"
+        },
+        {
+          "status": "M",
+          "path": "internal/engine/maintenance_concurrency_test.go"
+        },
+        {
+          "status": "A",
+          "path": "internal/engine/retention_state_test.go"
+        }
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneAllowsConcurrentCommitAndPreservesNewPending",
+          "kind": "go",
+          "line": 461,
+          "present_at_frozen_source": true,
+          "frozen_line": 461
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneFailureKeepsDecisionForRetry",
+          "kind": "go",
+          "line": 499,
+          "present_at_frozen_source": true,
+          "frozen_line": 499
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceRetentionWaitsForRestoreReaders",
+          "kind": "go",
+          "line": 556,
+          "present_at_frozen_source": true,
+          "frozen_line": 556
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceRetentionDoesNotForgetSharedSnapshot",
+          "kind": "go",
+          "line": 596,
+          "present_at_frozen_source": true,
+          "frozen_line": 596
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationPublicationFailureRestoresOldMapping",
+          "kind": "go",
+          "line": 630,
+          "present_at_frozen_source": true,
+          "frozen_line": 630
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceDegradedMigrationKeepsCommittedMapping",
+          "kind": "go",
+          "line": 649,
+          "present_at_frozen_source": true,
+          "frozen_line": 649
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenancePendingRemovalIsAtomicAndPreservesJSON",
+          "kind": "go",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenanceExecuteCancellationDoesNotWaitForEntryCleanup",
+          "kind": "go",
+          "line": 66,
+          "present_at_frozen_source": true,
+          "frozen_line": 66
+        }
+      ]
+    },
+    {
+      "hash": "42f8547d6cfdd0f84613e7ef46bba26a928f2867",
+      "short": "42f8547",
+      "subject": "test: bound lock reacquisition checks after cancellation",
+      "files": [
+        {
+          "status": "M",
+          "path": "internal/ctxlock/lock_test.go"
+        }
+      ],
+      "test_files": [
+        {
+          "status": "M",
+          "path": "internal/ctxlock/lock_test.go"
+        }
+      ],
+      "added_tests": []
+    }
+  ],
+  "items": [
+    {
+      "id": "T01.1",
+      "title": "Go生产构建版本",
+      "status": "implemented",
+      "feature_commits": [
+        "3a4dfb9"
+      ],
+      "changed_files": [
+        "Dockerfile"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "后端镜像固定Go 1.26.9，go.mod语言版本保持1.26.0。",
+      "compatibility_and_risks": "标准库安全修复；本机性能工具链不能替代生产构建版本；Docker运行待验收。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T01.2",
+      "title": "版本文字与历史证据",
+      "status": "implemented",
+      "feature_commits": [
+        "a79b138"
+      ],
+      "changed_files": [
+        "README.md"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "开发要求同步为Go1.26.9+；历史证据不在构建版本修复中改写。",
+      "compatibility_and_risks": "最终无缓存证据另由T16.8更新。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T02.1",
+      "title": "Host白名单与配置",
+      "status": "implemented",
+      "feature_commits": [
+        "26255c9"
+      ],
+      "changed_files": [
+        ".env.example",
+        "README.md",
+        "cmd/vaultpilot/main.go",
+        "compose.yaml",
+        "docs/CONFIGURATION.md",
+        "docs/SECURITY.md",
+        "docs/openapi.yaml",
+        "internal/platform/auth.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/runtime.go"
+      ],
+      "new_test_files": [
+        "internal/platform/auth_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestHostAllowlistBlocksRebinding",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 17,
+          "commit": "26255c9"
+        }
+      ],
+      "behavior": "覆盖API和静态入口，loopback/PublicURL/AllowedHosts显式允许，未知Host返回421。",
+      "compatibility_and_risks": "LAN/反代保留Host需正确配置允许地址；loopback健康检查继续允许。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T02.2",
+      "title": "未登录status与测试入口",
+      "status": "implemented",
+      "feature_commits": [
+        "26255c9"
+      ],
+      "changed_files": [
+        "internal/engine/account_clear_test.go",
+        "internal/engine/cloud_connect_test.go",
+        "internal/platform/auth.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/notifications_test.go",
+        "internal/platform/platform_test.go"
+      ],
+      "new_test_files": [
+        "internal/platform/auth_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestStatusHidesConfigurationWhenUnauthenticated",
+          "kind": "go",
+          "line": 68,
+          "present_at_frozen_source": true,
+          "frozen_line": 73,
+          "commit": "26255c9"
+        }
+      ],
+      "behavior": "未登录只返回登录/初始化需要的状态，登录后重读完整状态；harness显式localhost。",
+      "compatibility_and_risks": "未认证客户端不再获取库/源/恢复目录等配置字段。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T03.1",
+      "title": "按任务账号构建Rclone配置",
+      "status": "implemented",
+      "feature_commits": [
+        "d92fba0"
+      ],
+      "changed_files": [
+        "internal/platform/rclone.go",
+        "internal/platform/rclone_scope_test.go"
+      ],
+      "new_test_files": [
+        "internal/platform/rclone_scope_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForIsScopedAndIsolatesBrokenAccounts",
+          "kind": "go",
+          "line": 13,
+          "present_at_frozen_source": true,
+          "frozen_line": 13,
+          "commit": "d92fba0"
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForAllowsQuotaUpdatesButRejectsRemoteChanges",
+          "kind": "go",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 63,
+          "commit": "d92fba0"
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForPropagatesSyncFailure",
+          "kind": "go",
+          "line": 103,
+          "present_at_frozen_source": true,
+          "frozen_line": 103,
+          "commit": "d92fba0"
+        },
+        {
+          "path": "internal/platform/rclone_scope_test.go",
+          "name": "TestRcloneConfigForCancelsTokenRefresh",
+          "kind": "go",
+          "line": 115,
+          "present_at_frozen_source": true,
+          "frozen_line": 115,
+          "commit": "d92fba0"
+        }
+      ],
+      "behavior": "显式IDs去重、local跳过、ctx传到续期、错误带账号原因；0600临时配置按任务释放。",
+      "compatibility_and_risks": "Enabled仍由业务决定；不把纯quota版本变化当物理变化；必需账号或同步失败仍拒绝。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T03.2",
+      "title": "引擎调用显式账号与ctx",
+      "status": "implemented",
+      "feature_commits": [
+        "d92fba0"
+      ],
+      "changed_files": [
+        "internal/engine/account_clear.go",
+        "internal/engine/backup.go",
+        "internal/engine/catalog.go",
+        "internal/engine/cloud_connect.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/rclone_scope_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/rclone_scope_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/rclone_scope_test.go",
+          "name": "TestRcloneHelpersIgnoreUnrelatedBrokenAccount",
+          "kind": "go",
+          "line": 11,
+          "present_at_frozen_source": true,
+          "frozen_line": 11,
+          "commit": "d92fba0"
+        }
+      ],
+      "behavior": "backup/restore/check/目录/cloud连接/清空传实际账号，迁移copy同时传源与目标。",
+      "compatibility_and_risks": "无关损坏账号不拖垮当前任务；错误向上保留，不输出token/secret。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T04",
+      "title": "超长输出持续排空",
+      "status": "implemented",
+      "feature_commits": [
+        "a673666"
+      ],
+      "changed_files": [
+        "internal/process/process.go",
+        "internal/process/process_test.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/process/process_test.go",
+          "name": "TestRunDrainsOversizedLines",
+          "kind": "go",
+          "line": 40,
+          "present_at_frozen_source": true,
+          "frozen_line": 42,
+          "commit": "a673666"
+        }
+      ],
+      "behavior": "超过4MiB行后持续drain，记录扫描失败，不把截断JSON当成功。",
+      "compatibility_and_risks": "错误优先级仍为ctx、进程退出、扫描错误；不向onLine传截断片段。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T05.1",
+      "title": "删除决策前预检",
+      "status": "implemented",
+      "feature_commits": [
+        "198b02a",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "internal/engine/engine_test.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/retention_state.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionPrecheckFailsBeforeCommit",
+          "kind": "go",
+          "line": 305,
+          "present_at_frozen_source": true,
+          "frozen_line": 311,
+          "commit": "198b02a"
+        }
+      ],
+      "behavior": "认证删除前核对plan/pool读取、账号Verified/Enabled和维护预留，prune前重读可用性。",
+      "compatibility_and_risks": "预检失败尚未发布/标删除；不因缺预留留下不可重试删除。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T05.2",
+      "title": "持久pending与原子登记",
+      "status": "implemented",
+      "feature_commits": [
+        "198b02a",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "docs/RECOVERY.md",
+        "internal/engine/catalog.go",
+        "internal/engine/engine_test.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/model.go",
+        "internal/engine/retention_state.go",
+        "internal/engine/retention_state_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/retention_state_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionRegistrationIsAtomic",
+          "kind": "go",
+          "line": 434,
+          "present_at_frozen_source": true,
+          "frozen_line": 440,
+          "commit": "198b02a"
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenancePendingRemovalIsAtomicAndPreservesJSON",
+          "kind": "go",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "新增omitempty pending_forget随认证目录保存；逻辑删除后有界WithoutCancel事务登记tombstone/pending，最终增量移除已处理ID。",
+      "compatibility_and_risks": "PROTECTION_DEGRADED已逻辑提交仍登记；旧已deleted且无pending的空间泄漏未自动回填。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T05.3",
+      "title": "prune重试与引用保护",
+      "status": "implemented",
+      "feature_commits": [
+        "198b02a",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "internal/engine/engine_test.go",
+        "internal/engine/integration_test.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/maintenance_concurrency_test.go",
+        "internal/engine/retention_state.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestRetentionRetrySelectionAndReferenceProtection",
+          "kind": "go",
+          "line": 381,
+          "present_at_frozen_source": true,
+          "frozen_line": 387,
+          "commit": "198b02a"
+        },
+        {
+          "path": "internal/engine/integration_test.go",
+          "name": "TestRealResticRetentionPruneRetriesAfterFailure",
+          "kind": "go",
+          "line": 200,
+          "present_at_frozen_source": true,
+          "frozen_line": 204,
+          "commit": "198b02a"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneFailureKeepsDecisionForRetry",
+          "kind": "go",
+          "line": 499,
+          "present_at_frozen_source": true,
+          "frozen_line": 499,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceRetentionDoesNotForgetSharedSnapshot",
+          "kind": "go",
+          "line": 596,
+          "present_at_frozen_source": true,
+          "frozen_line": 596,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "仅forget现存且无live引用ID；空point_ids可重试，forget已完成仍prune；最终目录/本地pending共同收敛。",
+      "compatibility_and_risks": "prune、最终发布失败或取消均保留重试意图；不吞并发新增pending/共享快照。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T05.4",
+      "title": "前端重试与契约文档",
+      "status": "implemented",
+      "feature_commits": [
+        "198b02a"
+      ],
+      "changed_files": [
+        "docs/RECOVERY.md",
+        "docs/openapi.yaml",
+        "web/src/App.vue",
+        "web/src/ResultReport.vue",
+        "web/tests/maintenance.test.mjs"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "web/tests/maintenance.test.mjs",
+          "name": "retry cleanup asks for confirmation and submits only an empty selection for the chosen plan",
+          "kind": "node",
+          "line": 20,
+          "present_at_frozen_source": true,
+          "frozen_line": 20,
+          "commit": "198b02a"
+        }
+      ],
+      "behavior": "展示pending仓库数，确认后提交所选计划的point_ids:[]，展示cleanup_pending。",
+      "compatibility_and_risks": "不重新提交已删除ID，不绕过确认或原预检。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T06.1",
+      "title": "迁移目标必须在当前计划池",
+      "status": "implemented",
+      "feature_commits": [
+        "4e83484",
+        "ad9de2c"
+      ],
+      "changed_files": [
+        "docs/LIMITATIONS.md",
+        "docs/LOCKING.md",
+        "docs/openapi.yaml",
+        "internal/engine/backup.go",
+        "internal/engine/engine_test.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/migration_state.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/engine/engine_test.go",
+          "name": "TestMigrateRejectsTargetOutsidePlanPool",
+          "kind": "go",
+          "line": 266,
+          "present_at_frozen_source": true,
+          "frozen_line": 273,
+          "commit": "4e83484"
+        }
+      ],
+      "behavior": "网络操作前核对repo→plan→pool；最终CAS事务重验当前池，历史归属错误给出加回池提示。",
+      "compatibility_and_risks": "不自动改池成员；复制期池/目标变化拒绝新映射。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T06.2",
+      "title": "迁移目标UI筛选",
+      "status": "implemented",
+      "feature_commits": [
+        "4e83484"
+      ],
+      "changed_files": [
+        "web/src/App.vue",
+        "web/tests/maintenance.test.mjs"
+      ],
+      "new_test_files": [
+        "web/tests/maintenance.test.mjs"
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/maintenance.test.mjs",
+          "name": "migration targets belong to the selected repository plan pool and remain enabled and verified",
+          "kind": "node",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10,
+          "commit": "4e83484"
+        }
+      ],
+      "behavior": "computed仅列出所属计划池内启用/验证且非当前账号，缺候选提示先加入池。",
+      "compatibility_and_risks": "UI不能替代后端检查；缺计划/池时保守空列表。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T07.1",
+      "title": "宿主环境统一白名单",
+      "status": "implemented",
+      "feature_commits": [
+        "c46880e"
+      ],
+      "changed_files": [
+        "docs/SECURITY.md",
+        "internal/engine/restic_rclone_test.go",
+        "internal/platform/rclone_credentials.go",
+        "internal/process/process.go",
+        "internal/process/process_test.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/process/process_test.go",
+          "name": "TestProcessEnvironmentIsAllowlisted",
+          "kind": "go",
+          "line": 56,
+          "present_at_frozen_source": true,
+          "frozen_line": 56,
+          "commit": "c46880e"
+        }
+      ],
+      "behavior": "BaseEnvironment复用到引擎/平台Rclone，允许基础环境/locale/CA/代理；显式env仍优先。",
+      "compatibility_and_risks": "不继承宿主RESTIC_*/RCLONE_*/VP_*；依赖白名单外环境的部署需显式适配。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T07.2",
+      "title": "obscure旁路补修",
+      "status": "implemented",
+      "feature_commits": [
+        "39fde3b"
+      ],
+      "changed_files": [
+        "internal/platform/rclone_auth_test.go",
+        "internal/platform/rclone_credentials.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/platform/rclone_auth_test.go",
+          "name": "TestRcloneObscureFiltersHostEnvironment",
+          "kind": "go",
+          "line": 26,
+          "present_at_frozen_source": true,
+          "frozen_line": 26,
+          "commit": "39fde3b"
+        }
+      ],
+      "behavior": "credential obscure子进程同样使用隔离环境。",
+      "compatibility_and_risks": "补齐非通用process入口，不改变凭据明文/加密协议。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T08",
+      "title": "容器PID1 tini",
+      "status": "implemented",
+      "feature_commits": [
+        "46a4037"
+      ],
+      "changed_files": [
+        "Dockerfile"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "最终镜像安装tini并以tini -- vaultpilot启动，compose不叠加第二层init。",
+      "compatibility_and_risks": "PID1/信号转发/僵尸回收/30秒关闭需真实Docker运行验证。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T09",
+      "title": "下载共享与延迟revoke",
+      "status": "implemented",
+      "feature_commits": [
+        "61c7460"
+      ],
+      "changed_files": [
+        "web/src/AccountTransfer.vue",
+        "web/src/App.vue",
+        "web/src/api.ts",
+        "web/tests/api.test.mjs"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "downloads attach the link and revoke its URL only after the timer fires",
+          "kind": "node",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 95,
+          "commit": "61c7460"
+        }
+      ],
+      "behavior": "downloadBlob挂载/点击/移除链接后延迟1秒释放URL，两类敏感包共用。",
+      "compatibility_and_risks": "保留文件名；Node stub不等于Safari/Firefox真实下载验收。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T10.1",
+      "title": "取消条件PATCH与执行器合并",
+      "status": "implemented",
+      "feature_commits": [
+        "73dd4df"
+      ],
+      "changed_files": [
+        "internal/engine/model.go",
+        "internal/engine/service.go",
+        "internal/engine/task_cancel_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/task_cancel_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelDoesNotOverwriteTerminalStatus",
+          "kind": "go",
+          "line": 27,
+          "present_at_frozen_source": true,
+          "frozen_line": 28,
+          "commit": "73dd4df"
+        },
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelFlagSurvivesExecutorSave",
+          "kind": "go",
+          "line": 52,
+          "present_at_frozen_source": true,
+          "frozen_line": 53,
+          "commit": "73dd4df"
+        }
+      ],
+      "behavior": "只对非终态写cancel_requested及版本；save在mu内合并取消，镜像表由执行器继续同步。",
+      "compatibility_and_risks": "已完成/失败等终态不回退running，ctx终态规则保持。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T10.2",
+      "title": "execute提前失败释放槽位",
+      "status": "implemented",
+      "feature_commits": [
+        "eedccac"
+      ],
+      "changed_files": [
+        "internal/engine/execution_slot_test.go",
+        "internal/engine/service.go"
+      ],
+      "new_test_files": [
+        "internal/engine/execution_slot_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailureReleasesActivePlan",
+          "kind": "go",
+          "line": 8,
+          "present_at_frozen_source": true,
+          "frozen_line": 8,
+          "commit": "eedccac"
+        },
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailureMarksExistingRowFailed",
+          "kind": "go",
+          "line": 46,
+          "present_at_frozen_source": true,
+          "frozen_line": 46,
+          "commit": "eedccac"
+        },
+        {
+          "path": "internal/engine/execution_slot_test.go",
+          "name": "TestExecuteLoadFailurePreservesNewerActiveSlot",
+          "kind": "go",
+          "line": 62,
+          "present_at_frozen_source": true,
+          "frozen_line": 62,
+          "commit": "eedccac"
+        }
+      ],
+      "behavior": "所有返回清对应active；加载失败日志与条件failed持久化，不删后来替换的新槽位。",
+      "compatibility_and_risks": "保留正常pending重放与重复触发合并。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T10.3",
+      "title": "旧任务迟到取消保留新pending",
+      "status": "implemented",
+      "feature_commits": [
+        "d31a720"
+      ],
+      "changed_files": [
+        "internal/engine/service.go",
+        "internal/engine/task_cancel_test.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/engine/task_cancel_test.go",
+          "name": "TestCancelOldTaskPreservesNewTaskPending",
+          "kind": "go",
+          "line": 89,
+          "present_at_frozen_source": true,
+          "frozen_line": 89,
+          "commit": "d31a720"
+        }
+      ],
+      "behavior": "仅active[plan]==task.ID清pending/meta，保护同计划新B的触发。",
+      "compatibility_and_risks": "当前任务取消仍清pending；旧A终态/结果不动。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T11.1",
+      "title": "配额乐观合并",
+      "status": "implemented",
+      "feature_commits": [
+        "910014f"
+      ],
+      "changed_files": [
+        "internal/engine/backup.go",
+        "internal/engine/quota_refresh_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/quota_refresh_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestRefreshAccountDoesNotClobberConcurrentEdit",
+          "kind": "go",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 42,
+          "commit": "910014f"
+        },
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestAccountQuotaConflictsAreBounded",
+          "kind": "go",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69,
+          "commit": "910014f"
+        },
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestRefreshAccountCancelledLocalDoesNotWrite",
+          "kind": "go",
+          "line": 134,
+          "present_at_frozen_source": true,
+          "frozen_line": 134,
+          "commit": "910014f"
+        }
+      ],
+      "behavior": "重读最新版本，只写5个配额字段，冲突最多3次重试。",
+      "compatibility_and_risks": "仍递增版本，前端旧编辑可能409；不额外加不可重入账号锁。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T11.2",
+      "title": "收尾刷新生命周期",
+      "status": "implemented",
+      "feature_commits": [
+        "910014f"
+      ],
+      "changed_files": [
+        "internal/engine/backup.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/quota_refresh_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/quota_refresh_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/quota_refresh_test.go",
+          "name": "TestPostTaskQuotaRefreshStopsOnShutdown",
+          "kind": "go",
+          "line": 81,
+          "present_at_frozen_source": true,
+          "frozen_line": 81,
+          "commit": "910014f"
+        }
+      ],
+      "behavior": "收尾刷新从s.ctx派生2分钟上限，关机取消，失败仅日志。",
+      "compatibility_and_risks": "不覆盖原任务结果；刷新失败可保留预留避免低估占用。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T12.1",
+      "title": "可信代理及分操作/IP限流",
+      "status": "implemented",
+      "feature_commits": [
+        "a6b6652"
+      ],
+      "changed_files": [
+        ".env.example",
+        "README.md",
+        "cmd/vaultpilot/main.go",
+        "compose.yaml",
+        "docs/CONFIGURATION.md",
+        "docs/SECURITY.md",
+        "internal/engine/cloud_connect.go",
+        "internal/platform/account_transfer.go",
+        "internal/platform/auth.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/cloud_connect.go",
+        "internal/platform/platform_test.go",
+        "internal/platform/runtime.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestLoginSuccessResetsThrottle",
+          "kind": "go",
+          "line": 95,
+          "present_at_frozen_source": true,
+          "frozen_line": 98,
+          "commit": "a6b6652"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestThrottleIsPerAction",
+          "kind": "go",
+          "line": 113,
+          "present_at_frozen_source": true,
+          "frozen_line": 116,
+          "commit": "a6b6652"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestTrustedProxyUsesForwardedFor",
+          "kind": "go",
+          "line": 140,
+          "present_at_frozen_source": true,
+          "frozen_line": 143,
+          "commit": "a6b6652"
+        }
+      ],
+      "behavior": "新增TrustedProxies CIDR并从右解析可信XFF；action/IP分桶，成功清桶，维持15分钟10次。",
+      "compatibility_and_risks": "默认不信转发头；非法CIDR启动失败，反代未配仍共用代理IP桶。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T12.2",
+      "title": "Argon2全局并发",
+      "status": "implemented",
+      "feature_commits": [
+        "41bb938"
+      ],
+      "changed_files": [
+        "internal/platform/account_transfer.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/crypto.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestDeriveKeyWaitsForGlobalSlot",
+          "kind": "go",
+          "line": 258,
+          "present_at_frozen_source": true,
+          "frozen_line": 258,
+          "commit": "41bb938"
+        }
+      ],
+      "behavior": "所有Argon2派生经过2槽信号量。",
+      "compatibility_and_risks": "KDF参数/密文格式不变；排队并不等于密码请求即时完成。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T12.3",
+      "title": "密码接口体积限制与文档",
+      "status": "implemented",
+      "feature_commits": [
+        "41bb938"
+      ],
+      "changed_files": [
+        "docs/CONFIGURATION.md",
+        "docs/SECURITY.md",
+        "docs/openapi.yaml",
+        "internal/engine/cloud_connect.go",
+        "internal/engine/cloud_connect_test.go",
+        "internal/platform/account_transfer.go",
+        "internal/platform/auth.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/runtime.go",
+        "web/src/App.vue"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/engine/cloud_connect_test.go",
+          "name": "TestCloudSecretRejectsOversizedBodies",
+          "kind": "go",
+          "line": 322,
+          "present_at_frozen_source": true,
+          "frozen_line": 322,
+          "commit": "41bb938"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestLoginRejectsOversizedBody",
+          "kind": "go",
+          "line": 194,
+          "present_at_frozen_source": true,
+          "frozen_line": 194,
+          "commit": "41bb938"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSecretRequestLimitsAndEmptyLogout",
+          "kind": "go",
+          "line": 209,
+          "present_at_frozen_source": true,
+          "frozen_line": 209,
+          "commit": "41bb938"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSetupRequestLimit",
+          "kind": "go",
+          "line": 231,
+          "present_at_frozen_source": true,
+          "frozen_line": 231,
+          "commit": "41bb938"
+        }
+      ],
+      "behavior": "decode默认16MiB保留；密码入口8KiB，setup恢复包1MiB，cloud secret拒多JSON对象。",
+      "compatibility_and_risks": "非密码API不默认收紧；账号包本体保持相应解析路径。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T13.1",
+      "title": "内部键集/统一遍历",
+      "status": "implemented",
+      "feature_commits": [
+        "273d5d8"
+      ],
+      "changed_files": [
+        "internal/engine/backup.go",
+        "internal/engine/entries_scale_test.go",
+        "internal/engine/entries_test.go",
+        "internal/engine/restore.go",
+        "internal/engine/service.go"
+      ],
+      "new_test_files": [
+        "internal/engine/entries_scale_test.go",
+        "internal/engine/entries_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entries_scale_test.go",
+          "name": "TestEntryTraversalScale",
+          "kind": "go",
+          "line": 15,
+          "present_at_frozen_source": true,
+          "frozen_line": 15,
+          "commit": "273d5d8"
+        },
+        {
+          "path": "internal/engine/entries_test.go",
+          "name": "TestEachEntryPreservesEmptyKeysAndMutableFilters",
+          "kind": "go",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14,
+          "commit": "273d5d8"
+        },
+        {
+          "path": "internal/engine/entries_test.go",
+          "name": "TestEachEntryStopsOnErrorAndCancellation",
+          "kind": "go",
+          "line": 46,
+          "present_at_frozen_source": true,
+          "frozen_line": 46,
+          "commit": "273d5d8"
+        }
+      ],
+      "behavior": "eachEntry/entriesAfter按(source_id,path)游标，覆盖空键/可变过滤/取消和错误。",
+      "compatibility_and_risks": "HTTP浏览保留offset；不擅改外部JSON分页契约。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T13.2",
+      "title": "每页写事务",
+      "status": "implemented",
+      "feature_commits": [
+        "8d93f61"
+      ],
+      "changed_files": [
+        "internal/engine/allocation_paging_test.go",
+        "internal/engine/backup.go"
+      ],
+      "new_test_files": [
+        "internal/engine/allocation_paging_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestAllocationPreservesAssignmentsAcrossPages",
+          "kind": "go",
+          "line": 32,
+          "present_at_frozen_source": true,
+          "frozen_line": 32,
+          "commit": "8d93f61"
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestEntryPageRollsBackOnWriteFailure",
+          "kind": "go",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69,
+          "commit": "8d93f61"
+        }
+      ],
+      "behavior": "按计划每页Prepare/逐行Exec/Commit，页失败回滚，不持整个遍历事务。",
+      "compatibility_and_risks": "页大小非业务总量上限，跨页归属不遗漏。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T13.3",
+      "title": "短容量预留事务",
+      "status": "implemented",
+      "feature_commits": [
+        "8d93f61"
+      ],
+      "changed_files": [
+        "internal/engine/allocation_paging_test.go",
+        "internal/engine/backup.go",
+        "internal/engine/engine_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/allocation_paging_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestReservationRechecksCurrentAccountAndPlanningSnapshot",
+          "kind": "go",
+          "line": 90,
+          "present_at_frozen_source": true,
+          "frozen_line": 90,
+          "commit": "8d93f61"
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestConcurrentReservationsDoNotOversell",
+          "kind": "go",
+          "line": 125,
+          "present_at_frozen_source": true,
+          "frozen_line": 125,
+          "commit": "8d93f61"
+        },
+        {
+          "path": "internal/engine/allocation_paging_test.go",
+          "name": "TestReservationValidatesWholeAccountBatchBeforeWriting",
+          "kind": "go",
+          "line": 154,
+          "present_at_frozen_source": true,
+          "frozen_line": 154,
+          "commit": "8d93f61"
+        }
+      ],
+      "behavior": "归属计算在事务外，最终短事务批量重验账号/规划及占用再整体预留。",
+      "compatibility_and_risks": "保留防超售/整体回滚/稳定归属；不把应用去重替代DB约束。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T13.4",
+      "title": "幂等索引迁移v3",
+      "status": "implemented",
+      "feature_commits": [
+        "b34e414"
+      ],
+      "changed_files": [
+        "docs/MIGRATIONS.md",
+        "internal/store/entry_indexes_migration_test.go",
+        "internal/store/store.go"
+      ],
+      "new_test_files": [
+        "internal/store/entry_indexes_migration_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/entry_indexes_migration_test.go",
+          "name": "TestEntryIndexMigrationPreservesRowsAndIsIdempotent",
+          "kind": "go",
+          "line": 9,
+          "present_at_frozen_source": true,
+          "frozen_line": 9,
+          "commit": "b34e414"
+        }
+      ],
+      "behavior": "新增run/repo/source/path索引，移除旧repo和重复tree；标记v3避开已用通知v2。",
+      "compatibility_and_risks": "事务保留存量数据；首次建索引有耗时空间成本，升级前停机备份。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T14.1",
+      "title": "终态清单与引用保护",
+      "status": "implemented",
+      "feature_commits": [
+        "1dc8632",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "docs/MIGRATIONS.md",
+        "internal/engine/entry_cleanup.go",
+        "internal/engine/entry_cleanup_test.go",
+        "internal/engine/retention_state_test.go",
+        "internal/engine/service.go"
+      ],
+      "new_test_files": [
+        "internal/engine/entry_cleanup_test.go",
+        "internal/engine/retention_state_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestFailedRunEntriesAreRemoved",
+          "kind": "go",
+          "line": 44,
+          "present_at_frozen_source": true,
+          "frozen_line": 44,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestStartupSweepPreservesLiveImportedAndActiveEntries",
+          "kind": "go",
+          "line": 73,
+          "present_at_frozen_source": true,
+          "frozen_line": 73,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenanceExecuteCancellationDoesNotWaitForEntryCleanup",
+          "kind": "go",
+          "line": 66,
+          "present_at_frozen_source": true,
+          "frozen_line": 66,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "仅backup/preview清无引用自有清单，每批最多5000；保留live点、活动task和正在发布import。",
+      "compatibility_and_risks": "partial_failed已发布点受保护；无自有清单的restore/migrate/retain不额外等写清扫。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T14.2",
+      "title": "deleted点清单回收",
+      "status": "implemented",
+      "feature_commits": [
+        "1dc8632",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "docs/MIGRATIONS.md",
+        "internal/engine/entry_cleanup.go",
+        "internal/engine/entry_cleanup_test.go",
+        "internal/engine/integration_test.go",
+        "internal/engine/maintenance.go",
+        "internal/engine/maintenance_concurrency_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/entry_cleanup_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestDeletedPointCleanupPreservesOtherLiveReferences",
+          "kind": "go",
+          "line": 161,
+          "present_at_frozen_source": true,
+          "frozen_line": 207,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneAllowsConcurrentCommitAndPreservesNewPending",
+          "kind": "go",
+          "line": 461,
+          "present_at_frozen_source": true,
+          "frozen_line": 461,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "选在标记deleted后回收，prune失败仍不保留不可浏览清单；相关锁先释放。",
+      "compatibility_and_risks": "共享RunID仍live不删；不动归属/预留；取消机会清扫由启动重试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T14.3",
+      "title": "启动清扫/NULL安全",
+      "status": "implemented",
+      "feature_commits": [
+        "1dc8632",
+        "eadace5"
+      ],
+      "changed_files": [
+        "internal/engine/entry_cleanup.go",
+        "internal/engine/entry_cleanup_test.go",
+        "internal/engine/service.go"
+      ],
+      "new_test_files": [
+        "internal/engine/entry_cleanup_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestStartupSweepPreservesLiveImportedAndActiveEntries",
+          "kind": "go",
+          "line": 73,
+          "present_at_frozen_source": true,
+          "frozen_line": 73,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestStartSweepsInterruptedEntriesAsynchronously",
+          "kind": "go",
+          "line": 110,
+          "present_at_frozen_source": true,
+          "frozen_line": 110,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestCleanupWaitsForImportedIndexPublication",
+          "kind": "go",
+          "line": 136,
+          "present_at_frozen_source": true,
+          "frozen_line": 181,
+          "commit": "1dc8632"
+        },
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestCleanupHandlesNullableHistoricalTaskIDs",
+          "kind": "go",
+          "line": 136,
+          "present_at_frozen_source": true,
+          "frozen_line": 136,
+          "commit": "eadace5"
+        }
+      ],
+      "behavior": "Start异步逐批重查引用；活动任务NOT EXISTS防NULL污染，snapshot NULL task_id可清理。",
+      "compatibility_and_risks": "保留live run_id coalesce空串语义；discover暂存/发布与仍被live引用的import受保护。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T14.4",
+      "title": "校验临时行defer",
+      "status": "implemented",
+      "feature_commits": [
+        "1dc8632"
+      ],
+      "changed_files": [
+        "internal/engine/backup.go",
+        "internal/engine/entry_cleanup_test.go",
+        "internal/engine/integration_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/entry_cleanup_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/entry_cleanup_test.go",
+          "name": "TestSnapshotVerificationCleansUpOnEarlyReturn",
+          "kind": "go",
+          "line": 179,
+          "present_at_frozen_source": true,
+          "frozen_line": 225,
+          "commit": "1dc8632"
+        }
+      ],
+      "behavior": "按task/repo有界清理校验行，覆盖成功/引擎失败/取消/验证提前返回。",
+      "compatibility_and_risks": "清理失败只日志、启动重试，不替换原错误。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.1",
+      "title": "设计批准与context原语",
+      "status": "implemented",
+      "feature_commits": [
+        "238936f",
+        "a182de8",
+        "42f8547"
+      ],
+      "changed_files": [
+        "docs/LOCKING.md",
+        "internal/ctxlock/lock.go",
+        "internal/ctxlock/lock_test.go"
+      ],
+      "new_test_files": [
+        "internal/ctxlock/lock_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexCancellationAndReuse",
+          "kind": "go",
+          "line": 22,
+          "present_at_frozen_source": true,
+          "frozen_line": 62,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexSerializesConcurrentUpdates",
+          "kind": "go",
+          "line": 44,
+          "present_at_frozen_source": true,
+          "frozen_line": 84,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWConcurrentReadersAndCancelledWriter",
+          "kind": "go",
+          "line": 65,
+          "present_at_frozen_source": true,
+          "frozen_line": 105,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWCancelledReaderDoesNotAffectWriter",
+          "kind": "go",
+          "line": 101,
+          "present_at_frozen_source": true,
+          "frozen_line": 141,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestRWCompetingReadersAndWriters",
+          "kind": "go",
+          "line": 118,
+          "present_at_frozen_source": true,
+          "frozen_line": 164,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/ctxlock/lock_test.go",
+          "name": "TestMutexCancellationAfterAcquisitionReturnsToken",
+          "kind": "go",
+          "line": 25,
+          "present_at_frozen_source": true,
+          "frozen_line": 25,
+          "commit": "a182de8"
+        }
+      ],
+      "behavior": "用户批准后零值Mutex/RWMutex；显式ctx失败归还token，旧Lock兼容；补刚获锁取消/有界复取测试。",
+      "compatibility_and_risks": "写者取得准入后新读者排队，禁止R→W升级；不称全应用旧等待均可取消。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.2",
+      "title": "资源/HTTP配置门禁",
+      "status": "implemented",
+      "feature_commits": [
+        "238936f"
+      ],
+      "changed_files": [
+        "internal/engine/account_clear.go",
+        "internal/engine/cloud_connect.go",
+        "internal/engine/context_lock_test.go",
+        "internal/engine/service.go",
+        "internal/platform/context_lock_test.go",
+        "internal/platform/runtime.go"
+      ],
+      "new_test_files": [
+        "internal/engine/context_lock_test.go",
+        "internal/platform/context_lock_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestCancelledMaintenanceHTTPWaitsReleaseOuterGates",
+          "kind": "go",
+          "line": 38,
+          "present_at_frozen_source": true,
+          "frozen_line": 38,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestResourceLockCancellationReleasesPartialAcquisition",
+          "kind": "go",
+          "line": 113,
+          "present_at_frozen_source": true,
+          "frozen_line": 113,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/platform/context_lock_test.go",
+          "name": "TestAccountConfigurationContextCancellationPreservesLegacyLock",
+          "kind": "go",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/platform/context_lock_test.go",
+          "name": "TestContextConfigurationLockExcludesLegacyCaller",
+          "kind": "go",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 42,
+          "commit": "238936f"
+        }
+      ],
+      "behavior": "排序去重account→repo，部分失败逆序退锁；受影响HTTP配置/catalog等待使用请求ctx。",
+      "compatibility_and_risks": "锁等待取消不开始提交；平台普通旧Lock调用继续兼容阻塞，避免accountMu重入。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.3",
+      "title": "恢复共享读与清扫写",
+      "status": "implemented",
+      "feature_commits": [
+        "238936f",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "internal/engine/account_clear.go",
+        "internal/engine/catalog.go",
+        "internal/engine/context_lock_test.go",
+        "internal/engine/entry_cleanup.go",
+        "internal/engine/restore.go",
+        "internal/engine/retention_state_test.go",
+        "internal/engine/service.go"
+      ],
+      "new_test_files": [
+        "internal/engine/context_lock_test.go",
+        "internal/engine/retention_state_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestRestoreReadLockAllowsFileBrowsing",
+          "kind": "go",
+          "line": 171,
+          "present_at_frozen_source": true,
+          "frozen_line": 171,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/engine/context_lock_test.go",
+          "name": "TestCleanupIndexWriteWaitCanBeCancelled",
+          "kind": "go",
+          "line": 226,
+          "present_at_frozen_source": true,
+          "frozen_line": 226,
+          "commit": "238936f"
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenanceExecuteCancellationDoesNotWaitForEntryCleanup",
+          "kind": "go",
+          "line": 66,
+          "present_at_frozen_source": true,
+          "frozen_line": 66,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "restore/列表/预览R，discover/clear/逐批清扫W；列表物化后释放再写响应。",
+      "compatibility_and_risks": "discover/clear和认证网络仍长持catalog；取消无清单任务不抢清扫W。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.4",
+      "title": "迁移数据/发布分阶段",
+      "status": "implemented",
+      "feature_commits": [
+        "ad9de2c",
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "docs/LOCKING.md",
+        "internal/engine/maintenance.go",
+        "internal/engine/maintenance_concurrency_test.go",
+        "internal/engine/migration_state.go",
+        "internal/engine/migration_state_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/maintenance_concurrency_test.go",
+        "internal/engine/migration_state_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationDataWorkAllowsOtherPlanCommit",
+          "kind": "go",
+          "line": 178,
+          "present_at_frozen_source": true,
+          "frozen_line": 187,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationReleasesResourcesBeforeCatalogWait",
+          "kind": "go",
+          "line": 197,
+          "present_at_frozen_source": true,
+          "frozen_line": 206,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationRejectsChangesDuringCopy",
+          "kind": "go",
+          "line": 218,
+          "present_at_frozen_source": true,
+          "frozen_line": 227,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/migration_state_test.go",
+          "name": "TestMaintenanceRepositoryCASPreservesConcurrentChanges",
+          "kind": "go",
+          "line": 11,
+          "present_at_frozen_source": true,
+          "frozen_line": 11,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/migration_state_test.go",
+          "name": "TestMaintenanceRepositoryCASChecksValidationAndAffectedRows",
+          "kind": "go",
+          "line": 56,
+          "present_at_frozen_source": true,
+          "frozen_line": 56,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceMigrationPublicationFailureRestoresOldMapping",
+          "kind": "go",
+          "line": 630,
+          "present_at_frozen_source": true,
+          "frozen_line": 630,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceDegradedMigrationKeepsCommittedMapping",
+          "kind": "go",
+          "line": 649,
+          "present_at_frozen_source": true,
+          "frozen_line": 649,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "copy/read-data无catalog，释放资源后按顺序重取；短Tx重验repo/物理账号/当前池/预留并CAS。",
+      "compatibility_and_risks": "quota版本变化允许；非降级映射失败精确回滚；逻辑降级不回滚，源与任务副本保留。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.5",
+      "title": "旧副本四阶段交接",
+      "status": "implemented",
+      "feature_commits": [
+        "ad9de2c"
+      ],
+      "changed_files": [
+        "docs/LOCKING.md",
+        "internal/engine/maintenance.go",
+        "internal/engine/maintenance_concurrency_test.go",
+        "internal/engine/migration_state.go"
+      ],
+      "new_test_files": [
+        "internal/engine/maintenance_concurrency_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyDataWorkAllowsOtherPlanCommit",
+          "kind": "go",
+          "line": 271,
+          "present_at_frozen_source": true,
+          "frozen_line": 280,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyRejectsMappingChangeBeforeRetirement",
+          "kind": "go",
+          "line": 294,
+          "present_at_frozen_source": true,
+          "frozen_line": 303,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyPublicationFailureRemainsRetryable",
+          "kind": "go",
+          "line": 320,
+          "present_at_frozen_source": true,
+          "frozen_line": 329,
+          "commit": "ad9de2c"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceOldCopyRejectsUnusableCurrentAccountAtHandoff",
+          "kind": "go",
+          "line": 359,
+          "present_at_frozen_source": true,
+          "frozen_line": 368,
+          "commit": "ad9de2c"
+        }
+      ],
+      "behavior": "校验/退休W/无catalog purge/完成CAS逐阶段重验，检查当前账号仍可恢复。",
+      "compatibility_and_risks": "不purge当前；purge后失败/取消保留cleanup_pending且不重新Verified，缺目录可重试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T15.6",
+      "title": "retain决策/prune/发布",
+      "status": "implemented",
+      "feature_commits": [
+        "5e4cfa9"
+      ],
+      "changed_files": [
+        "docs/LOCKING.md",
+        "internal/engine/maintenance.go",
+        "internal/engine/maintenance_concurrency_test.go",
+        "internal/engine/retention_state.go",
+        "internal/engine/retention_state_test.go"
+      ],
+      "new_test_files": [
+        "internal/engine/retention_state_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneAllowsConcurrentCommitAndPreservesNewPending",
+          "kind": "go",
+          "line": 461,
+          "present_at_frozen_source": true,
+          "frozen_line": 461,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenancePruneFailureKeepsDecisionForRetry",
+          "kind": "go",
+          "line": 499,
+          "present_at_frozen_source": true,
+          "frozen_line": 499,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceRetentionWaitsForRestoreReaders",
+          "kind": "go",
+          "line": 556,
+          "present_at_frozen_source": true,
+          "frozen_line": 556,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/maintenance_concurrency_test.go",
+          "name": "TestMaintenanceRetentionDoesNotForgetSharedSnapshot",
+          "kind": "go",
+          "line": 596,
+          "present_at_frozen_source": true,
+          "frozen_line": 596,
+          "commit": "5e4cfa9"
+        },
+        {
+          "path": "internal/engine/retention_state_test.go",
+          "name": "TestMaintenancePendingRemovalIsAtomicAndPreservesJSON",
+          "kind": "go",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14,
+          "commit": "5e4cfa9"
+        }
+      ],
+      "behavior": "W+catalog认证删除并原子登记，释放后R下prune无catalog，最后最新目录+单条批CAS增量移除。",
+      "compatibility_and_risks": "旧restore先排空，新restore拒deleted；共享snapshot/并发point/new pending保留；失败/取消可重试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.1.1",
+      "title": "未使用符号清理",
+      "status": "implemented",
+      "feature_commits": [
+        "ace9599"
+      ],
+      "changed_files": [
+        "internal/engine/restore.go",
+        "internal/platform/crypto.go",
+        "internal/platform/onedrive.go",
+        "internal/platform/resources.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "移除request/formatVersion/tokenEndpoint/retryDuration/describeError及无用import。",
+      "compatibility_and_risks": "先检索引用；无新功能，不虚构新增测试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.1.2",
+      "title": "用户文案/测试简化",
+      "status": "implemented",
+      "feature_commits": [
+        "ace9599"
+      ],
+      "changed_files": [
+        "internal/platform/notifications.go",
+        "internal/platform/platform_test.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "Telegram产品名用户文案保留并加精确ST1005理由；Body.String替换冗余转换。",
+      "compatibility_and_risks": "不强行小写用户品牌文案；复用既有测试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.1.3",
+      "title": "直接依赖整理",
+      "status": "implemented",
+      "feature_commits": [
+        "ace9599"
+      ],
+      "changed_files": [
+        "go.mod"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "doublestar/v4标为直接依赖。",
+      "compatibility_and_risks": "依赖版本不变，不顺带升级。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.2.1",
+      "title": "重连PRAGMA",
+      "status": "implemented",
+      "feature_commits": [
+        "332c339"
+      ],
+      "changed_files": [
+        "docs/MIGRATIONS.md",
+        "internal/store/connection_logs_test.go",
+        "internal/store/store.go"
+      ],
+      "new_test_files": [
+        "internal/store/connection_logs_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestConnectionPragmasSurviveReconnection",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 12,
+          "commit": "332c339"
+        }
+      ],
+      "behavior": "DSN设置busy_timeout/foreign_keys/WAL/synchronous=NORMAL，重建连接仍生效。",
+      "compatibility_and_risks": "NORMAL保一致性，但断电可丢最近事务，不能替代认证目录/备份。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.2.2",
+      "title": "审计ID去冲突",
+      "status": "implemented",
+      "feature_commits": [
+        "332c339"
+      ],
+      "changed_files": [
+        "docs/MIGRATIONS.md",
+        "internal/store/connection_logs_test.go",
+        "internal/store/store.go"
+      ],
+      "new_test_files": [
+        "internal/store/connection_logs_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestAuditEventsAtSameNanosecondAreDistinct",
+          "kind": "go",
+          "line": 41,
+          "present_at_frozen_source": true,
+          "frozen_line": 41,
+          "commit": "332c339"
+        }
+      ],
+      "behavior": "时间前缀加随机后缀，列表仍按更新时间。",
+      "compatibility_and_risks": "ID需当不透明字符串，不依赖旧数字排序。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.2.3",
+      "title": "UTF-8日志截断",
+      "status": "implemented",
+      "feature_commits": [
+        "332c339"
+      ],
+      "changed_files": [
+        "internal/store/connection_logs_test.go",
+        "internal/store/store.go"
+      ],
+      "new_test_files": [
+        "internal/store/connection_logs_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/store/connection_logs_test.go",
+          "name": "TestLogTruncationPreservesUTF8",
+          "kind": "go",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 63,
+          "commit": "332c339"
+        }
+      ],
+      "behavior": "8192字节附近按合法UTF-8截断。",
+      "compatibility_and_risks": "保留字节限制，非字符数上限。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.3.1",
+      "title": "监听成功再调度",
+      "status": "implemented",
+      "feature_commits": [
+        "16a0643"
+      ],
+      "changed_files": [
+        "cmd/vaultpilot/main.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "net.Listen成功后才启动Service与Serve。",
+      "compatibility_and_risks": "绑定失败不先执行恢复任务；未新增独立端口冲突测试声明。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.3.2",
+      "title": "健康检查VP_ADDR",
+      "status": "implemented",
+      "feature_commits": [
+        "16a0643"
+      ],
+      "changed_files": [
+        "cmd/healthcheck/main.go",
+        "cmd/healthcheck/main_test.go"
+      ],
+      "new_test_files": [
+        "cmd/healthcheck/main_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "cmd/healthcheck/main_test.go",
+          "name": "TestHealthcheckURLUsesListenAddress",
+          "kind": "go",
+          "line": 5,
+          "present_at_frozen_source": true,
+          "frozen_line": 5,
+          "commit": "16a0643"
+        }
+      ],
+      "behavior": "解析监听端口，通配/空地址改127.0.0.1访问。",
+      "compatibility_and_risks": "非默认端口/IPv6有回归；Docker健康状态仍待环境运行。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.3.3",
+      "title": "镜像HEALTHCHECK",
+      "status": "implemented",
+      "feature_commits": [
+        "16a0643"
+      ],
+      "changed_files": [
+        "Dockerfile"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "镜像声明/app/healthcheck，直接docker run也启用。",
+      "compatibility_and_risks": "compose可覆盖镜像健康配置。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.4.1",
+      "title": "敏感导出密码重新验证",
+      "status": "implemented",
+      "feature_commits": [
+        "4345395"
+      ],
+      "changed_files": [
+        "internal/platform/account_transfer.go",
+        "internal/platform/account_transfer_test.go",
+        "internal/platform/auth.go",
+        "internal/platform/auth_test.go",
+        "internal/platform/cloud_connect_test.go",
+        "internal/platform/platform_test.go"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestSensitiveExportsRequireAdminPassword",
+          "kind": "go",
+          "line": 298,
+          "present_at_frozen_source": true,
+          "frozen_line": 298,
+          "commit": "4345395"
+        },
+        {
+          "path": "internal/platform/auth_test.go",
+          "name": "TestExportReauthenticationThrottleAndReset",
+          "kind": "go",
+          "line": 324,
+          "present_at_frozen_source": true,
+          "frozen_line": 324,
+          "commit": "4345395"
+        }
+      ],
+      "behavior": "两种导出必须admin_password，错误计独立reauth桶，成功复位。",
+      "compatibility_and_risks": "有意新增请求契约；缺/错密码401，CSRF继续要求，包密码与登录密码语义区分。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.4.2",
+      "title": "导出UI/API/e2e同步",
+      "status": "implemented",
+      "feature_commits": [
+        "4345395"
+      ],
+      "changed_files": [
+        "docs/API.md",
+        "docs/SECURITY.md",
+        "docs/openapi.yaml",
+        "scripts/e2e_local.py",
+        "web/src/AccountTransfer.vue",
+        "web/src/App.vue",
+        "web/tests/sensitive-exports.test.mjs"
+      ],
+      "new_test_files": [
+        "web/tests/sensitive-exports.test.mjs"
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/sensitive-exports.test.mjs",
+          "name": "recovery export sends current login password and clears it after ${failed ? 'failure' : 'success'}",
+          "kind": "node_template",
+          "line": 17,
+          "present_at_frozen_source": true,
+          "frozen_line": 17,
+          "commit": "4345395"
+        },
+        {
+          "path": "web/tests/sensitive-exports.test.mjs",
+          "name": "account export sends current login password and clears it after ${failed ? 'failure' : 'success'}",
+          "kind": "node_template",
+          "line": 35,
+          "present_at_frozen_source": true,
+          "frozen_line": 35,
+          "commit": "4345395"
+        }
+      ],
+      "behavior": "弹窗发送当前登录密码，成功/失败/关闭清空；同步OpenAPI/API/安全文档和e2e。",
+      "compatibility_and_risks": "失败不误报下载，密码不写入导出包或持久状态。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.5.1",
+      "title": "Drive GET只读",
+      "status": "implemented",
+      "feature_commits": [
+        "92f3a31"
+      ],
+      "changed_files": [
+        "docs/openapi.yaml",
+        "internal/platform/account_drives_readonly_test.go",
+        "internal/platform/account_identity_test.go",
+        "internal/platform/cloud_account_test.go",
+        "internal/platform/onedrive.go",
+        "internal/platform/onedrive_performance_test.go",
+        "internal/platform/platform_test.go"
+      ],
+      "new_test_files": [
+        "internal/platform/account_drives_readonly_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/account_drives_readonly_test.go",
+          "name": "TestVerificationPersistsOptionalIdentityAfterCloudChecks",
+          "kind": "go",
+          "line": 12,
+          "present_at_frozen_source": true,
+          "frozen_line": 12,
+          "commit": "92f3a31"
+        },
+        {
+          "path": "internal/platform/account_drives_readonly_test.go",
+          "name": "TestVerificationFailureAndMissingCSRFDoNotPersistIdentity",
+          "kind": "go",
+          "line": 108,
+          "present_at_frozen_source": true,
+          "frozen_line": 108,
+          "commit": "92f3a31"
+        }
+      ],
+      "behavior": "GET只临时回显身份，不写账户/版本；verify访问/配额成功后保存，同版本有界TTL缓存，缺User.Read不阻断。",
+      "compatibility_and_risks": "旧授权结果拒绝、过期重取、POST需CSRF；不泛称OAuth续期/通知也完全无内部状态。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.5.2",
+      "title": "更新名称边界",
+      "status": "implemented",
+      "feature_commits": [
+        "d9f975e"
+      ],
+      "changed_files": [
+        "internal/platform/account_name_test.go",
+        "internal/platform/resources.go"
+      ],
+      "new_test_files": [
+        "internal/platform/account_name_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/account_name_test.go",
+          "name": "TestUpdateAccountNameMatchesCreateLimits",
+          "kind": "go",
+          "line": 10,
+          "present_at_frozen_source": true,
+          "frozen_line": 10,
+          "commit": "d9f975e"
+        }
+      ],
+      "behavior": "update与create同样trim、非空且len<=200。",
+      "compatibility_and_risks": "保持既有按字节而非rune口径，中文边界有测试。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.5.3",
+      "title": "删除后清凭据原有即符合",
+      "status": "already_conforming",
+      "feature_commits": [],
+      "changed_files": [],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "baseline已先检查Store.Delete成功再清credential，最终顺序仍符合，未改代码。",
+      "compatibility_and_risks": "账户→凭据锁顺序已核对；不虚构修复提交/新测试。",
+      "reference_only_files": [
+        "internal/platform/resources.go"
+      ]
+    },
+    {
+      "id": "T16.5.4",
+      "title": "既有目录显式0700",
+      "status": "implemented",
+      "feature_commits": [
+        "564f43d"
+      ],
+      "changed_files": [
+        "internal/platform/runtime.go",
+        "internal/platform/runtime_permissions_test.go"
+      ],
+      "new_test_files": [
+        "internal/platform/runtime_permissions_test.go"
+      ],
+      "added_tests": [
+        {
+          "path": "internal/platform/runtime_permissions_test.go",
+          "name": "TestNewRestrictsExistingStateAndCacheDirectories",
+          "kind": "go",
+          "line": 9,
+          "present_at_frozen_source": true,
+          "frozen_line": 9,
+          "commit": "564f43d"
+        }
+      ],
+      "behavior": "MkdirAll后显式Chmod state/cache 0700，失败只日志。",
+      "compatibility_and_risks": "覆盖默认与独立cache；未注入系统Chmod失败，不宣称设置必然成功。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.1",
+      "title": "隐藏页暂停轮询",
+      "status": "implemented",
+      "feature_commits": [
+        "84a997d"
+      ],
+      "changed_files": [
+        "web/src/App.vue",
+        "web/src/NetworkActivity.vue",
+        "web/src/polling.ts",
+        "web/tests/polling.test.mjs"
+      ],
+      "new_test_files": [
+        "web/tests/polling.test.mjs"
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/polling.test.mjs",
+          "name": "hidden tabs pause polling and becoming visible refreshes immediately before resuming the interval",
+          "kind": "node",
+          "line": 14,
+          "present_at_frozen_source": true,
+          "frozen_line": 14,
+          "commit": "84a997d"
+        },
+        {
+          "path": "web/tests/polling.test.mjs",
+          "name": "polling mounted in a hidden tab waits for visibility and never overlaps an in-flight refresh",
+          "kind": "node",
+          "line": 24,
+          "present_at_frozen_source": true,
+          "frozen_line": 24,
+          "commit": "84a997d"
+        }
+      ],
+      "behavior": "App/NetworkActivity共享可见性轮询，隐藏停、恢复立即刷新，卸载清监听，避免并行重入。",
+      "compatibility_and_risks": "可见页周期保留；进行中请求不重复启动。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.2",
+      "title": "后台错误连续阈值",
+      "status": "implemented",
+      "feature_commits": [
+        "e1ed8c7"
+      ],
+      "changed_files": [
+        "web/src/App.vue",
+        "web/tests/background-errors.test.mjs"
+      ],
+      "new_test_files": [
+        "web/tests/background-errors.test.mjs"
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "${method} suppresses the first two background failures, resets on success and reports manual failures immediately",
+          "kind": "node_template",
+          "line": 16,
+          "present_at_frozen_source": true,
+          "frozen_line": 16,
+          "commit": "e1ed8c7"
+        },
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "task and log polling failures are counted independently",
+          "kind": "node",
+          "line": 27,
+          "present_at_frozen_source": true,
+          "frozen_line": 27,
+          "commit": "e1ed8c7"
+        },
+        {
+          "path": "web/tests/background-errors.test.mjs",
+          "name": "status polling shows connection trouble only after three failures and clears the streak on success",
+          "kind": "node",
+          "line": 33,
+          "present_at_frozen_source": true,
+          "frozen_line": 33,
+          "commit": "e1ed8c7"
+        }
+      ],
+      "behavior": "任务/日志/status独立计数，前两次静默、第三次提示，成功复位；手动失败即时显示。",
+      "compatibility_and_risks": "不把不同入口混桶，不永久吞故障。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.3",
+      "title": "键盘/焦点/aria",
+      "status": "implemented",
+      "feature_commits": [
+        "1e955e1"
+      ],
+      "changed_files": [
+        "web/src/App.vue",
+        "web/src/RcloneAuthorization.vue",
+        "web/src/SourceBrowser.vue",
+        "web/tests/accessibility.test.mjs"
+      ],
+      "new_test_files": [
+        "web/tests/accessibility.test.mjs"
+      ],
+      "added_tests": [
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "opening a modal focuses its first enabled input and closing restores the trigger",
+          "kind": "node",
+          "line": 32,
+          "present_at_frozen_source": true,
+          "frozen_line": 32,
+          "commit": "1e955e1"
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "a confirmation without inputs receives focus without replacing the original trigger",
+          "kind": "node",
+          "line": 42,
+          "present_at_frozen_source": true,
+          "frozen_line": 43,
+          "commit": "1e955e1"
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "${flag} keeps modal and pending confirmation open",
+          "kind": "node_template",
+          "line": 54,
+          "present_at_frozen_source": true,
+          "frozen_line": 55,
+          "commit": "1e955e1"
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "removed trigger is not focused after closing",
+          "kind": "node",
+          "line": 63,
+          "present_at_frozen_source": true,
+          "frozen_line": 65,
+          "commit": "1e955e1"
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "authorization and import requests publish busy state until success or failure",
+          "kind": "node",
+          "line": 71,
+          "present_at_frozen_source": true,
+          "frozen_line": 73,
+          "commit": "1e955e1"
+        },
+        {
+          "path": "web/tests/accessibility.test.mjs",
+          "name": "icon buttons have explicit accessible names and modal Escape uses the guarded close action",
+          "kind": "node",
+          "line": 91,
+          "present_at_frozen_source": true,
+          "frozen_line": 93,
+          "commit": "1e955e1"
+        }
+      ],
+      "behavior": "图标按钮aria-label；Esc经busy/授权保护；开启聚焦输入/确认窗、关闭恢复有效触发元素。",
+      "compatibility_and_risks": "忙碌不误关；已移除触发元素不强行聚焦，不新增业务审批。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.4",
+      "title": "JSON null错误体",
+      "status": "implemented",
+      "feature_commits": [
+        "07487a2"
+      ],
+      "changed_files": [
+        "web/src/api.ts",
+        "web/tests/api.test.mjs"
+      ],
+      "new_test_files": [],
+      "added_tests": [
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "JSON null error responses become ApiError and release the active request",
+          "kind": "node",
+          "line": 69,
+          "present_at_frozen_source": true,
+          "frozen_line": 69,
+          "commit": "07487a2"
+        },
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "structured errors retain their server message, code, retry policy and status",
+          "kind": "node",
+          "line": 85,
+          "present_at_frozen_source": true,
+          "frozen_line": 85,
+          "commit": "07487a2"
+        },
+        {
+          "path": "web/tests/api.test.mjs",
+          "name": "successful JSON null remains null",
+          "kind": "node",
+          "line": 90,
+          "present_at_frozen_source": true,
+          "frozen_line": 90,
+          "commit": "07487a2"
+        }
+      ],
+      "behavior": "错误null转ApiError并释放活动计数，结构化错误字段保留，成功null仍返回null。",
+      "compatibility_and_risks": "共享API成功/失败契约不被判空误改。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.5",
+      "title": "开发默认本机监听",
+      "status": "implemented",
+      "feature_commits": [
+        "442acc4"
+      ],
+      "changed_files": [
+        "web/package.json"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "dev去掉--host 0.0.0.0。",
+      "compatibility_and_risks": "LAN开发显式传参数；生产监听不变。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.6",
+      "title": "维护中Vue图标包",
+      "status": "implemented",
+      "feature_commits": [
+        "958960b"
+      ],
+      "changed_files": [
+        "web/package-lock.json",
+        "web/package.json",
+        "web/src/AccountClear.vue",
+        "web/src/AccountTransfer.vue",
+        "web/src/App.vue",
+        "web/src/CloudConnection.vue",
+        "web/src/LoadingNotice.vue",
+        "web/src/NetworkActivity.vue",
+        "web/src/RcloneAuthorization.vue",
+        "web/src/ResultReport.vue",
+        "web/src/SourceBrowser.vue",
+        "web/src/TelegramNotifications.vue"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "所有组件import换@lucide/vue并同步lockfile。",
+      "compatibility_and_risks": "保留图标用途；无新独立测试声明，最终前端构建验证待填。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.6.8",
+      "title": "App.vue拆分暂缓",
+      "status": "deferred",
+      "feature_commits": [],
+      "changed_files": [],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "按计划不执行本次大重构。",
+      "compatibility_and_risks": "另行立项，不能计为已完成拆分。",
+      "reference_only_files": [
+        "web/src/App.vue"
+      ]
+    },
+    {
+      "id": "T16.7.1",
+      "title": "Node22具体补丁",
+      "status": "implemented",
+      "feature_commits": [
+        "a79b138"
+      ],
+      "changed_files": [
+        "Dockerfile",
+        "README.md"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "镜像固定Node22.23.3-bookworm-slim。",
+      "compatibility_and_risks": "后续升级显式改版本；未同时固定基础镜像digest。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.7.2",
+      "title": "固定引擎两架构哈希",
+      "status": "implemented",
+      "feature_commits": [
+        "a79b138"
+      ],
+      "changed_files": [
+        "Dockerfile",
+        "README.md"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "选ARG固定Restic0.18.1/Rclone1.70.3 amd64/arm64 SHA-256，不再临时信任同源checksum。",
+      "compatibility_and_risks": "并非GPG签名；版本升级需同步哈希；显式ARG覆盖依赖可信构建配置。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.7.3",
+      "title": "基础镜像digest可选未启用",
+      "status": "optional_not_enabled",
+      "feature_commits": [],
+      "changed_files": [],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "保留具体tag，不加@sha256镜像digest。",
+      "compatibility_and_risks": "计划标为可选需用户决定，不能称已启用。",
+      "reference_only_files": [
+        "Dockerfile"
+      ]
+    },
+    {
+      "id": "T16.7.B",
+      "title": "构建上下文排除worktree",
+      "status": "implemented",
+      "feature_commits": [
+        "df15de9"
+      ],
+      "changed_files": [
+        ".dockerignore"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "排除.worktrees避免本地工具/工作树/产物进入Docker上下文。",
+      "compatibility_and_risks": "附加构建卫生修复，实际镜像构建仍待Docker环境。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.8.1",
+      "title": "无缓存最终证据/哈希",
+      "status": "evidence_refreshed",
+      "feature_commits": [],
+      "changed_files": [
+        "docs/REPAIR_REPORT.md",
+        "docs/TEST_REPORT.md",
+        "docs/LOCKING.md",
+        "docs/evidence/docker-report.json",
+        "docs/evidence/entry-traversal-validation.json",
+        "docs/evidence/fix-plan-validation.json",
+        "docs/evidence/frontend-validation.json",
+        "docs/evidence/go-validation.json",
+        "docs/evidence/local-e2e-report.json",
+        "docs/evidence/offline-rescue-report.json",
+        "docs/evidence/rclone-docker-regression.json",
+        "docs/evidence/rclone-local-regression.json",
+        "docs/evidence/rclone-validation.json",
+        "docs/evidence/scale-report.json",
+        "docs/evidence/validation-summary.json",
+        "docs/screenshots/fix-validation.jpg"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "无缓存单轮、连续五轮竞态、真实本地引擎、前端、规模及闭环证据已刷新，源码绑定d7b6bd6。",
+      "compatibility_and_risks": "文档单独提交；Docker、真实OneDrive、生产规模和多节点未验证。",
+      "reference_only_files": []
+    },
+    {
+      "id": "T16.8.2",
+      "title": "真实外部环境边界",
+      "status": "external_validation_limits_recorded",
+      "feature_commits": [],
+      "changed_files": [
+        "docs/REPAIR_REPORT.md",
+        "docs/TEST_REPORT.md",
+        "docs/LOCKING.md",
+        "docs/evidence/docker-report.json",
+        "docs/evidence/entry-traversal-validation.json",
+        "docs/evidence/fix-plan-validation.json",
+        "docs/evidence/frontend-validation.json",
+        "docs/evidence/go-validation.json",
+        "docs/evidence/local-e2e-report.json",
+        "docs/evidence/offline-rescue-report.json",
+        "docs/evidence/rclone-docker-regression.json",
+        "docs/evidence/rclone-local-regression.json",
+        "docs/evidence/rclone-validation.json",
+        "docs/evidence/scale-report.json",
+        "docs/evidence/validation-summary.json",
+        "docs/screenshots/fix-validation.jpg"
+      ],
+      "new_test_files": [],
+      "added_tests": [],
+      "behavior": "真实OneDrive/Docker/生产规模和多节点按实际环境标注，不沿用旧证据。",
+      "compatibility_and_risks": "本地真实引擎/假并发脚本不能替代云端重授权、断网和容器验证。",
+      "reference_only_files": []
+    }
+  ],
+  "test_declaration_note": "Node参数化模板按声明记录，不展开为运行用例数；Go表驱动子案例同样不计为独立新增函数。",
+  "counts": {
+    "feature_commits": 41,
+    "merge_commits": 19,
+    "new_test_declarations": 107,
+    "plan_items": 67
+  },
+  "limitations": [
+    "T16.5.3 baseline删除账户顺序已符合，未修改/不虚构提交。",
+    "App.vue拆组件暂不执行；基础镜像digest可选未启用。",
+    "旧版本已经deleted且没有pending_forget的空间泄漏未自动回填。",
+    "普通平台账号编辑/验证等保留旧阻塞Lock兼容，并非全应用所有等待均可取消。",
+    "discover/清空仍长持catalog，目录认证上传/读回仍在锁内；写者取得准入后新读者可能等待。",
+    "真实OneDrive、Docker、生产规模、多节点边界依实际运行标注，不能用假脚本/本地引擎替代。"
+  ],
+  "shared_code": [
+    {
+      "area": "process.BaseEnvironment / Run",
+      "scope": "restic、rclone、平台授权及credential obscure",
+      "default": "允许基础路径/locale/证书/代理，显式env保持优先",
+      "failure": "超长行持续drain并报错；ctx优先于进程/扫描错误",
+      "compatibility": "宿主RESTIC_*/RCLONE_*/VP_*不继承，自定义白名单外环境需显式适配"
+    },
+    {
+      "area": "Runtime.RcloneConfigFor",
+      "scope": "备份/恢复/检查/迁移/retention/目录/云连接/账号清空",
+      "default": "仅显式账号，local跳过，Enabled仍由业务控制",
+      "failure": "ctx传到续期，当前账号或同步失败明确返回，任务临时配置释放",
+      "compatibility": "无关坏账号不拖垮任务，纯quota版本变化允许，物理配置变化仍拒绝"
+    },
+    {
+      "area": "认证、限流、decode、deriveKey",
+      "scope": "login/setup/unlock/cloud_secret/transfer/reauth",
+      "default": "代理默认不信任，action/IP分桶；普通decode默认16MiB保留",
+      "failure": "密码入口8KiB/setup1MiB，Argon2两槽排队，成功复位独立桶",
+      "compatibility": "admin_password是敏感导出明确新增契约，非所有API默认收紧"
+    },
+    {
+      "area": "eachEntry / 页写入 / allocate",
+      "scope": "规划分配、manifest、快照验证、恢复布局",
+      "default": "内部游标，HTTP offset兼容，页事务",
+      "failure": "页错误回滚、回调/ctx停止；最终短预留事务批量校验防超售",
+      "compatibility": "空键/可变where受测；索引v3首次建表成本与state备份见MIGRATIONS"
+    },
+    {
+      "area": "entry_cleanup",
+      "scope": "Start、backup/preview终态、retain删除点、snapshot验证",
+      "default": "仅无live引用/无活动task可删，每批最多5000；import暂存/发布受索引保护",
+      "failure": "NULL-safe活动保护；partial_failed已发布点保留；取消机会清扫留启动重试",
+      "compatibility": "不改assignments/预留，共享RunID保留，不承诺所有孤儿import永久保留"
+    },
+    {
+      "area": "ctxlock / Runtime账号Context门禁",
+      "scope": "engine catalog/config/keyed/index与Runtime账号门禁",
+      "default": "零值可用，旧Lock/Unlock保留；平台普通旧调用继续阻塞",
+      "failure": "显式ctx获取失败归还部分锁/token，锁等待取消不开始提交，禁止R→W升级",
+      "compatibility": "写者准入后新读者排队；discover/clear/目录认证仍可长占catalog"
+    },
+    {
+      "area": "maintenance阶段/CAS/pending批移除",
+      "scope": "migrate、cleanupOld、retain与最终认证catalog",
+      "default": "计划锁全程，数据IO与元数据发布分离",
+      "failure": "迁移/旧副本映射非降级失败精确版本回滚，逻辑降级不回滚；T05认证后WithoutCancel原子登记",
+      "compatibility": "请求JSON/DB结构/角色/业务限额不变；旧deleted无pending不自动回填"
+    },
+    {
+      "area": "web api / downloadBlob / polling",
+      "scope": "两类导出下载、共享API活动计数、App/NetworkActivity轮询",
+      "default": "成功null保留、下载文件名保留、可见页周期保留",
+      "failure": "错误null包装、延迟revoke、隐藏停止/卸载清监听、后台连续3次失败提醒",
+      "compatibility": "浏览器stub不能替代Safari/Firefox真实下载、真实云端和多节点验收"
+    }
+  ],
+  "performance": {
+    "production_build": "Go1.26.9",
+    "comparison": {
+      "toolchain": "Go1.27.1",
+      "index": "original",
+      "old_offset": "14.637802833s",
+      "keyset": "698.913541ms",
+      "source": "root supplied same-toolchain/same-index comparison"
+    },
+    "final_new_index": {
+      "go_version": "go1.26.9",
+      "index_schema_version": 3,
+      "rows": 200000,
+      "repositories": 4,
+      "page_size": 512,
+      "keyset_elapsed": "280.204792ms",
+      "scale_report": "scale-report.json",
+      "scope": "synthetic local SQLite only"
+    }
+  },
+  "validation_summary": {
+    "date": "2026-10-18",
+    "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+    "checks": [
+      {
+        "name": "go-version",
+        "command": [
+          "go",
+          "version"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.02
+      },
+      {
+        "name": "node-version",
+        "command": [
+          "node",
+          "--version"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.021
+      },
+      {
+        "name": "restic-version",
+        "command": [
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+          "version"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.039
+      },
+      {
+        "name": "rclone-version",
+        "command": [
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone",
+          "version"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.04
+      },
+      {
+        "name": "vet",
+        "command": [
+          "go",
+          "vet",
+          "./..."
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.709
+      },
+      {
+        "name": "staticcheck",
+        "command": [
+          "go",
+          "run",
+          "honnef.co/go/tools/cmd/staticcheck@latest",
+          "./..."
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 1.248
+      },
+      {
+        "name": "govulncheck",
+        "command": [
+          "go",
+          "run",
+          "golang.org/x/vuln/cmd/govulncheck@latest",
+          "./..."
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 3.502
+      },
+      {
+        "name": "build-server",
+        "command": [
+          "go",
+          "build",
+          "-trimpath",
+          "-o",
+          "bin/vaultpilot",
+          "./cmd/vaultpilot"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 5.354
+      },
+      {
+        "name": "build-rescue",
+        "command": [
+          "go",
+          "build",
+          "-trimpath",
+          "-o",
+          "bin/vprescue",
+          "./cmd/vprescue"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.346
+      },
+      {
+        "name": "build-healthcheck",
+        "command": [
+          "go",
+          "build",
+          "-trimpath",
+          "-o",
+          "bin/healthcheck",
+          "./cmd/healthcheck"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.286
+      },
+      {
+        "name": "race-count5",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-count=5",
+          "-timeout=30m",
+          "./..."
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 727.22
+      },
+      {
+        "name": "race-count1",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-count=1",
+          "-timeout=15m",
+          "./..."
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 144.236
+      },
+      {
+        "name": "npm-ci",
+        "command": [
+          "npm",
+          "ci",
+          "--prefix",
+          "web"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 1.527
+      },
+      {
+        "name": "frontend-build",
+        "command": [
+          "npm",
+          "run",
+          "build",
+          "--prefix",
+          "web"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 3.818
+      },
+      {
+        "name": "frontend-tests",
+        "command": [
+          "npm",
+          "test",
+          "--prefix",
+          "web"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.626
+      },
+      {
+        "name": "million-entries",
+        "command": [
+          "go",
+          "test",
+          "./internal/store",
+          "-run",
+          "^TestMillionEntryIndex$",
+          "-count=1",
+          "-v"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 6.253
+      },
+      {
+        "name": "entry-traversal",
+        "command": [
+          "go",
+          "test",
+          "./internal/engine",
+          "-run",
+          "^TestEntryTraversalScale$",
+          "-count=1",
+          "-v"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 2.102
+      },
+      {
+        "name": "local-e2e",
+        "command": [
+          "python3",
+          "scripts/e2e_local.py",
+          "--extended",
+          "--restic",
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+          "--rclone",
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 49.1
+      },
+      {
+        "name": "offline-rescue",
+        "command": [
+          "python3",
+          "scripts/e2e_rescue.py",
+          "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305",
+          "--restic",
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 3.922
+      },
+      {
+        "name": "compose-config",
+        "command": [
+          "docker",
+          "compose",
+          "--env-file",
+          ".env.example",
+          "config",
+          "--quiet"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.232
+      },
+      {
+        "name": "docker-build",
+        "command": [
+          "docker",
+          "build",
+          "."
+        ],
+        "status": "unavailable",
+        "exit_code": 1,
+        "seconds": 0.075
+      },
+      {
+        "name": "diff-check",
+        "command": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 0.01
+      }
+    ],
+    "environment": {
+      "GOTOOLCHAIN": "go1.26.9",
+      "GOFLAGS": "-buildvcs=false",
+      "VP_TEST_RESTIC": "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+      "VP_TEST_RCLONE": "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone"
+    },
+    "local_e2e_report": "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305/report.json",
+    "offline_rescue_report": "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305/offline-rescue/report.json",
+    "source_unchanged": true,
+    "completed": true
+  },
+  "linux_cross_compilation": [
+    {
+      "platform": "linux/amd64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/linux-amd64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 6.496
+    },
+    {
+      "platform": "linux/arm64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/linux-arm64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 6.274
+    }
+  ],
+  "documentation_note": "Source revisions exclude the final documentation-only evidence commit; the report commit is available in Git history.",
+  "additional_static_checks": [
+    "Compose/OpenAPI YAML parse and local schema references passed",
+    "Python scripts parsed with ast.parse",
+    "Evidence JSON parsed"
+  ]
+}

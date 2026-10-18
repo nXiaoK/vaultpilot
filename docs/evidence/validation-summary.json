@@ -1,0 +1,330 @@
+{
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "checks": [
+    {
+      "name": "go-version",
+      "command": [
+        "go",
+        "version"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.02
+    },
+    {
+      "name": "node-version",
+      "command": [
+        "node",
+        "--version"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.021
+    },
+    {
+      "name": "restic-version",
+      "command": [
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+        "version"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.039
+    },
+    {
+      "name": "rclone-version",
+      "command": [
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone",
+        "version"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.04
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.709
+    },
+    {
+      "name": "staticcheck",
+      "command": [
+        "go",
+        "run",
+        "honnef.co/go/tools/cmd/staticcheck@latest",
+        "./..."
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 1.248
+    },
+    {
+      "name": "govulncheck",
+      "command": [
+        "go",
+        "run",
+        "golang.org/x/vuln/cmd/govulncheck@latest",
+        "./..."
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 3.502
+    },
+    {
+      "name": "build-server",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "bin/vaultpilot",
+        "./cmd/vaultpilot"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 5.354
+    },
+    {
+      "name": "build-rescue",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "bin/vprescue",
+        "./cmd/vprescue"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.346
+    },
+    {
+      "name": "build-healthcheck",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "bin/healthcheck",
+        "./cmd/healthcheck"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.286
+    },
+    {
+      "name": "race-count5",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-count=5",
+        "-timeout=30m",
+        "./..."
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 727.22
+    },
+    {
+      "name": "race-count1",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-count=1",
+        "-timeout=15m",
+        "./..."
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 144.236
+    },
+    {
+      "name": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--prefix",
+        "web"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 1.527
+    },
+    {
+      "name": "frontend-build",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "--prefix",
+        "web"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 3.818
+    },
+    {
+      "name": "frontend-tests",
+      "command": [
+        "npm",
+        "test",
+        "--prefix",
+        "web"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.626
+    },
+    {
+      "name": "million-entries",
+      "command": [
+        "go",
+        "test",
+        "./internal/store",
+        "-run",
+        "^TestMillionEntryIndex$",
+        "-count=1",
+        "-v"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 6.253
+    },
+    {
+      "name": "entry-traversal",
+      "command": [
+        "go",
+        "test",
+        "./internal/engine",
+        "-run",
+        "^TestEntryTraversalScale$",
+        "-count=1",
+        "-v"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 2.102
+    },
+    {
+      "name": "local-e2e",
+      "command": [
+        "python3",
+        "scripts/e2e_local.py",
+        "--extended",
+        "--restic",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+        "--rclone",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 49.1
+    },
+    {
+      "name": "offline-rescue",
+      "command": [
+        "python3",
+        "scripts/e2e_rescue.py",
+        "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305",
+        "--restic",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 3.922
+    },
+    {
+      "name": "compose-config",
+      "command": [
+        "docker",
+        "compose",
+        "--env-file",
+        ".env.example",
+        "config",
+        "--quiet"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.232
+    },
+    {
+      "name": "docker-build",
+      "command": [
+        "docker",
+        "build",
+        "."
+      ],
+      "status": "unavailable",
+      "exit_code": 1,
+      "seconds": 0.075
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "status": "passed",
+      "exit_code": 0,
+      "seconds": 0.01
+    }
+  ],
+  "environment": {
+    "GOTOOLCHAIN": "go1.26.9",
+    "GOFLAGS": "-buildvcs=false",
+    "VP_TEST_RESTIC": "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+    "VP_TEST_RCLONE": "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone"
+  },
+  "local_e2e_report": "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305/report.json",
+  "offline_rescue_report": "/Users/xiaok/github/vaultpilot/test-artifacts/e2e-20261018-225305/offline-rescue/report.json",
+  "source_unchanged": true,
+  "completed": true,
+  "linux_cross_compilation": [
+    {
+      "platform": "linux/amd64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/linux-amd64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 6.496
+    },
+    {
+      "platform": "linux/arm64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-ldflags=-s -w",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/linux-arm64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 6.274
+    }
+  ],
+  "live_onedrive_verified": false,
+  "additional_static_checks": [
+    "Compose/OpenAPI YAML parse and local schema references passed",
+    "Python scripts parsed with ast.parse",
+    "Evidence JSON parsed"
+  ]
+}

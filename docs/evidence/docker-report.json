@@ -1,14 +1,11 @@
 {
-  "passed": true,
-  "image": "sha256:e4f9c34e4005f0ec6c9726a36f89471fc09a269d8e004134f1038bf47e59038e",
-  "platform": "Debian 12.12 Linux container",
-  "uid": 1000,
-  "read_only_root": true,
-  "read_only_source_bind": true,
-  "dropped_capabilities": true,
-  "no_new_privileges": true,
-  "healthcheck": "passed",
-  "http_setup_login_directory_browser": "passed",
-  "restic": "restic 0.18.1 compiled with go1.25.1 on linux/arm64",
-  "rclone": "rclone v1.70.3"
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "passed": null,
+  "status": "unavailable",
+  "build_verified": false,
+  "runtime_verified": false,
+  "reason": "ERROR: failed to connect to the docker API at unix:///Users/xiaok/.orbstack/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /Users/xiaok/.orbstack/run/docker.sock: connect: no such file or directory",
+  "previous_record_date": null,
+  "note": "Previous dated results remain in Git history and do not validate this source revision. Linux backend cross-compilation passed; container PID 1/reaping/SIGTERM not run."
 }

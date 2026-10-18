@@ -4,13 +4,13 @@
   "original_state_used": false,
   "manual_historical_file_restores": [
     {
-      "point_id": "b84aa0bc18e9c91d865db6cd6289b89c",
-      "repository_id": "931f4d61c2955eceddffa47d5d1a22d5",
+      "point_id": "82212ae068d9955b1cecf888a7ee28df",
+      "repository_id": "686c8d4cb362e813479f1fadc600197d",
       "sha256": "98e8e9fd46393dd2320e7543eaa5c429f4e993adf550f8ff0561da90267b34d9"
     },
     {
-      "point_id": "bf8580faa86ee90304496abfeb0cb537",
-      "repository_id": "931f4d61c2955eceddffa47d5d1a22d5",
+      "point_id": "d7fd3615414af3370c3e0508303963a6",
+      "repository_id": "686c8d4cb362e813479f1fadc600197d",
       "sha256": "dabf9024dbfce8a57298111cf697fb7b8ac2797dc9c32eb2e035e72ec1a9ef9e"
     }
   ],
@@ -18,5 +18,7 @@
   "wrong_password_rejected": true,
   "uncommitted_prepare_rejected": true,
   "protected_output_permissions": true,
-  "temporary_plaintext_zip_removed": true
+  "temporary_plaintext_zip_removed": true,
+  "date": "2026-10-18",
+  "source_commit": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8"
 }
