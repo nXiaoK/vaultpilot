@@ -398,7 +398,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if err := s.refreshAccount(ctx, &target); err != nil {
 		return err
 	}
-	out, err := s.rcloneOutput(ctx, s.rcloneArgs("size", s.remoteFile(source, repo.Path), "--json"))
+	out, err := s.rcloneOutput(ctx, []Account{source}, "size", s.remoteFile(source, repo.Path), "--json")
 	if err != nil {
 		return err
 	}
@@ -444,7 +444,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	defer unlockRepo()
 	s.stage(t, "copying_repository")
 	destination := repo.Path + "-migration-" + t.ID
-	if _, err = s.rcloneRun(ctx, s.rcloneArgs("copy", s.remoteFile(source, repo.Path), s.remoteFile(target, destination), "--checksum"), func(line string) { s.log(t, line) }); err != nil {
+	if _, err = s.rcloneRun(ctx, []Account{source, target}, func(line string) { s.log(t, line) }, "copy", s.remoteFile(source, repo.Path), s.remoteFile(target, destination), "--checksum"); err != nil {
 		return fail("MIGRATION_COPY_FAILED", "整仓复制未完成，旧位置保持有效")
 	}
 	repo.AccountID = target.ID
@@ -600,7 +600,7 @@ func (s *Service) cleanupOld(ctx context.Context, t *Task, repo Repository, req 
 		return err
 	}
 	s.stage(t, "deleting_old_copy")
-	_, err = s.rcloneRun(ctx, s.rcloneArgs("purge", s.remoteFile(oldAccount, location.Path)), func(line string) { s.log(t, line) })
+	_, err = s.rcloneRun(ctx, []Account{oldAccount}, func(line string) { s.log(t, line) }, "purge", s.remoteFile(oldAccount, location.Path))
 	if err != nil && process.ExitCode(err) != 3 {
 		return fail("OLD_COPY_DELETE_FAILED", "当前位置已确认有效，旧副本清理失败可重试")
 	}

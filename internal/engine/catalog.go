@@ -293,7 +293,7 @@ func (s *Service) putFile(ctx context.Context, a Account, local, relative string
 		}
 		return os.Rename(name, target)
 	}
-	_, err := s.rcloneOutput(ctx, s.rcloneArgs("copyto", local, s.remoteFile(a, relative)))
+	_, err := s.rcloneOutput(ctx, []Account{a}, "copyto", local, s.remoteFile(a, relative))
 	_ = s.rt.SyncRcloneCredentials()
 	return err
 }
@@ -312,7 +312,7 @@ func (s *Service) getFile(ctx context.Context, a Account, relative, local string
 		_, err = io.Copy(out, in)
 		return err
 	}
-	_, err := s.rcloneOutput(ctx, s.rcloneArgs("copyto", s.remoteFile(a, relative), local))
+	_, err := s.rcloneOutput(ctx, []Account{a}, "copyto", s.remoteFile(a, relative), local)
 	_ = s.rt.SyncRcloneCredentials()
 	return err
 }
@@ -580,7 +580,7 @@ func (s *Service) discover(ctx context.Context, t *Task) error {
 				names = append(names, e.Name())
 			}
 		} else {
-			out, e := s.rcloneOutput(ctx, s.rcloneArgs("lsf", s.remoteFile(a, base), "--files-only"))
+			out, e := s.rcloneOutput(ctx, []Account{a}, "lsf", s.remoteFile(a, base), "--files-only")
 			_ = s.rt.SyncRcloneCredentials()
 			if e != nil {
 				continue

@@ -539,13 +539,13 @@ func (s *Service) clearAccountData(ctx context.Context, a Account, base, keepCom
 		}
 		return nil
 	}
-	_, err := s.rcloneRun(ctx, s.rcloneArgs("purge", s.remoteFile(a, base+"/repositories")), func(line string) { s.log(t, line) })
+	_, err := s.rcloneRun(ctx, []Account{a}, func(line string) { s.log(t, line) }, "purge", s.remoteFile(a, base+"/repositories"))
 	_ = s.rt.SyncRcloneCredentials()
 	if err != nil && process.ExitCode(err) != 3 {
 		return err
 	}
-	args := s.rcloneArgs(clearCatalogDeleteArguments(s.remoteFile(a, base+"/catalog"), keepCommit)...)
-	_, err = s.rcloneRun(ctx, args, func(line string) { s.log(t, line) })
+	args := clearCatalogDeleteArguments(s.remoteFile(a, base+"/catalog"), keepCommit)
+	_, err = s.rcloneRun(ctx, []Account{a}, func(line string) { s.log(t, line) }, args...)
 	_ = s.rt.SyncRcloneCredentials()
 	return err
 }

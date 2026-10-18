@@ -5,55 +5,76 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 )
 
-// RcloneConfig returns a restricted ephemeral file, never a frontend-visible
-// configuration. An empty result signals a refresh or persistence failure.
-func (r *Runtime) RcloneConfig() string {
+// RcloneConfigFor writes a restricted ephemeral config for the given accounts.
+func (r *Runtime) RcloneConfigFor(ctx context.Context, accountIDs ...string) (string, error) {
+	if e := ctx.Err(); e != nil {
+		return "", e
+	}
+	if len(accountIDs) == 0 {
+		return "", errors.New("未指定 Rclone 账号")
+	}
 	r.rcloneMu.Lock()
 	defer r.rcloneMu.Unlock()
-	if e := r.syncRcloneCredentials(); e != nil {
-		return ""
+	if e := ctx.Err(); e != nil {
+		return "", e
 	}
-	accounts, e := r.Store.All(context.Background(), "accounts")
-	if e != nil {
-		return ""
+	if e := r.syncRcloneCredentials(); e != nil {
+		return "", e
 	}
 	var b strings.Builder
-	for _, raw := range accounts {
-		var a Account
-		if json.Unmarshal(raw, &a) != nil {
-			return ""
-		}
-		if a.Backend != "onedrive" || !a.Verified {
+	seen := map[string]bool{}
+	for _, id := range accountIDs {
+		if seen[id] {
 			continue
 		}
-		_, e := r.accessToken(context.Background(), a.ID)
-		if e != nil {
-			return ""
+		seen[id] = true
+		var a Account
+		if e := r.Store.Get(ctx, "accounts", id, &a); e != nil {
+			return "", fmt.Errorf("账号「%s」：%w", id, e)
+		}
+		if a.Backend == "local" {
+			continue
+		}
+		if a.Backend != "onedrive" || !a.Verified {
+			return "", fmt.Errorf("账号「%s」：账号未验证或不支持 Rclone", a.Name)
+		}
+		if _, e := r.accessToken(ctx, a.ID); e != nil {
+			return "", fmt.Errorf("账号「%s」：%w", a.Name, e)
 		}
 		c, e := r.loadCredential(a.ID)
 		if e != nil {
-			return ""
+			return "", fmt.Errorf("账号「%s」：%w", a.Name, e)
 		}
 		var current Account
-		if r.Store.Get(context.Background(), "accounts", a.ID, &current) != nil || !current.Verified || current.Version != a.Version {
-			return ""
+		if e = r.Store.Get(ctx, "accounts", a.ID, &current); e != nil {
+			return "", fmt.Errorf("账号「%s」：%w", a.Name, e)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		content, e := r.credentialConfig(ctx, a.Remote, c, a.DriveID, a.DriveType)
+		if current.Backend != a.Backend || current.Remote != a.Remote || current.DriveID != a.DriveID || current.DriveType != a.DriveType || current.Verified != a.Verified {
+			return "", fmt.Errorf("账号「%s」：配置已更改，请重试", a.Name)
+		}
+		configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		content, e := r.credentialConfig(configCtx, a.Remote, c, a.DriveID, a.DriveType)
+		if configCtx.Err() != nil {
+			e = configCtx.Err()
+		}
 		cancel()
 		if e != nil {
-			return ""
+			return "", fmt.Errorf("账号「%s」：%w", a.Name, e)
 		}
 		b.WriteString(content)
 	}
+	if e := ctx.Err(); e != nil {
+		return "", e
+	}
 	f, e := os.CreateTemp(r.Config.CacheDir, "rclone-*.conf")
 	if e != nil {
-		return ""
+		return "", e
 	}
 	path := f.Name()
 	if e = f.Chmod(0600); e == nil {
@@ -65,11 +86,11 @@ func (r *Runtime) RcloneConfig() string {
 	}
 	if e != nil {
 		os.Remove(path)
-		return ""
+		return "", e
 	}
 	r.rclonePath = path
 	r.rclonePaths = append(r.rclonePaths, path)
-	return path
+	return path, nil
 }
 func (r *Runtime) SyncRcloneCredentials() error {
 	r.rcloneMu.Lock()

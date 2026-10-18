@@ -239,11 +239,10 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 			return err
 		}
 	} else {
-		args := s.rcloneArgs("about", a.Remote+":", "--json")
-		out, err := s.rcloneOutput(ctx, args)
+		out, err := s.rcloneOutput(ctx, []Account{*a}, "about", a.Remote+":", "--json")
 		_ = s.rt.SyncRcloneCredentials()
 		if err != nil {
-			return fail("QUOTA_UNAVAILABLE", "无法刷新账号配额："+a.Name)
+			return fail("QUOTA_UNAVAILABLE", "无法刷新账号配额："+a.Name+"："+err.Error())
 		}
 		var quota struct {
 			Free  *int64 `json:"free"`
@@ -254,10 +253,10 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 			return fail("QUOTA_UNKNOWN", "账号未返回完整容量："+a.Name)
 		}
 		free, total, used = *quota.Free, *quota.Total, *quota.Used
-		out, err = s.rcloneOutput(ctx, s.rcloneArgs("size", a.Remote+":VaultPilot/"+s.rt.VaultID(), "--json"))
+		out, err = s.rcloneOutput(ctx, []Account{*a}, "size", a.Remote+":VaultPilot/"+s.rt.VaultID(), "--json")
 		_ = s.rt.SyncRcloneCredentials()
 		if err != nil {
-			return fail("PROJECT_SIZE_UNKNOWN", "无法核对项目占用："+a.Name)
+			return fail("PROJECT_SIZE_UNKNOWN", "无法核对项目占用："+a.Name+"："+err.Error())
 		}
 		var usage struct {
 			Bytes int64 `json:"bytes"`
@@ -599,9 +598,6 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 	_ = s.rt.Store.Audit(ctx, "backup.commit", point.ID)
 	return commitErr
 }
-func (s *Service) rcloneArgs(args ...string) []string {
-	return append([]string{"--config", s.rt.RcloneConfig()}, args...)
-}
 func (s *Service) repoAddress(repo Repository, a Account) string {
 	if a.Backend == "local" {
 		return filepath.Join(a.LocalPath, filepath.FromSlash(repo.Path))
@@ -638,9 +634,9 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 	full := []string{"--repo", s.repoAddress(repo, a), "--password-file", name, "--cache-dir", filepath.Join(s.rt.Config.CacheDir, "restic"), "--json"}
 	var env []string
 	if a.Backend != "local" {
-		config := s.rt.RcloneConfig()
-		if config == "" {
-			return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+		config, err := s.rt.RcloneConfigFor(ctx, a.ID)
+		if err != nil {
+			return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
 		}
 		defer s.rt.ReleaseRcloneConfig(config)
 		// Inherit the config path in Rclone's subprocess without nested command quoting.
@@ -904,44 +900,45 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 	}
 }
 
-func (s *Service) rcloneOutput(ctx context.Context, args []string) ([]byte, error) {
-	if len(args) < 2 || args[1] == "" {
-		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...string) ([]byte, error) {
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.ID)
 	}
-	defer s.rt.ReleaseRcloneConfig(args[1])
-	output, err := process.Output(ctx, s.rt.Config.RcloneBin, args, nil)
-	s.observeRcloneAccounts(args, output, err)
+	config, err := s.rt.RcloneConfigFor(ctx, ids...)
+	if err != nil {
+		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
+	}
+	defer s.rt.ReleaseRcloneConfig(config)
+	output, err := process.Output(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil)
+	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
-func (s *Service) rcloneRun(ctx context.Context, args []string, onLine func(string)) ([]byte, error) {
-	if len(args) < 2 || args[1] == "" {
-		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+func (s *Service) rcloneRun(ctx context.Context, accounts []Account, onLine func(string), args ...string) ([]byte, error) {
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.ID)
 	}
-	defer s.rt.ReleaseRcloneConfig(args[1])
-	output, err := process.Run(ctx, s.rt.Config.RcloneBin, args, nil, onLine)
-	s.observeRcloneAccounts(args, output, err)
+	config, err := s.rt.RcloneConfigFor(ctx, ids...)
+	if err != nil {
+		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
+	}
+	defer s.rt.ReleaseRcloneConfig(config)
+	output, err := process.Run(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil, onLine)
+	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
 
-func (s *Service) observeRcloneAccounts(args []string, output []byte, err error) {
+func (s *Service) observeRcloneAccounts(accounts []Account, output []byte, err error) {
 	if err == nil {
 		return
 	}
-	raws, e := s.rt.Store.All(context.Background(), "accounts")
-	if e != nil {
-		return
-	}
 	matched := []Account{}
-	for _, raw := range raws {
-		var a Account
-		if json.Unmarshal(raw, &a) != nil || a.Backend != "onedrive" || a.Remote == "" {
-			continue
-		}
-		for _, arg := range args {
-			if strings.HasPrefix(arg, a.Remote+":") {
-				matched = append(matched, a)
-				break
-			}
+	seen := map[string]bool{}
+	for _, a := range accounts {
+		if a.Backend == "onedrive" && !seen[a.ID] {
+			seen[a.ID] = true
+			matched = append(matched, a)
 		}
 	}
 	// A two-remote copy can fail on either side. Without remote attribution in

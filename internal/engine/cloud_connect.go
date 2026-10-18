@@ -22,13 +22,18 @@ import (
 
 const cloudBootstrapName = "connect.vpkey"
 
-func (s *Service) rcloneOutputBounded(ctx context.Context, args []string, limit int) ([]byte, error) {
-	if len(args) < 2 || args[1] == "" {
-		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+func (s *Service) rcloneOutputBounded(ctx context.Context, accounts []Account, limit int, args ...string) ([]byte, error) {
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.ID)
 	}
-	defer s.rt.ReleaseRcloneConfig(args[1])
-	output, err := process.OutputLimited(ctx, s.rt.Config.RcloneBin, args, nil, limit)
-	s.observeRcloneAccounts(args, output, err)
+	config, err := s.rt.RcloneConfigFor(ctx, ids...)
+	if err != nil {
+		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
+	}
+	defer s.rt.ReleaseRcloneConfig(config)
+	output, err := process.OutputLimited(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil, limit)
+	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
 
@@ -78,7 +83,7 @@ func (s *Service) readCloudBootstrap(ctx context.Context, a Account, vault strin
 		}
 		raw, err = io.ReadAll(io.LimitReader(f, platform.CloudBootstrapMaxBytes+1))
 	} else {
-		stat, e := s.rcloneOutputBounded(ctx, s.rcloneArgs("lsjson", s.remoteFile(a, path), "--stat"), 4096)
+		stat, e := s.rcloneOutputBounded(ctx, []Account{a}, 4096, "lsjson", s.remoteFile(a, path), "--stat")
 		if e != nil {
 			return nil, e
 		}
@@ -89,7 +94,7 @@ func (s *Service) readCloudBootstrap(ctx context.Context, a Account, vault strin
 		if json.Unmarshal(stat, &info) != nil || info.IsDir || info.Size < 0 || info.Size > platform.CloudBootstrapMaxBytes {
 			return nil, fail("CLOUD_BOOTSTRAP_INVALID", "云端连接资料必须是大小受限的普通文件")
 		}
-		raw, err = s.rcloneOutputBounded(ctx, s.rcloneArgs("cat", s.remoteFile(a, path), "--head", fmt.Sprint(platform.CloudBootstrapMaxBytes+1)), platform.CloudBootstrapMaxBytes+1)
+		raw, err = s.rcloneOutputBounded(ctx, []Account{a}, platform.CloudBootstrapMaxBytes+1, "cat", s.remoteFile(a, path), "--head", fmt.Sprint(platform.CloudBootstrapMaxBytes+1))
 		_ = s.rt.SyncRcloneCredentials()
 	}
 	if err != nil {
@@ -234,7 +239,7 @@ func (s *Service) cloudVaults(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		} else {
-			out, e := s.rcloneOutputBounded(ctx, s.rcloneArgs("lsf", s.remoteFile(a, "VaultPilot"), "--dirs-only"), 64*1024)
+			out, e := s.rcloneOutputBounded(ctx, []Account{a}, 64*1024, "lsf", s.remoteFile(a, "VaultPilot"), "--dirs-only")
 			_ = s.rt.SyncRcloneCredentials()
 			if e != nil {
 				failed = append(failed, a.ID)
@@ -388,7 +393,7 @@ func (s *Service) cloudSignature(ctx context.Context) (string, error) {
 				}
 			}
 		} else {
-			out, e := s.rcloneOutputBounded(ctx, s.rcloneArgs("lsf", s.remoteFile(a, path), "--files-only"), 4*1024*1024)
+			out, e := s.rcloneOutputBounded(ctx, []Account{a}, 4*1024*1024, "lsf", s.remoteFile(a, path), "--files-only")
 			_ = s.rt.SyncRcloneCredentials()
 			if e != nil {
 				continue
