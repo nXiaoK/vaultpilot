@@ -128,6 +128,9 @@ func TestTransactionalReservationsPreventOverselling(t *testing.T) {
 	}
 	s := &Service{rt: &platform.Runtime{Store: db, Keys: keys}}
 	account := Account{ID: "a", Budget: 20 << 20, Free: 100 << 20, Verified: true, Enabled: true}
+	if _, err = db.Save(context.Background(), "accounts", account.ID, 0, account); err != nil {
+		t.Fatal(err)
+	}
 	pool := Pool{AccountIDs: []string{"a"}, CatalogReplicas: 1, ShardTarget: 100 << 20}
 	for _, id := range []string{"r1", "r2"} {
 		_, err = db.DB.Exec("INSERT INTO file_entries(run_id,source_id,path,kind,size,mtime_ns) VALUES(?,?,?,?,?,?)", id, "s", "big.bin", "file", 8<<20, 1)
@@ -247,7 +250,10 @@ func TestNewFileReusesRepositoryWithoutSecondInitializationReservation(t *testin
 	keys := &platform.Keyring{}
 	_ = keys.SetMaster(make([]byte, 32))
 	s := &Service{rt: &platform.Runtime{Store: db, Keys: keys}}
-	account := Account{ID: "a", Budget: 34 << 20, MaintenanceReserve: 1 << 20, Free: 100 << 20}
+	account := Account{ID: "a", Budget: 34 << 20, MaintenanceReserve: 1 << 20, Free: 100 << 20, Verified: true, Enabled: true}
+	if _, err = db.Save(ctx, "accounts", account.ID, 0, account); err != nil {
+		t.Fatal(err)
+	}
 	pool := Pool{AccountIDs: []string{account.ID}, ShardTarget: 24 << 20}
 	for _, entry := range []Entry{{SourceID: "s", Path: "", Kind: "dir"}, {SourceID: "s", Path: "large", Kind: "file", Size: 20 << 20}} {
 		_, err = db.DB.Exec("INSERT INTO file_entries(run_id,source_id,path,kind,size) VALUES(?,?,?,?,?)", "r", entry.SourceID, entry.Path, entry.Kind, entry.Size)
