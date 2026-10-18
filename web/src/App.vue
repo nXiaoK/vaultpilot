@@ -37,6 +37,7 @@ const booting = ref(true)
 const error = ref<{ message: string; code: string; retryable: boolean } | null>(null)
 const notice = ref('')
 const connectionProblem = ref(false)
+const backgroundFailures = { task:0, logs:0, status:0 }
 const data = reactive<Record<string, Entity[]>>({ accounts: [], pools: [], sources: [], plans: [], tasks: [], points: [], repos: [], audit: [] })
 const catalog = reactive<Record<string,Entity[]>>({accounts:[],pools:[],sources:[],plans:[]})
 const totals = reactive<Record<string, number>>({})
@@ -187,8 +188,8 @@ function openBrowser() { modal.value='browse'; browseState.path=''; browseState.
 function choosePath(path: string) { form.path=path; if(!form.name) form.name=path.split('/').filter(Boolean).pop()??'备份源'; modal.value='source' }
 async function startPlan(plan: Entity, mode: 'run'|'preview') { await action(async()=> { const task=await api(`/plans/${plan.id}/${mode}`,{method:'POST',body:{},task:true}); toast(mode==='preview'?'正在扫描并生成真实分配预览。':'备份任务已提交。'); await loadList('tasks'); await openTask(task) }) }
 async function openTask(task: Entity) { activeTask.value=task; logs.offset=0; modal.value='task'; detail.value=null; await Promise.all([readTask(),loadLogs()]) }
-async function readTask(silent=false) { if (!activeTask.value) return; try { activeTask.value=await api(`/tasks/${activeTask.value.id}`,{silent}); detail.value=activeTask.value?.result??null } catch(e) { showError(e) } }
-async function loadLogs(offset=0,silent=false) { if(!activeTask.value)return; try { const r=await api(`/tasks/${activeTask.value.id}/logs?limit=100&offset=${offset}`,{silent}); logs.items=r.items??[]; logs.total=r.total??logs.items.length; logs.offset=offset } catch(e) {showError(e)} }
+async function readTask(silent=false) { if (!activeTask.value) return; try { activeTask.value=await api(`/tasks/${activeTask.value.id}`,{silent}); detail.value=activeTask.value?.result??null;backgroundFailures.task=0 } catch(e) { if(!silent||++backgroundFailures.task>=3)showError(e) } }
+async function loadLogs(offset=0,silent=false) { if(!activeTask.value)return; try { const r=await api(`/tasks/${activeTask.value.id}/logs?limit=100&offset=${offset}`,{silent}); logs.items=r.items??[]; logs.total=r.total??logs.items.length; logs.offset=offset;backgroundFailures.logs=0 } catch(e) {if(!silent||++backgroundFailures.logs>=3)showError(e)} }
 function cancelTask(task: Entity) { askConfirm('取消任务',`取消「${taskKind(task.kind)}」会终止相关引擎进程。已经写入的残留数据需要重新对账，服务不会将任务标记为完成。`,async()=>{await api(`/tasks/${task.id}/cancel`,{method:'POST',body:{},task:true});modal.value='';await loadList('tasks');toast('取消请求已提交。')}) }
 async function selectPoint(point: Entity) { selectedPoint.value=point; selectedFiles.value=[]; restorePreview.value=null; filesState.offset=0;filesState.search='';filesState.prefix='';filesState.source='';restoreForm.source_ids=[];restoreForm.layout='auto';restoreForm.target=status.value.restore_roots?.[0]??'';try{await loadFiles()}catch(e){showError(e)} }
 async function loadFiles(offset=0) { if(!selectedPoint.value)return; const q=new URLSearchParams({limit:String(pageSize),offset:String(offset),prefix:filesState.prefix,search:filesState.search,source_id:filesState.source});const r=await api(`/recovery-points/${selectedPoint.value.id}/files?${q}`);filesState.items=r.items??[];filesState.total=r.total??filesState.items.length;filesState.offset=offset }
@@ -221,8 +222,8 @@ function cleanupOldLocation() {
 async function changePage(key: string, direction: number) { offsets[key]=Math.max(0,(offsets[key]??0)+direction*pageSize);await action(()=>loadList(key)) }
 async function refreshPolling() {
   if(!authenticated.value||busy.value)return
-  try { await refreshStatus(true);await refresh(true);if(modal.value==='task'&&activeTask.value){await readTask(true);await loadLogs(logs.offset,true)} }
-  catch(e) { connectionProblem.value=true;if(e instanceof ApiError&&e.status===401)void refreshStatus() }
+  try { await refreshStatus(true);await refresh(true);if(modal.value==='task'&&activeTask.value){await readTask(true);await loadLogs(logs.offset,true)};backgroundFailures.status=0 }
+  catch { connectionProblem.value=++backgroundFailures.status>=3 }
 }
 onMounted(async()=>{unsubscribeActivity=subscribeActivity(items=>{requests.value=items});window.addEventListener('hashchange',onHash);try{await initialLoad();if(authenticated.value)handleOAuthReturn()}catch(e){showError(e)}finally{booting.value=false}if(!unmounted)stopPolling=pollWhileVisible(refreshPolling,5000,false)})
 onUnmounted(()=>{unmounted=true;unsubscribeActivity?.();stopPolling?.();if(noticeTimer)clearTimeout(noticeTimer);window.removeEventListener('hashchange',onHash)})
