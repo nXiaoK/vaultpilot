@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHostAllowlistBlocksRebinding(t *testing.T) {
@@ -87,5 +89,101 @@ func TestStatusHidesConfigurationWhenUnauthenticated(t *testing.T) {
 		if _, ok := value[key]; !ok {
 			t.Errorf("authenticated status missing %s", key)
 		}
+	}
+}
+
+func TestLoginSuccessResetsThrottle(t *testing.T) {
+	h := newHarness(t, false)
+	for i := 0; i < 9; i++ {
+		response := h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": "wrong-password"}, false)
+		if response.Code != 401 {
+			t.Fatalf("failed login %d: %d %s", i+1, response.Code, response.Body.String())
+		}
+	}
+	response := h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": adminPassword}, false)
+	if response.Code != 200 {
+		t.Fatalf("successful login: %d %s", response.Code, response.Body.String())
+	}
+	response = h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": "wrong-password"}, false)
+	if response.Code != 401 {
+		t.Fatalf("successful login did not reset attempts: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestThrottleIsPerAction(t *testing.T) {
+	r := &Runtime{attempts: map[string]loginAttempt{}}
+	request := httptest.NewRequest("POST", "/api/auth/login", nil)
+	for i := 0; i < 11; i++ {
+		if got := r.throttled(request, "login"); got != (i == 10) {
+			t.Fatalf("attempt %d throttled=%v", i+1, got)
+		}
+	}
+	for _, action := range []string{"setup", "unlock", "cloud_secret", "transfer"} {
+		if !r.ConsumeSecretAttempt(request, action) {
+			t.Errorf("login throttle leaked into %s", action)
+		}
+	}
+	r.resetAttempts(request, "unlock")
+	if !r.throttled(request, "login") {
+		t.Fatal("unlock reset cleared login attempts")
+	}
+	r.ResetSecretAttempts(request, "login")
+	if r.throttled(request, "login") {
+		t.Fatal("successful secret attempt did not reset its action")
+	}
+	r.attempts["login|"+r.clientIP(request)] = loginAttempt{Count: 10, Since: time.Now().Add(-16 * time.Minute)}
+	if r.throttled(request, "login") {
+		t.Fatal("expired attempts retained")
+	}
+}
+
+func TestTrustedProxyUsesForwardedFor(t *testing.T) {
+	trusted := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("2001:db8::/32")}
+	for _, test := range []struct {
+		name   string
+		remote string
+		shared bool
+	}{
+		{"trusted", "10.0.0.2:54321", false},
+		{"untrusted", "192.0.2.1:54321", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := &Runtime{Config: Config{TrustedProxies: trusted}, attempts: map[string]loginAttempt{}}
+			request := httptest.NewRequest("POST", "/api/auth/login", nil)
+			request.RemoteAddr = test.remote
+			request.Header.Set("X-Forwarded-For", "198.51.100.1")
+			for i := 0; i < 11; i++ {
+				r.throttled(request, "login")
+			}
+			request.Header.Set("X-Forwarded-For", "198.51.100.2")
+			if r.throttled(request, "login") != test.shared {
+				t.Fatal("forwarded clients have incorrect throttle isolation")
+			}
+		})
+	}
+	r := &Runtime{Config: Config{TrustedProxies: trusted}}
+	for _, test := range []struct {
+		remote, forwarded, want string
+	}{
+		{"10.0.0.2:54321", "203.0.113.99, 198.51.100.1, 10.0.0.1", "198.51.100.1"},
+		{"10.0.0.2:54321", "198.51.100.1, invalid", "10.0.0.2"},
+		{"10.0.0.2:54321", "", "10.0.0.2"},
+		{"[2001:db8::2]:54321", "2001:db9::1, 2001:db8::1", "2001:db9::1"},
+		{"[::ffff:10.0.0.2]:54321", "::ffff:198.51.100.1", "198.51.100.1"},
+		{"192.0.2.1:54321", "198.51.100.1", "192.0.2.1"},
+	} {
+		request := httptest.NewRequest("GET", "/api/status", nil)
+		request.RemoteAddr = test.remote
+		request.Header.Set("X-Forwarded-For", test.forwarded)
+		if got := r.clientIP(request); got != test.want {
+			t.Errorf("remote=%q forwarded=%q: got %q, want %q", test.remote, test.forwarded, got, test.want)
+		}
+	}
+	request := httptest.NewRequest("GET", "/api/status", nil)
+	request.RemoteAddr = "10.0.0.2:54321"
+	request.Header.Add("X-Forwarded-For", "198.51.100.1")
+	request.Header.Add("X-Forwarded-For", "10.0.0.1")
+	if got := r.clientIP(request); got != "198.51.100.1" {
+		t.Fatalf("multiple forwarded headers: %s", got)
 	}
 }

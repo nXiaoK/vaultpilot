@@ -173,8 +173,11 @@ func TestSessionsCSRFVersionAndRateLimit(t *testing.T) {
 	if h.call("GET", "/api/accounts", nil, false).Code != 401 {
 		t.Fatal("logged out session still accepted")
 	}
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 11; i++ {
 		res = h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": "wrong-password"}, false)
+		if i < 10 && res.Code != 401 {
+			t.Fatalf("login attempt %d: %d %s", i+1, res.Code, res.Body.String())
+		}
 	}
 	if res.Code != 429 || res.Header().Get("Retry-After") == "" {
 		t.Fatal("login throttling missing")

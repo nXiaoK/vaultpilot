@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 type Config struct {
 	Addr, StateDir, CacheDir, PublicURL, ResticBin, RcloneBin, AutoUnlockFile string
 	SourceRoots, RestoreRoots, AllowedHosts                                   []string
+	TrustedProxies                                                            []netip.Prefix
 	AllowLocal                                                                bool
 	GlobalConcurrency                                                         int
 	LogMaxRows                                                                int

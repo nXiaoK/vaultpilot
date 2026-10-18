@@ -126,7 +126,7 @@ func (r *Runtime) decodeTransfer(w http.ResponseWriter, req *http.Request, v *tr
 		fail(w, 400, "weak_credentials", "账号包保护密码至少 12 个字符，最多 1024 个字节")
 		return false
 	}
-	if !r.ConsumeSecretAttempt(req) {
+	if !r.ConsumeSecretAttempt(req, "transfer") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "密码操作过于频繁，请稍后重试")
 		return false
@@ -183,6 +183,7 @@ func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_export_failed", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	_ = r.Store.Audit(req.Context(), "accounts.export", "accounts")
 	w.Header().Set("Content-Disposition", `attachment; filename="vaultpilot-accounts.json"`)
 	writeJSON(w, 200, kit)
@@ -213,6 +214,7 @@ func (r *Runtime) previewAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_package_invalid", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	seen, err := r.transferExisting(req)
 	if err != nil {
 		fail(w, 500, "database_error", "无法读取已有账号")
@@ -236,6 +238,7 @@ func (r *Runtime) importAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_package_invalid", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	selected := map[string]bool{}
 	if len(v.DriveIDs) < 1 || len(v.DriveIDs) > 50 {
 		fail(w, 400, "account_selection_required", "请选择需要导入的账号")

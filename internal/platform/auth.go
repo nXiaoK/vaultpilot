@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -158,11 +159,49 @@ func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (r *Runtime) throttled(req *http.Request) bool {
+func (r *Runtime) trustedProxy(addr netip.Addr) bool {
+	for _, prefix := range r.Config.TrustedProxies {
+		if prefix.Contains(addr) || addr.Is4() && prefix.Addr().Is4In6() && prefix.Contains(netip.AddrFrom16(addr.As16())) {
+			return true
+		}
+	}
+	return false
+}
+func (r *Runtime) clientIP(req *http.Request) string {
 	host, _, e := net.SplitHostPort(req.RemoteAddr)
 	if e != nil {
 		host = req.RemoteAddr
 	}
+	remote, e := netip.ParseAddr(host)
+	if e != nil {
+		return host
+	}
+	remote = remote.Unmap()
+	if !r.trustedProxy(remote) {
+		return remote.String()
+	}
+	forwarded := strings.Split(strings.Join(req.Header.Values("X-Forwarded-For"), ","), ",")
+	current := remote
+	for i := len(forwarded) - 1; i >= 0; i-- {
+		if !r.trustedProxy(current) {
+			return current.String()
+		}
+		addr, e := netip.ParseAddr(strings.TrimSpace(forwarded[i]))
+		if e != nil {
+			return remote.String()
+		}
+		current = addr.Unmap()
+	}
+	return current.String()
+}
+func (r *Runtime) resetAttempts(req *http.Request, action string) {
+	key := action + "|" + r.clientIP(req)
+	r.mu.Lock()
+	delete(r.attempts, key)
+	r.mu.Unlock()
+}
+func (r *Runtime) throttled(req *http.Request, action string) bool {
+	key := action + "|" + r.clientIP(req)
 	now := time.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -171,12 +210,12 @@ func (r *Runtime) throttled(req *http.Request) bool {
 			delete(r.attempts, k)
 		}
 	}
-	a := r.attempts[host]
+	a := r.attempts[key]
 	if a.Since.IsZero() {
 		a.Since = now
 	}
 	a.Count++
-	r.attempts[host] = a
+	r.attempts[key] = a
 	return a.Count > 10
 }
 func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
@@ -186,7 +225,7 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		fail(w, 409, "already_initialized", "实例已初始化")
 		return
 	}
-	if r.throttled(req) {
+	if r.throttled(req, "setup") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "请求过于频繁，请稍后重试")
 		return
@@ -281,11 +320,12 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 			key[i] = 0
 		}
 	}
+	r.resetAttempts(req, "setup")
 	s := r.makeSession(w, input.Username)
 	writeJSON(w, 201, map[string]any{"vault_id": p.VaultID, "mode": input.Mode, "cloud_pending": input.Mode == "cloud", "csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
 func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
-	if r.throttled(req) {
+	if r.throttled(req, "login") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "登录尝试过于频繁，请 15 分钟后重试")
 		return
@@ -309,6 +349,7 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 		fail(w, 401, "credentials_invalid", "用户名或密码错误")
 		return
 	}
+	r.resetAttempts(req, "login")
 	s := r.makeSession(w, username)
 	writeJSON(w, 200, map[string]any{"csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
@@ -329,7 +370,7 @@ func (r *Runtime) logout(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(204)
 }
 func (r *Runtime) unlockHandler(w http.ResponseWriter, req *http.Request) {
-	if r.throttled(req) {
+	if r.throttled(req, "unlock") {
 		fail(w, 429, "rate_limited", "解锁尝试过于频繁")
 		return
 	}
@@ -343,6 +384,7 @@ func (r *Runtime) unlockHandler(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "unlock_failed", e.Error())
 		return
 	}
+	r.resetAttempts(req, "unlock")
 	writeJSON(w, 200, map[string]bool{"unlocked": true})
 }
 func (r *Runtime) lockHandler(w http.ResponseWriter, req *http.Request) {
