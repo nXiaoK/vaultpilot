@@ -193,8 +193,8 @@ func (r *Runtime) updateAccount(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	old.Name = strings.TrimSpace(input.Name)
-	if old.Name == "" {
-		fail(w, 400, "invalid_name", "账号名称不能为空")
+	if old.Name == "" || len(old.Name) > 200 {
+		fail(w, 400, "invalid_name", "账号名称不能为空且不超过 200 字符")
 		return
 	}
 	old.BudgetBytes = input.BudgetBytes

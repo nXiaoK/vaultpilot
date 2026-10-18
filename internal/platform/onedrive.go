@@ -307,7 +307,8 @@ func (r *Runtime) listDrives(ctx context.Context, id string) ([]Drive, error) {
 	return drives, nil
 }
 
-// Only the selection list is cached; access and quota checks always contact Graph.
+// Selection metadata and optional identity are cached; access and quota checks
+// always contact Graph. Identity remains transient until verification succeeds.
 const driveListTTL = time.Minute
 const profileTimeout = 3 * time.Second
 
@@ -315,10 +316,33 @@ type cachedDrives struct {
 	Version int
 	Expires time.Time
 	Items   []Drive
+	Profile *accountProfile
+}
+
+type accountProfile struct {
+	Email, DisplayName string
+	Expires            time.Time
+}
+
+// Profile is optional: older authorizations may lack User.Read.
+func (r *Runtime) readAccountProfile(ctx context.Context, id string) *accountProfile {
+	b, e := r.graph(ctx, id, "GET", "/me?$select=displayName,mail,userPrincipalName", nil, "")
+	var profile struct{ DisplayName, Mail, UserPrincipalName string }
+	if e != nil || json.Unmarshal(b, &profile) != nil {
+		return nil
+	}
+	email := profile.Mail
+	if email == "" && strings.Contains(profile.UserPrincipalName, "@") && !strings.Contains(profile.UserPrincipalName, "#EXT#") {
+		email = profile.UserPrincipalName
+	}
+	if email == "" && profile.DisplayName == "" {
+		return nil
+	}
+	return &accountProfile{Email: email, DisplayName: profile.DisplayName, Expires: time.Now().Add(driveListTTL)}
 }
 
 // Caller holds accountMu. Cache contains no authorization credentials.
-func (r *Runtime) rememberDrives(a Account, items []Drive) {
+func (r *Runtime) rememberDrives(a Account, items []Drive, profile *accountProfile) {
 	if r.recentDrives == nil {
 		r.recentDrives = make(map[string]cachedDrives)
 	}
@@ -334,7 +358,7 @@ func (r *Runtime) rememberDrives(a Account, items []Drive) {
 			break
 		}
 	}
-	r.recentDrives[a.ID] = cachedDrives{a.Version, now.Add(driveListTTL), items}
+	r.recentDrives[a.ID] = cachedDrives{Version: a.Version, Expires: now.Add(driveListTTL), Items: items, Profile: profile}
 }
 
 func (r *Runtime) verificationDrives(ctx context.Context, a Account) ([]Drive, error) {
@@ -347,10 +371,17 @@ func (r *Runtime) verificationDrives(ctx context.Context, a Account) ([]Drive, e
 
 func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 	var a Account
+	r.accountMu.Lock()
 	if r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &a) != nil {
+		r.accountMu.Unlock()
 		fail(w, 404, "account_not_found", "账号不存在")
 		return
 	}
+	var profile *accountProfile
+	if entry, ok := r.recentDrives[a.ID]; ok && entry.Version == a.Version && entry.Expires.After(time.Now()) && entry.Profile != nil && entry.Profile.Expires.After(time.Now()) {
+		profile = entry.Profile
+	}
+	r.accountMu.Unlock()
 	if a.Backend != "onedrive" {
 		fail(w, 400, "invalid_backend", "本地联调账号没有 Drive 列表")
 		return
@@ -363,23 +394,21 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 	}
 	profileCtx, cancel := context.WithTimeout(req.Context(), profileTimeout)
 	defer cancel()
-	profileResult := make(chan []byte, 1)
-	if a.AccountEmail == "" {
+	profileResult := make(chan *accountProfile, 1)
+	if a.AccountEmail == "" && profile == nil {
 		go func() {
-			b, _ := r.graph(profileCtx, a.ID, "GET", "/me?$select=displayName,mail,userPrincipalName", nil, "")
-			profileResult <- b
+			profileResult <- r.readAccountProfile(profileCtx, a.ID)
 		}()
 	} else {
-		profileResult <- nil
+		profileResult <- profile
 	}
 	items, e := r.listDrives(req.Context(), a.ID)
 	if e != nil {
 		cloudFailure(w, e)
 		return
 	}
-	var profileBytes []byte
 	select {
-	case profileBytes = <-profileResult:
+	case profile = <-profileResult:
 	case <-profileCtx.Done():
 	}
 	// Remote reads do not hold the global account lock. Reject results if the
@@ -391,24 +420,10 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 		fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
 		return
 	}
-	// Profile is optional: older authorizations may lack User.Read.
-	var profile struct{ DisplayName, Mail, UserPrincipalName string }
-	if len(profileBytes) > 0 && json.Unmarshal(profileBytes, &profile) == nil {
-		email := profile.Mail
-		if email == "" && strings.Contains(profile.UserPrincipalName, "@") && !strings.Contains(profile.UserPrincipalName, "#EXT#") {
-			email = profile.UserPrincipalName
-		}
-		if (email != "" || profile.DisplayName != "") && (a.AccountEmail != email || a.AccountDisplayName != profile.DisplayName) {
-			a.AccountEmail, a.AccountDisplayName = email, profile.DisplayName
-			version, err := r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
-			if err != nil {
-				fail(w, 409, "version_conflict", "账号配置已变更，请重新读取")
-				return
-			}
-			a.Version = version
-		}
+	if profile != nil && a.AccountEmail == "" {
+		a.AccountEmail, a.AccountDisplayName = profile.Email, profile.DisplayName
 	}
-	r.rememberDrives(a, items)
+	r.rememberDrives(a, items, profile)
 	writeJSON(w, 200, map[string]any{"items": items, "total": len(items), "account": a})
 }
 func (r *Runtime) ensureCloudFolder(ctx context.Context, a Account, parent, name string) (string, error) {
@@ -653,6 +668,20 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 	if e != nil {
 		cloudFailure(w, e)
 		return
+	}
+	if a.Backend == "onedrive" && a.AccountEmail == "" {
+		var profile *accountProfile
+		if entry, ok := r.recentDrives[a.ID]; ok && entry.Version == a.Version && entry.Expires.After(time.Now()) && entry.Profile != nil && entry.Profile.Expires.After(time.Now()) {
+			profile = entry.Profile
+		}
+		if profile == nil {
+			ctx, cancel := context.WithTimeout(req.Context(), profileTimeout)
+			profile = r.readAccountProfile(ctx, a.ID)
+			cancel()
+		}
+		if profile != nil {
+			a.AccountEmail, a.AccountDisplayName = profile.Email, profile.DisplayName
+		}
 	}
 	ver, e := r.Store.Save(req.Context(), "accounts", a.ID, v.Version, a)
 	a.Version = ver

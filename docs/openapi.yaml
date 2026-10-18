@@ -992,6 +992,7 @@ paths:
   "/accounts/{id}/drives":
     get:
       summary: 列出授权可见Drive，必须由用户选择
+      description: 返回的账号身份仅供回显，不保存账号或修改版本；身份在 Drive 验证成功后持久化。
       operationId: get_accounts_id_drives
       tags:
       - 账号
