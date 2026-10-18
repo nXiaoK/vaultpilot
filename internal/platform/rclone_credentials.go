@@ -131,6 +131,7 @@ func (r *Runtime) credentialConfig(ctx context.Context, name string, c accountCr
 		secret := c.ClientSecret
 		if c.Mode == "custom" {
 			cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "obscure", "-")
+			cmd.Env = rcloneEnvironment()
 			cmd.Stdin = strings.NewReader(secret + "\n")
 			output, err := cmd.Output()
 			if err != nil {

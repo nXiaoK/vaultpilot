@@ -22,6 +22,29 @@ func importToken(t *testing.T, expiry time.Time) string {
 	}
 	return string(b)
 }
+
+func TestRcloneObscureFiltersHostEnvironment(t *testing.T) {
+	for name, value := range map[string]string{"VP_OAUTH_CLIENT_SECRET": "host-secret", "VP_AUTO_UNLOCK_FILE": "/private-key", "RCLONE_DRY_RUN": "true", "HTTPS_PROXY": "http://proxy"} {
+		t.Setenv(name, value)
+	}
+	program := filepath.Join(t.TempDir(), "rclone")
+	script := `#!/bin/sh
+test "$1" = obscure && test "$2" = - || exit 1
+test -z "${VP_OAUTH_CLIENT_SECRET+x}" && test -z "${VP_AUTO_UNLOCK_FILE+x}" && test -z "${RCLONE_DRY_RUN+x}" || exit 2
+test "$HTTPS_PROXY" = http://proxy || exit 3
+IFS= read -r secret
+test "$secret" = explicit-secret || exit 4
+printf 'encoded-secret\n'
+`
+	if err := os.WriteFile(program, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	r := &Runtime{Config: Config{RcloneBin: program}}
+	config, err := r.credentialConfig(context.Background(), "probe", accountCredential{Mode: "custom", ClientSecret: "explicit-secret"}, "", "")
+	if err != nil || !strings.Contains(config, "client_secret = encoded-secret\n") {
+		t.Fatalf("obscure environment or explicit stdin credential lost: %v", err)
+	}
+}
 func TestRcloneImportFormatsAndUnsafeOptions(t *testing.T) {
 	token := importToken(t, time.Now().Add(time.Hour))
 	simple := map[string]string{"type": "onedrive", "token": token, "drive_type": "personal", "drive_id": "hint-only"}
