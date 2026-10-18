@@ -197,7 +197,10 @@ func (s *Service) cloudPublish(w http.ResponseWriter, r *http.Request) {
 		problem(w, fail("ACCOUNT_REQUIRED", "请先授权并验证至少一个原备份账号"))
 		return
 	}
-	unlock := s.lock("cloud-connect")
+	unlock, err := s.lock(ctx, "cloud-connect")
+	if err != nil {
+		return
+	}
 	defer unlock()
 	verified, failed := []string{}, []string{}
 	for _, a := range accounts {

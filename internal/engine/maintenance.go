@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -60,8 +59,10 @@ func (s *Service) check(ctx context.Context, t *Task) error {
 		if err := s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil {
 			return fail("CHECK_ACCOUNT_MISSING", "检查所需账号不可用")
 		}
-		unlockAccount := s.lock("account:" + account.ID)
-		unlockRepo := s.lock("repo:" + repo.ID)
+		unlockResources, err := s.lockResources(ctx, []string{account.ID}, repo.ID)
+		if err != nil {
+			return err
+		}
 		args := []string{"check"}
 		if req.Mode == "full" {
 			args = append(args, "--read-data")
@@ -71,9 +72,8 @@ func (s *Service) check(ctx context.Context, t *Task) error {
 			}
 			args = append(args, "--read-data-subset", req.Sample)
 		}
-		_, err := s.restic(ctx, t, repo, account, args, func(line string) { s.log(t, line) })
-		unlockRepo()
-		unlockAccount()
+		_, err = s.restic(ctx, t, repo, account, args, func(line string) { s.log(t, line) })
+		unlockResources()
 		if err != nil {
 			return fail("REPOSITORY_CHECK_FAILED", "仓库检查失败："+id+"："+err.Error())
 		}
@@ -428,11 +428,12 @@ func (s *Service) prunePending(ctx context.Context, t *Task, planID string) (int
 		if account.MaintenanceReserve <= 0 {
 			return pruned, fail("MAINTENANCE_RESERVE_REQUIRED", "清理需要明确的维护空间预留")
 		}
-		unlockAccount := s.lock("account:" + account.ID)
-		unlockRepo := s.lock("repo:" + repo.ID)
+		unlockResources, err := s.lockResources(ctx, []string{account.ID}, repo.ID)
+		if err != nil {
+			return pruned, err
+		}
 		err = func() error {
-			defer unlockAccount()
-			defer unlockRepo()
+			defer unlockResources()
 			var snapshots []struct {
 				ID string `json:"id"`
 			}
@@ -489,9 +490,14 @@ func (s *Service) retain(ctx context.Context, t *Task) error {
 	// Run after the plan/catalog defers release their locks; discover locks the
 	// recovery index before the catalog and must not see the reverse order here.
 	defer s.cleanupDeletedPointEntries(t, req.PlanID)
-	releasePlan := s.lock("plan:" + req.PlanID)
+	releasePlan, err := s.lock(ctx, "plan:"+req.PlanID)
+	if err != nil {
+		return err
+	}
 	defer releasePlan()
-	s.catalogMu.Lock()
+	if err := s.catalogMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.catalogMu.Unlock()
 	preview, err := s.retentionPreview(ctx, req.PlanID)
 	if err != nil {
@@ -625,9 +631,14 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if err := s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
 		return err
 	}
-	releasePlan := s.lock("plan:" + repo.PlanID)
+	releasePlan, err := s.lock(ctx, "plan:"+repo.PlanID)
+	if err != nil {
+		return err
+	}
 	defer releasePlan()
-	s.catalogMu.Lock()
+	if err := s.catalogMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.catalogMu.Unlock()
 
 	repo = Repository{}
@@ -701,14 +712,11 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 			_, _ = s.rt.Store.DB.Exec("DELETE FROM capacity_reservations WHERE run_id=?", t.ID)
 		}
 	}()
-	accountIDs := []string{source.ID, target.ID}
-	sort.Strings(accountIDs)
-	releaseFirst := s.lock("account:" + accountIDs[0])
-	defer releaseFirst()
-	releaseSecond := s.lock("account:" + accountIDs[1])
-	defer releaseSecond()
-	unlockRepo := s.lock("repo:" + req.RepositoryID)
-	defer unlockRepo()
+	releaseResources, err := s.lockResources(ctx, []string{source.ID, target.ID}, req.RepositoryID)
+	if err != nil {
+		return err
+	}
+	defer releaseResources()
 	s.stage(t, "copying_repository")
 	destination := repo.Path + "-migration-" + t.ID
 	if _, err = s.rcloneRun(ctx, []Account{source, target}, func(line string) { s.log(t, line) }, "copy", s.remoteFile(source, repo.Path), s.remoteFile(target, destination), "--checksum"); err != nil {
@@ -788,18 +796,11 @@ func (s *Service) cleanupOld(ctx context.Context, t *Task, repo Repository, req 
 	if oldAccount.ID != current.ID {
 		ids = append(ids, oldAccount.ID)
 	}
-	sort.Strings(ids)
-	releases := []func(){}
-	for _, id := range ids {
-		releases = append(releases, s.lock("account:"+id))
+	releaseResources, err := s.lockResources(ctx, ids, repo.ID)
+	if err != nil {
+		return err
 	}
-	defer func() {
-		for i := len(releases) - 1; i >= 0; i-- {
-			releases[i]()
-		}
-	}()
-	releaseRepo := s.lock("repo:" + repo.ID)
-	defer releaseRepo()
+	defer releaseResources()
 	verifiedCurrent := false
 	for _, loc := range repo.Locations {
 		if loc.AccountID == current.ID && loc.Path == repo.Path && loc.Verified {

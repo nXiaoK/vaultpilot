@@ -602,7 +602,10 @@ func (s *Service) writeEntryPage(ctx context.Context, query string, entries []En
 }
 
 func (s *Service) backup(ctx context.Context, t *Task) error {
-	releasePlan := s.lock("plan:" + t.PlanID)
+	releasePlan, err := s.lock(ctx, "plan:"+t.PlanID)
+	if err != nil {
+		return err
+	}
 	defer releasePlan()
 	var p Plan
 	if err := s.rt.Store.Get(ctx, "backup_plans", t.PlanID, &p); err != nil {
@@ -679,11 +682,12 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 		t.progressWeight = 1 / float64(len(plan.Shards)+1)
 		t.processedBase = t.ProcessedBytes
 		account := accounts[repo.AccountID]
-		unlockAccount := s.lock("account:" + account.ID)
-		unlockRepo := s.lock("repo:" + repo.ID)
+		unlockResources, err := s.lockResources(ctx, []string{account.ID}, repo.ID)
+		if err != nil {
+			return err
+		}
 		snap, err := s.backupShard(ctx, t, p, repo, account, sources, stage)
-		unlockRepo()
-		unlockAccount()
+		unlockResources()
 		if err != nil {
 			return err
 		}
@@ -716,7 +720,9 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 	}
 	point.FinishedAt = now()
 	s.stage(t, "committing")
-	s.catalogMu.Lock()
+	if err := s.catalogMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.catalogMu.Unlock()
 	point.Status = "completed"
 	point.CommitID = uid()

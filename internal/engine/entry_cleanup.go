@@ -25,7 +25,10 @@ func (s *Service) deleteEntryBatches(ctx context.Context, query string, args []a
 		}
 		unlock := func() {}
 		if lockIndex {
-			unlock = s.lock("recovery-index")
+			if err := s.recoveryIndex.LockContext(ctx); err != nil {
+				return err
+			}
+			unlock = s.recoveryIndex.Unlock
 		}
 		result, err := s.rt.Store.DB.ExecContext(ctx, query, args...)
 		unlock()
