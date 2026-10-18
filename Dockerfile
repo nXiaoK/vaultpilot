@@ -23,11 +23,11 @@ RUN curl -fsSLO "https://github.com/restic/restic/releases/download/v${RESTIC_VE
 RUN curl -fsSLO "https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip" && curl -fsSL "https://downloads.rclone.org/v${RCLONE_VERSION}/SHA256SUMS" -o RCLONE_SHA256SUMS && grep "rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip$" RCLONE_SHA256SUMS | sha256sum -c - && unzip -q "rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip" && install -m 0755 "rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}/rclone" /usr/local/bin/rclone
 
 FROM debian:12.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/* && groupadd -g 1000 vaultpilot && useradd -u 1000 -g vaultpilot -m -s /usr/sbin/nologin vaultpilot && mkdir -p /app/state /app/cache /sources /restore && chown -R vaultpilot:vaultpilot /app /restore
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata tini && rm -rf /var/lib/apt/lists/* && groupadd -g 1000 vaultpilot && useradd -u 1000 -g vaultpilot -m -s /usr/sbin/nologin vaultpilot && mkdir -p /app/state /app/cache /sources /restore && chown -R vaultpilot:vaultpilot /app /restore
 COPY --from=engines /usr/local/bin/restic /usr/local/bin/rclone /usr/local/bin/
 COPY --from=backend /out/ /app/
 COPY --from=frontend /src/web/dist/ /app/web/dist/
 WORKDIR /app
 USER 1000:1000
 EXPOSE 8080
-ENTRYPOINT ["/app/vaultpilot"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/vaultpilot"]
