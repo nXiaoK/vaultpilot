@@ -8,6 +8,13 @@ export class ApiError extends Error {
 }
 let csrf = ''
 export function setCSRF(value: string) { csrf = value }
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url; link.download = filename
+  document.body.appendChild(link); link.click(); link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 let taskSequence = 0
 function taskKey(): string {
   const cryptoAPI = globalThis.crypto

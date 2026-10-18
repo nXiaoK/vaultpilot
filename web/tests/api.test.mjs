@@ -65,3 +65,20 @@ test('ordinary requests need no crypto and receive no task key', async () => {
   await api('/plans')
   assert.equal(requests[0].headers['Idempotency-Key'], undefined)
 })
+
+test('downloads attach the link and revoke its URL only after the timer fires', () => {
+  const calls = []
+  let release
+  const blob = {}
+  const link = { click() { calls.push('click') }, remove() { calls.push('remove') } }
+  const { downloadBlob } = client(undefined, {
+    URL: { createObjectURL(value) { assert.equal(value, blob); return 'blob:kit' }, revokeObjectURL(value) { calls.push(`revoke:${value}`) } },
+    document: { createElement(tag) { assert.equal(tag, 'a'); return link }, body: { appendChild(value) { assert.equal(value, link); calls.push('append') } } },
+    setTimeout(fn, delay) { assert.equal(delay, 1000); release = fn },
+  })
+  downloadBlob(blob, 'recovery.json')
+  assert.equal(link.href, 'blob:kit'); assert.equal(link.download, 'recovery.json')
+  assert.deepEqual(calls, ['append', 'click', 'remove'])
+  release()
+  assert.deepEqual(calls, ['append', 'click', 'remove', 'revoke:blob:kit'])
+})

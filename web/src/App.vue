@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cloud, Database, Download, Ellipsis, Eraser, File, Files, Folder, FolderOpen, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings2, ShieldCheck, Shield, SlidersHorizontal, Square, Terminal, Trash2, UnlockKeyhole, X } from 'lucide-vue-next'
-import { api, ApiError, bytes, date, dateInZone, isActive, setCSRF, statusLabel, tone, subscribeActivity } from './api'
+import { api, ApiError, bytes, date, dateInZone, downloadBlob, isActive, setCSRF, statusLabel, tone, subscribeActivity } from './api'
 import ResultReport from './ResultReport.vue'
 import RcloneAuthorization from './RcloneAuthorization.vue'
 import NetworkActivity from './NetworkActivity.vue'
@@ -194,7 +194,7 @@ function executeRestore() { const fn=async()=> { const task=await api('/restore'
 async function protectPoint(point: Entity) { await action(async()=> {await api(`/recovery-points/${point.id}/protect`,{method:'POST',body:{protected:!point.protected,version:point.version}});await loadList('points');if(selectedPoint.value?.id===point.id)selectedPoint.value=data.points!.find(p=>p.id===point.id)??null;toast(point.protected?'已取消手动保护。':'恢复点已受到手动保护。')}) }
 async function unlock() { await action(async()=> {await api('/security/unlock',{method:'POST',body:{password:form.password}});form.password='';modal.value='';await refreshStatus();toast('备份库已解锁。')}) }
 async function lock() { await action(async()=>{await api('/security/lock',{method:'POST',body:{}});await refreshStatus();toast('备份库已锁定。')}) }
-async function exportKit() { await action(async()=> { const kit=await api('/security/recovery-kit',{method:'POST',body:{password:form.password}});const blob=new Blob([JSON.stringify(kit,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`vaultpilot-recovery-${status.value.vault_id}.json`;a.click();URL.revokeObjectURL(url);form.password='';modal.value='';toast('已下载加密恢复包。请在另一处离线保存，并保管好保护密码。') }) }
+async function exportKit() { await action(async()=> { const kit=await api('/security/recovery-kit',{method:'POST',body:{password:form.password}});downloadBlob(new Blob([JSON.stringify(kit,null,2)],{type:'application/json'}),`vaultpilot-recovery-${status.value.vault_id}.json`);form.password='';modal.value='';toast('已下载加密恢复包。请在另一处离线保存，并保管好保护密码。') }) }
 async function maintenance(endpoint: string, payload: any) { await action(async()=> { const task=await api(endpoint,{method:'POST',body:payload,task:true});await loadList('tasks');await openTask(task) }) }
 async function previewRetention() { await action(async()=> {retentionPreview.value=await api('/maintenance/retention/preview',{method:'POST',body:{plan_id:maintenanceForm.plan_id}});retentionSelection.value=[...(retentionPreview.value.delete_ids??[])];modal.value='retention-preview'}) }
 function applyRetention() { const ids=[...retentionSelection.value];askConfirm('确认清理历史',`本次将删除已选择的 ${ids.length} 个全局恢复点，并清理不再被有效恢复点引用的数据。此操作无法撤销。`,async()=>{const task=await api('/maintenance/retention',{method:'POST',body:{plan_id:maintenanceForm.plan_id,point_ids:ids,confirm:true},task:true});await openTask(task)}) }

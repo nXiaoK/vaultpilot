@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Download, FileUp, LoaderCircle, ShieldCheck } from 'lucide-vue-next'
-import { api, bytes, type Entity } from './api'
+import { api, bytes, downloadBlob, type Entity } from './api'
 const props = defineProps<{ mode: 'export' | 'import'; accounts: Entity[] }>()
 const emit = defineEmits<{ busy: [value: boolean]; changed: [] }>()
 const password = ref('')
@@ -27,8 +27,7 @@ async function exportFile() {
   await run(async () => {
     if (password.value !== repeat.value) throw new Error('两次输入的保护密码不一致。')
     const encrypted = await api('/accounts/export', {method: 'POST', body: {password: password.value, account_ids: selected.value}})
-    const url = URL.createObjectURL(new Blob([JSON.stringify(encrypted, null, 2)], {type: 'application/json'}))
-    const link = document.createElement('a'); link.href = url; link.download = 'vaultpilot-accounts.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadBlob(new Blob([JSON.stringify(encrypted, null, 2)], {type: 'application/json'}), 'vaultpilot-accounts.json')
     password.value = ''; repeat.value = ''; agreed.value = false
     message.value = '加密账号包已下载。将文件交给 B 节点，在“存储账号 → 导入账号”中使用保护密码打开。'
   })
