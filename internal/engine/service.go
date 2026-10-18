@@ -734,7 +734,7 @@ func (s *Service) taskCancel(w http.ResponseWriter, r *http.Request) {
 func (s *Service) cancelTask(ctx context.Context, t Task) (Task, error) {
 	s.mu.Lock()
 	s.cancelled[t.ID] = true
-	if t.PlanID != "" {
+	if t.PlanID != "" && s.active[t.PlanID] == t.ID {
 		delete(s.pending, t.PlanID)
 		_ = s.rt.Store.SetMeta(context.Background(), "pending:"+t.PlanID, "0")
 	}
