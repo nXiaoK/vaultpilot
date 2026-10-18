@@ -2,13 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ArrowUpRight, ArrowDownToLine, Activity } from 'lucide-vue-next'
 import { api, bytes } from './api'
+import { pollWhileVisible } from './polling'
 
 type Sample = { at: string; upload_bytes_per_second: number; download_bytes_per_second: number }
 type Metrics = { available: boolean; supported: boolean; server_time: string; history: Sample[] }
 const metrics = ref<Metrics | null>(null)
 const disconnected = ref(false)
 const selected = ref<Sample | null>(null)
-let timer: ReturnType<typeof setTimeout> | undefined
+let stopPolling: (()=>void) | undefined
 let stopped = false
 let request: AbortController | undefined
 const current = computed(() => metrics.value?.history.at(-1))
@@ -36,10 +37,9 @@ async function refresh() {
   request = new AbortController()
   try { const result = await api<Metrics>('/metrics/network', { signal: request.signal, silent: true }); if (!stopped) { metrics.value = result; disconnected.value = false; selected.value = null } }
   catch { if (!stopped) disconnected.value = true }
-  finally { if (!stopped) timer = setTimeout(refresh, 2000) }
 }
-onMounted(refresh)
-onUnmounted(() => { stopped = true; if (timer) clearTimeout(timer); request?.abort() })
+onMounted(() => { stopPolling = pollWhileVisible(refresh, 2000) })
+onUnmounted(() => { stopped = true; stopPolling?.(); request?.abort() })
 </script>
 
 <template>

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cloud, Database, Download, Ellipsis, Eraser, File, Files, Folder, FolderOpen, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings2, ShieldCheck, Shield, SlidersHorizontal, Square, Terminal, Trash2, UnlockKeyhole, X } from 'lucide-vue-next'
 import { api, ApiError, bytes, date, dateInZone, downloadBlob, isActive, setCSRF, statusLabel, tone, subscribeActivity } from './api'
 import ResultReport from './ResultReport.vue'
+import { pollWhileVisible } from './polling'
 import RcloneAuthorization from './RcloneAuthorization.vue'
 import NetworkActivity from './NetworkActivity.vue'
 import SourceBrowser from './SourceBrowser.vue'
@@ -84,7 +85,8 @@ const accountSearch = ref('')
 const clearInitialIds = ref<string[]>([])
 function openAccountClear(account?:Entity){clearInitialIds.value=account?[account.id]:[];modal.value='account-clear';error.value=null}
 async function accountClearSubmitted(task:Entity){await loadList('tasks');await openTask(task);toast('批量清空任务已提交，可在任务中心查看每个网盘的结果。')}
-let poll: ReturnType<typeof setInterval> | undefined
+let stopPolling: (()=>void) | undefined
+let unmounted = false
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 const authenticated = computed(() => status.value?.authenticated)
 const recoveryMode = computed(() => ['recovery','cloud'].includes(status.value?.mode))
@@ -217,8 +219,13 @@ function cleanupOldLocation() {
   askConfirm('确认删除旧仓库副本',`将删除「${accountName(location.account_id)}」中的旧副本 ${location.path}。这是不可撤销的云端数据删除。服务会先对当前有效位置执行完整读取校验，通过后才删除选定的旧位置；请确认观察期和恢复演练已经完成。`,async()=>{const task=await api('/maintenance/migrate',{method:'POST',body:{repository_id:repositoryID,cleanup_old:true,old_location_index:index,old_location_path:location.path,confirm:true},task:true});maintenanceForm.old_location_index='';await openTask(task)})
 }
 async function changePage(key: string, direction: number) { offsets[key]=Math.max(0,(offsets[key]??0)+direction*pageSize);await action(()=>loadList(key)) }
-onMounted(async()=>{unsubscribeActivity=subscribeActivity(items=>{requests.value=items});window.addEventListener('hashchange',onHash);try{await initialLoad();if(authenticated.value)handleOAuthReturn()}catch(e){showError(e)}finally{booting.value=false}poll=setInterval(async()=>{if(!authenticated.value||busy.value)return;try{await refreshStatus(true);await refresh(true);if(modal.value==='task'&&activeTask.value){await readTask(true);await loadLogs(logs.offset,true)}}catch(e){connectionProblem.value=true;if(e instanceof ApiError&&e.status===401)void refreshStatus()}},5000)})
-onUnmounted(()=>{unsubscribeActivity?.();if(poll)clearInterval(poll);if(noticeTimer)clearTimeout(noticeTimer);window.removeEventListener('hashchange',onHash)})
+async function refreshPolling() {
+  if(!authenticated.value||busy.value)return
+  try { await refreshStatus(true);await refresh(true);if(modal.value==='task'&&activeTask.value){await readTask(true);await loadLogs(logs.offset,true)} }
+  catch(e) { connectionProblem.value=true;if(e instanceof ApiError&&e.status===401)void refreshStatus() }
+}
+onMounted(async()=>{unsubscribeActivity=subscribeActivity(items=>{requests.value=items});window.addEventListener('hashchange',onHash);try{await initialLoad();if(authenticated.value)handleOAuthReturn()}catch(e){showError(e)}finally{booting.value=false}if(!unmounted)stopPolling=pollWhileVisible(refreshPolling,5000,false)})
+onUnmounted(()=>{unmounted=true;unsubscribeActivity?.();stopPolling?.();if(noticeTimer)clearTimeout(noticeTimer);window.removeEventListener('hashchange',onHash)})
 </script>
 
 <template>
