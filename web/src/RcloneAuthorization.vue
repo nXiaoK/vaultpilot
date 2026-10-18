@@ -4,7 +4,7 @@ import { ArrowUpRight, FileUp, LoaderCircle, RefreshCw, ShieldCheck } from 'luci
 import { api, date } from './api'
 import type { Entity } from './api'
 const props = defineProps<{ account: Entity; customOAuth: boolean; rcloneAvailable: boolean; busy?: boolean }>()
-const emit = defineEmits<{ authorized: [account: Entity]; custom: []; resume: [] }>()
+const emit = defineEmits<{ authorized: [account: Entity]; custom: []; resume: []; busy: [value: boolean] }>()
 const method = ref('standard')
 const pending = ref(false)
 const working = computed(()=>pending.value||props.busy)
@@ -22,7 +22,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 const active = () => flow.value && ['starting', 'waiting', 'exchanging', 'cancelling'].includes(flow.value.status)
 const flowPath = () => `/accounts/${props.account.id}/rclone/authorize?flow_id=${encodeURIComponent(flow.value.id)}`
-async function run(fn: () => Promise<void>) { if (pending.value) return; pending.value = true; error.value = ''; try { await fn() } catch (e) { error.value = e instanceof Error ? e.message : '操作未完成' } finally { pending.value = false } }
+async function run(fn: () => Promise<void>) { if (pending.value) return; pending.value = true; emit('busy', true); error.value = ''; try { await fn() } catch (e) { error.value = e instanceof Error ? e.message : '操作未完成' } finally { pending.value = false; emit('busy', false) } }
 async function poll() {
   if (disposed || !active()) return
   try {
@@ -39,7 +39,7 @@ function changedConfig() { remotes.value = []; selected.value = '' }
 async function upload(event: Event) { await run(async () => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; if (file.size > 1024 * 1024) throw new Error('配置文件不能超过 1 MiB'); config.value = await file.text(); filename.value = file.name; changedConfig() }); (event.target as HTMLInputElement).value = '' }
 async function preview() { await run(async () => { const result = await api('/rclone/import/preview', { method: 'POST', body: { config: config.value } }); remotes.value = result.items; selected.value = '' }) }
 async function importConfig() { await run(async () => { const account = await api(`/accounts/${props.account.id}/rclone/import`, { method: 'POST', body: { config: config.value, remote: selected.value, version: props.account.version } }); config.value = ''; filename.value = ''; remotes.value = []; if (!disposed) emit('authorized', account) }) }
-onUnmounted(() => { disposed = true; if (timer) clearTimeout(timer); if (active()) void api(flowPath(), { method: 'DELETE', body: {} }).catch(() => {}); config.value = ''; callback.value = '' })
+onUnmounted(() => { emit('busy', false); disposed = true; if (timer) clearTimeout(timer); if (active()) void api(flowPath(), { method: 'DELETE', body: {} }).catch(() => {}); config.value = ''; callback.value = '' })
 </script>
 
 <template>
