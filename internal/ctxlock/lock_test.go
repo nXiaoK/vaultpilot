@@ -4,9 +4,49 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type cancelOnSecondErrContext struct {
+	context.Context
+	cancel context.CancelFunc
+	checks atomic.Int32
+}
+
+func (c *cancelOnSecondErrContext) Err() error {
+	if c.checks.Add(1) == 2 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestMutexCancellationAfterAcquisitionReturnsToken(t *testing.T) {
+	base, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx := &cancelOnSecondErrContext{Context: base, cancel: cancel}
+	var m Mutex
+	// The first check sees a live context, so the free token is acquired. The
+	// second check cancels the underlying context, including its Done channel.
+	if err := m.LockContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel after acquisition returned %v", err)
+	}
+	if got := ctx.checks.Load(); got != 2 {
+		t.Fatalf("did not reach the acquired-token check: %d calls", got)
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("Err reported cancellation without closing Done")
+	}
+	reuse, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := m.LockContext(reuse); err != nil {
+		t.Fatalf("cancelled owner did not return the token: %v", err)
+	}
+	m.Unlock()
+}
 
 func receive(t *testing.T, result <-chan error) error {
 	t.Helper()
