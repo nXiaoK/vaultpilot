@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -129,6 +130,9 @@ func New(c Config) (*Runtime, error) {
 	for _, dir := range []string{c.StateDir, c.CacheDir} {
 		if e = os.MkdirAll(dir, 0700); e != nil {
 			return nil, e
+		}
+		if err := os.Chmod(dir, 0700); err != nil {
+			log.Printf("cannot restrict runtime directory %q to 0700: %v", dir, err)
 		}
 	}
 	if e = cleanupStaleManifestDirs(c.CacheDir); e != nil {
