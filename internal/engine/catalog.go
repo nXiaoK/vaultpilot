@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -160,7 +161,7 @@ func fileDigest(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-func (s *Service) makeCatalog(ctx context.Context, commitID string, replicas int, newPoint *Point, deleted []string, path string) error {
+func (s *Service) makeCatalog(ctx context.Context, commitID string, replicas int, newPoint *Point, deleted []string, path string, pendingRemovals map[string][]string) error {
 	control := catalogControl{Format: 1, VaultID: s.rt.VaultID(), CommitID: commitID, CreatedAt: now(), Replicas: replicas, Points: []Point{}, Repositories: []Repository{}, DeletedIDs: deleted}
 	raws, err := s.rt.Store.All(ctx, "repositories")
 	if err != nil {
@@ -170,6 +171,9 @@ func (s *Service) makeCatalog(ctx context.Context, commitID string, replicas int
 		var repo Repository
 		if err = json.Unmarshal(raw, &repo); err != nil {
 			return err
+		}
+		if removed := pendingRemovals[repo.ID]; len(removed) > 0 {
+			repo.PendingForget = slices.DeleteFunc(repo.PendingForget, func(id string) bool { return slices.Contains(removed, id) })
 		}
 		control.Repositories = append(control.Repositories, repo)
 	}
@@ -197,6 +201,18 @@ func (s *Service) makeCatalog(ctx context.Context, commitID string, replicas int
 	}
 	if newPoint != nil {
 		control.Points = append(control.Points, *newPoint)
+	}
+	if len(deletedSet) > 0 {
+		snapshots, err := retentionSnapshots(raws, deletedSet)
+		if err != nil {
+			return err
+		}
+		for i := range control.Repositories {
+			repo := &control.Repositories[i]
+			repo.PendingForget = append(repo.PendingForget, snapshots[repo.ID]...)
+			slices.Sort(repo.PendingForget)
+			repo.PendingForget = slices.Compact(repo.PendingForget)
+		}
 	}
 	raws, err = s.rt.Store.All(ctx, "sources")
 	if err != nil {
@@ -332,7 +348,7 @@ func (s *Service) commit(ctx context.Context, t *Task, pool Pool, newPoint *Poin
 	defer os.RemoveAll(dir)
 	plain := filepath.Join(dir, "catalog.zip")
 	encrypted := filepath.Join(dir, "catalog.vpc")
-	if err = s.makeCatalog(ctx, commitID, replicas, newPoint, deleted, plain); err != nil {
+	if err = s.makeCatalog(ctx, commitID, replicas, newPoint, deleted, plain, t.prunedSnapshots); err != nil {
 		return err
 	}
 	if err = sealFile(s.rt.Keys, plain, encrypted); err != nil {

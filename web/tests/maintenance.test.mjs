@@ -16,3 +16,20 @@ test('migration targets belong to the selected repository plan pool and remain e
   context.maintenanceForm.repository_id='missing'
   assert.equal(context.targets.value.length,0)
 })
+
+test('retry cleanup asks for confirmation and submits only an empty selection for the chosen plan',async()=>{
+  const declaration=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name.text==='retryRetentionCleanup').getText(ast)
+  const {outputText}=ts.transpileModule(declaration,{compilerOptions:{target:ts.ScriptTarget.ES2022}})
+  const calls=[],opened=[]
+  let confirm
+  const context=vm.createContext({maintenanceForm:{plan_id:'plan'},retentionSelection:{value:['unrelated-point']},askConfirm:(title,text,fn)=>{confirm=fn},api:async(path,options)=>{calls.push({path,options});return{id:'retry-task'}},openTask:async task=>opened.push(task)})
+  vm.runInContext(outputText,context)
+  context.retryRetentionCleanup()
+  assert.equal(calls.length,0)
+  context.maintenanceForm.plan_id='different-plan'
+  await confirm()
+  assert.equal(calls[0].path,'/maintenance/retention')
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].options.body)),{plan_id:'plan',point_ids:[],confirm:true})
+  assert.equal(calls[0].options.task,true)
+  assert.equal(opened[0].id,'retry-task')
+})

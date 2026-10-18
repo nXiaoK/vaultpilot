@@ -76,15 +76,16 @@ type Location struct {
 	At        string `json:"at"`
 }
 type Repository struct {
-	ID           string     `json:"id"`
-	Version      int        `json:"version"`
-	PlanID       string     `json:"plan_id"`
-	AccountID    string     `json:"account_id"`
-	Path         string     `json:"path"`
-	Password     string     `json:"password,omitempty"`
-	Status       string     `json:"status"`
-	Locations    []Location `json:"locations"`
-	LogicalBytes int64      `json:"logical_bytes"`
+	PendingForget []string   `json:"pending_forget,omitempty"`
+	ID            string     `json:"id"`
+	Version       int        `json:"version"`
+	PlanID        string     `json:"plan_id"`
+	AccountID     string     `json:"account_id"`
+	Path          string     `json:"path"`
+	Password      string     `json:"password,omitempty"`
+	Status        string     `json:"status"`
+	Locations     []Location `json:"locations"`
+	LogicalBytes  int64      `json:"logical_bytes"`
 }
 type Snapshot struct {
 	RepositoryID string `json:"repository_id"`
@@ -109,6 +110,7 @@ type Point struct {
 	ProtectionStatus string     `json:"protection_status,omitempty"`
 }
 type Task struct {
+	prunedSnapshots  map[string][]string
 	partialRestore   bool
 	ProcessedBytes   int64 `json:"processed_bytes"`
 	progressBase     float64
