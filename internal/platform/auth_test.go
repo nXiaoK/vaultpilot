@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/argon2"
 )
 
 func TestHostAllowlistBlocksRebinding(t *testing.T) {
@@ -185,5 +188,109 @@ func TestTrustedProxyUsesForwardedFor(t *testing.T) {
 	request.Header.Add("X-Forwarded-For", "10.0.0.1")
 	if got := r.clientIP(request); got != "198.51.100.1" {
 		t.Fatalf("multiple forwarded headers: %s", got)
+	}
+}
+
+func TestLoginRejectsOversizedBody(t *testing.T) {
+	h := newHarness(t, false)
+	response := h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": adminPassword, "padding": strings.Repeat("x", 64<<10)}, false)
+	if response.Code != 400 || !strings.Contains(response.Body.String(), `"code":"invalid_json"`) {
+		t.Fatalf("oversized login: %d %s", response.Code, response.Body.String())
+	}
+	request := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"username":"admin","password":"`+adminPassword+`"}`+strings.Repeat(" ", 64<<10)))
+	request.Host = "localhost"
+	response = httptest.NewRecorder()
+	h.h.ServeHTTP(response, request)
+	if response.Code != 400 {
+		t.Fatalf("oversized trailing whitespace: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSecretRequestLimitsAndEmptyLogout(t *testing.T) {
+	h := newHarness(t, false)
+	for _, path := range []string{"/api/security/unlock", "/api/security/recovery-kit", "/api/accounts/export", "/api/auth/logout"} {
+		response := h.call("POST", path, map[string]string{"password": recoveryPassword, "padding": strings.Repeat("x", 64<<10)}, true)
+		code := "invalid_json"
+		if path == "/api/auth/logout" {
+			code = "invalid_body"
+		}
+		if response.Code != 400 || !strings.Contains(response.Body.String(), `"code":"`+code+`"`) {
+			t.Errorf("oversized %s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	response := h.call("GET", "/api/status", nil, false)
+	if !strings.Contains(response.Body.String(), `"authenticated":true`) {
+		t.Fatal("rejected oversized logout deleted session")
+	}
+	response = h.call("POST", "/api/auth/logout", nil, true)
+	if response.Code != 204 {
+		t.Fatalf("empty logout lost compatibility: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSetupRequestLimit(t *testing.T) {
+	dir := t.TempDir()
+	r, err := New(Config{StateDir: filepath.Join(dir, "state")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	mux := http.NewServeMux()
+	r.Register(mux)
+	h := &testHarness{r: r, h: r.Handler(mux)}
+	input := map[string]string{"username": "admin", "password": adminPassword, "recovery_password": recoveryPassword, "padding": strings.Repeat("x", 1<<20)}
+	response := h.call("POST", "/api/setup", input, false)
+	if response.Code != 400 || r.Initialized() {
+		t.Fatalf("oversized setup: %d %s", response.Code, response.Body.String())
+	}
+	input["padding"] = strings.Repeat("x", 16<<10)
+	response = h.call("POST", "/api/setup", input, false)
+	if response.Code != 201 {
+		t.Fatalf("setup larger than auth limit: %d %s", response.Code, response.Body.String())
+	}
+	request := httptest.NewRequest("POST", "/", strings.NewReader(`{"padding":"`+strings.Repeat("x", 64<<10)+`"}`))
+	var value map[string]any
+	if !decode(httptest.NewRecorder(), request, &value) {
+		t.Fatal("default decoder inherited small authentication limit")
+	}
+}
+
+func TestDeriveKeyWaitsForGlobalSlot(t *testing.T) {
+	if cap(argonSlots) != 2 {
+		t.Fatalf("Argon2 concurrency limit: %d", cap(argonSlots))
+	}
+	occupied := 0
+	for occupied < cap(argonSlots) {
+		argonSlots <- struct{}{}
+		occupied++
+	}
+	defer func() {
+		for occupied > 0 {
+			<-argonSlots
+			occupied--
+		}
+	}()
+	password, salt := []byte("test-password"), []byte("0123456789abcdef")
+	started := make(chan struct{})
+	done := make(chan []byte, 1)
+	go func() {
+		close(started)
+		done <- deriveKey(password, salt, 1, 8, 1)
+	}()
+	<-started
+	select {
+	case <-done:
+		t.Fatal("Argon2 derivation bypassed occupied slots")
+	case <-time.After(25 * time.Millisecond):
+	}
+	<-argonSlots
+	occupied--
+	select {
+	case key := <-done:
+		if !bytes.Equal(key, argon2.IDKey(password, salt, 1, 8, 1, 32)) {
+			t.Fatal("derivation changed the Argon2 result")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Argon2 derivation did not resume after releasing a slot")
 	}
 }

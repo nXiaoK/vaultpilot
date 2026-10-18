@@ -318,3 +318,27 @@ func TestCloudBootstrapRejectsSpecialFilesAndOversizedMetadata(t *testing.T) {
 		t.Fatal("outside symlink accepted")
 	}
 }
+
+func TestCloudSecretRejectsOversizedBodies(t *testing.T) {
+	rt, err := platform.New(platform.Config{StateDir: filepath.Join(t.TempDir(), "state")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	s := &Service{rt: rt}
+	for _, handler := range []struct {
+		name string
+		call http.HandlerFunc
+	}{{"publish", s.cloudPublish}, {"join", s.cloudJoin}} {
+		for _, body := range []string{
+			`{"password":"` + strings.Repeat("x", 64<<10) + `"}`,
+			`{"password":"valid-cloud-password"}` + strings.Repeat(" ", 64<<10),
+		} {
+			response := httptest.NewRecorder()
+			handler.call(response, httptest.NewRequest("POST", "/", strings.NewReader(body)))
+			if response.Code != 400 || !strings.Contains(response.Body.String(), `"code":"INVALID_REQUEST"`) {
+				t.Errorf("oversized cloud %s: %d %s", handler.name, response.Code, response.Body.String())
+			}
+		}
+	}
+}

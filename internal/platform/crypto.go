@@ -116,9 +116,17 @@ type PasswordHash struct {
 	Hash string `json:"hash"`
 }
 
+var argonSlots = make(chan struct{}, 2)
+
+func deriveKey(password, salt []byte, time, memory uint32, threads uint8) []byte {
+	argonSlots <- struct{}{}
+	defer func() { <-argonSlots }()
+	return argon2.IDKey(password, salt, time, memory, threads, 32)
+}
+
 func hashPassword(password string) PasswordHash {
 	s := randomBytes(16)
-	h := argon2.IDKey([]byte(password), s, 3, 64*1024, 2, 32)
+	h := deriveKey([]byte(password), s, 3, 64*1024, 2)
 	return PasswordHash{base64.StdEncoding.EncodeToString(s), base64.StdEncoding.EncodeToString(h)}
 }
 func verifyPassword(password string, p PasswordHash) bool {
@@ -130,7 +138,7 @@ func verifyPassword(password string, p PasswordHash) bool {
 	if e != nil || len(want) != 32 {
 		return false
 	}
-	got := argon2.IDKey([]byte(password), s, 3, 64*1024, 2, 32)
+	got := deriveKey([]byte(password), s, 3, 64*1024, 2)
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
@@ -163,7 +171,7 @@ func protectRecovery(p RecoveryPayload, password string) (RecoveryKit, error) {
 	kit := RecoveryKit{Format: "vaultpilot-recovery", Version: 1, KDF: "argon2id", Time: 3, Memory: 64 * 1024, Parallelism: 2}
 	salt := randomBytes(16)
 	kit.Salt = base64.StdEncoding.EncodeToString(salt)
-	key := argon2.IDKey([]byte(password), salt, kit.Time, kit.Memory, kit.Parallelism, 32)
+	key := deriveKey([]byte(password), salt, kit.Time, kit.Memory, kit.Parallelism)
 	plain, e := json.Marshal(p)
 	if e != nil {
 		return kit, e
@@ -191,7 +199,7 @@ func openRecovery(kit RecoveryKit, password string) (RecoveryPayload, error) {
 	if e != nil || len(box) > 16*1024*1024 {
 		return p, errors.New("恢复包格式错误")
 	}
-	key := argon2.IDKey([]byte(password), salt, kit.Time, kit.Memory, kit.Parallelism, 32)
+	key := deriveKey([]byte(password), salt, kit.Time, kit.Memory, kit.Parallelism)
 	plain, e := decrypt(key, box, []byte("vaultpilot-recovery-v1"))
 	for i := range key {
 		key[i] = 0

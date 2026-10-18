@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -14,6 +15,9 @@ import (
 	"strings"
 	"time"
 )
+
+const maxAuthRequestBytes = 8 << 10
+const maxSetupRequestBytes = 1 << 20
 
 func (r *Runtime) session(req *http.Request) (session, string, bool) {
 	c, e := req.Cookie("vaultpilot_session")
@@ -237,7 +241,7 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		Mode             string          `json:"mode"`
 		Kit              json.RawMessage `json:"recovery_kit"`
 	}
-	if !decode(w, req, &input) {
+	if !decodeLimit(w, req, &input, maxSetupRequestBytes) {
 		return
 	}
 	input.Username = strings.TrimSpace(input.Username)
@@ -334,7 +338,7 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if len(v.Password) > 1024 {
@@ -354,6 +358,10 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, 200, map[string]any{"csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
 func (r *Runtime) logout(w http.ResponseWriter, req *http.Request) {
+	if _, e := io.Copy(io.Discard, http.MaxBytesReader(w, req.Body, maxAuthRequestBytes)); e != nil {
+		fail(w, 400, "invalid_body", "请求体无效或超过 8 KiB")
+		return
+	}
 	_, id, _ := r.session(req)
 	r.mu.Lock()
 	delete(r.sessions, id)
@@ -377,7 +385,7 @@ func (r *Runtime) unlockHandler(w http.ResponseWriter, req *http.Request) {
 	var v struct {
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if e := r.unlock(v.Password); e != nil {
@@ -395,7 +403,7 @@ func (r *Runtime) exportKit(w http.ResponseWriter, req *http.Request) {
 	var v struct {
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if len(v.Password) < 12 || len(v.Password) > 1024 {

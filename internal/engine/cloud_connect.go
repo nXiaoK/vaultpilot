@@ -151,6 +151,18 @@ func (s *Service) cloudState(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, value)
 }
 
+func decodeCloudSecret(r *http.Request, out any) error {
+	d := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 8<<10))
+	if err := d.Decode(out); err != nil {
+		return err
+	}
+	var trailing any
+	if d.Decode(&trailing) != io.EOF {
+		return fail("INVALID_REQUEST", "请求只能包含一个 JSON 对象且不超过 8 KiB")
+	}
+	return nil
+}
+
 func (s *Service) cloudPublish(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 50*time.Second)
 	defer cancel()
@@ -161,7 +173,7 @@ func (s *Service) cloudPublish(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err := decode(r, &req); err != nil {
+	if err := decodeCloudSecret(r, &req); err != nil {
 		problem(w, err)
 		return
 	}
@@ -294,7 +306,7 @@ func (s *Service) cloudJoin(w http.ResponseWriter, r *http.Request) {
 		VaultID  string `json:"vault_id"`
 		Password string `json:"password"`
 	}
-	if err := decode(r, &req); err != nil {
+	if err := decodeCloudSecret(r, &req); err != nil {
 		problem(w, err)
 		return
 	}

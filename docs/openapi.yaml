@@ -148,7 +148,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '409':
           "$ref": "#/components/responses/APIError"
-      description: 仅未初始化实例可调用。成功创建HttpOnly会话Cookie；恢复模式不会初始化已有云端仓库。
+      description: 仅未初始化实例可调用，请求体最多1MiB（含恢复包）。成功创建HttpOnly会话Cookie；恢复模式不会初始化已有云端仓库。
       requestBody:
         required: true
         content:
@@ -179,7 +179,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '401':
           "$ref": "#/components/responses/APIError"
-      description: 受限速及Origin检查保护；成功设置vaultpilot_session Cookie，会话有效12小时。
+      description: 请求体最多8KiB，按操作与客户端IP限速；受Origin检查保护。成功设置vaultpilot_session Cookie，会话有效12小时，成功登录清零对应尝试。
       requestBody:
         required: true
         content:
@@ -2607,6 +2607,7 @@ components:
             "$ref": "#/components/schemas/Error"
   schemas:
     CloudPassword:
+      description: 请求体最多8KiB
       type: object
       required: [password]
       properties:
