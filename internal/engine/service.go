@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/robfig/cron/v3"
+	"vaultpilot/internal/ctxlock"
 	"vaultpilot/internal/platform"
 	"vaultpilot/internal/store"
 )
@@ -23,8 +24,9 @@ type Service struct {
 	rt              *platform.Runtime
 	mu              sync.Mutex
 	runMu           sync.Mutex
-	catalogMu       sync.Mutex
-	configurationMu sync.RWMutex
+	catalogMu       ctxlock.Mutex
+	configurationMu ctxlock.RWMutex
+	recoveryIndex   ctxlock.RWMutex
 	ctx             context.Context
 	cancel          context.CancelFunc
 	wg              sync.WaitGroup
@@ -416,11 +418,42 @@ func (s *Service) execute(id string) {
 		}
 	}
 }
-func (s *Service) lock(key string) func() {
-	v, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
-	m := v.(*sync.Mutex)
-	m.Lock()
-	return m.Unlock
+func (s *Service) lock(ctx context.Context, key string) (func(), error) {
+	v, _ := s.locks.LoadOrStore(key, &ctxlock.Mutex{})
+	m := v.(*ctxlock.Mutex)
+	if err := m.LockContext(ctx); err != nil {
+		return nil, err
+	}
+	return m.Unlock, nil
+}
+
+// lockResources always acquires accounts in ID order before the repository.
+// A cancelled acquisition releases every resource already held by this call.
+func (s *Service) lockResources(ctx context.Context, accountIDs []string, repoID string) (func(), error) {
+	ids := append([]string(nil), accountIDs...)
+	sort.Strings(ids)
+	keys := make([]string, 0, len(ids)+1)
+	for i, id := range ids {
+		if i == 0 || id != ids[i-1] {
+			keys = append(keys, "account:"+id)
+		}
+	}
+	keys = append(keys, "repo:"+repoID)
+	releases := make([]func(), 0, len(keys))
+	release := func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}
+	for _, key := range keys {
+		unlock, err := s.lock(ctx, key)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		releases = append(releases, unlock)
+	}
+	return release, nil
 }
 func parseSchedule(p Plan) (cron.Schedule, error) {
 	loc, err := time.LoadLocation(p.Timezone)
@@ -603,7 +636,9 @@ func (s *Service) plansList(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": out, "total": total})
 }
 func (s *Service) planSave(w http.ResponseWriter, r *http.Request) {
-	s.configurationMu.RLock()
+	if err := s.configurationMu.RLockContext(r.Context()); err != nil {
+		return
+	}
 	defer s.configurationMu.RUnlock()
 	if err := s.clearMutationAllowed(r.Context()); err != nil {
 		problem(w, err)
@@ -674,7 +709,9 @@ func (s *Service) planSave(w http.ResponseWriter, r *http.Request) {
 	write(w, 201, p)
 }
 func (s *Service) planDelete(w http.ResponseWriter, r *http.Request) {
-	s.configurationMu.RLock()
+	if err := s.configurationMu.RLockContext(r.Context()); err != nil {
+		return
+	}
 	defer s.configurationMu.RUnlock()
 	if err := s.clearMutationAllowed(r.Context()); err != nil {
 		problem(w, err)
@@ -865,7 +902,9 @@ func (s *Service) pointsList(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": items, "total": n})
 }
 func (s *Service) protect(w http.ResponseWriter, r *http.Request) {
-	s.configurationMu.RLock()
+	if err := s.configurationMu.RLockContext(r.Context()); err != nil {
+		return
+	}
 	defer s.configurationMu.RUnlock()
 	if err := s.clearMutationAllowed(r.Context()); err != nil {
 		problem(w, err)
@@ -880,7 +919,9 @@ func (s *Service) protect(w http.ResponseWriter, r *http.Request) {
 		problem(w, fail("VAULT_LOCKED", "请先解锁备份库"))
 		return
 	}
-	s.catalogMu.Lock()
+	if err := s.catalogMu.LockContext(r.Context()); err != nil {
+		return
+	}
 	defer s.catalogMu.Unlock()
 	var body struct {
 		Protected bool `json:"protected"`
@@ -950,27 +991,34 @@ func (s *Service) catalogPool(ctx context.Context, planID string) (Pool, error) 
 	return pool, nil
 }
 func (s *Service) pointFiles(w http.ResponseWriter, r *http.Request) {
-	unlockIndex := s.lock("recovery-index")
-	defer unlockIndex()
-	var p Point
-	if err := s.rt.Store.Get(r.Context(), "recovery_points", r.PathValue("id"), &p); err != nil {
-		problem(w, err)
-		return
-	}
-	l, o := paging(r)
-	q := r.URL.Query()
-	where, args := entryFilter(p.RunID, q.Get("source_id"), q.Get("prefix"), q.Get("search"))
-	var n int
-	if err := s.rt.Store.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM file_entries WHERE "+where, args...).Scan(&n); err != nil {
-		problem(w, err)
-		return
-	}
-	entries, err := s.entries(r.Context(), where, args, l, o)
+	var entries []Entry
+	var total int
+	err := func() error {
+		if err := s.recoveryIndex.RLockContext(r.Context()); err != nil {
+			return err
+		}
+		defer s.recoveryIndex.RUnlock()
+		var p Point
+		if err := s.rt.Store.Get(r.Context(), "recovery_points", r.PathValue("id"), &p); err != nil {
+			return err
+		}
+		l, o := paging(r)
+		q := r.URL.Query()
+		where, args := entryFilter(p.RunID, q.Get("source_id"), q.Get("prefix"), q.Get("search"))
+		if err := s.rt.Store.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM file_entries WHERE "+where, args...).Scan(&total); err != nil {
+			return err
+		}
+		var err error
+		entries, err = s.entries(r.Context(), where, args, l, o)
+		return err
+	}()
 	if err != nil {
-		problem(w, err)
+		if r.Context().Err() == nil {
+			problem(w, err)
+		}
 		return
 	}
-	write(w, 200, map[string]any{"items": entries, "total": n})
+	write(w, 200, map[string]any{"items": entries, "total": total})
 }
 func entryFilter(run, source, prefix, search string) (string, []any) {
 	w := "run_id=?"

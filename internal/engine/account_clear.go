@@ -288,9 +288,14 @@ func (s *Service) clearPreviewHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, err)
 		return
 	}
-	release := s.rt.LockAccountConfiguration()
+	release, err := s.rt.LockAccountConfigurationContext(r.Context())
+	if err != nil {
+		return
+	}
 	defer release()
-	s.catalogMu.Lock()
+	if err := s.catalogMu.LockContext(r.Context()); err != nil {
+		return
+	}
 	defer s.catalogMu.Unlock()
 	p, err := s.buildClearPreview(r.Context(), req.AccountIDs, "")
 	if err != nil {
@@ -389,13 +394,22 @@ func (s *Service) clearAccounts(ctx context.Context, t *Task) error {
 	if req.Confirmation != clearConfirmation {
 		return fail("CONFIRM_REQUIRED", "清空备份需要明确确认")
 	}
-	s.configurationMu.Lock()
+	if err := s.configurationMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.configurationMu.Unlock()
-	release := s.rt.LockAccountConfiguration()
+	release, err := s.rt.LockAccountConfigurationContext(ctx)
+	if err != nil {
+		return err
+	}
 	defer release()
-	unlockIndex := s.lock("recovery-index")
-	defer unlockIndex()
-	s.catalogMu.Lock()
+	if err := s.recoveryIndex.LockContext(ctx); err != nil {
+		return err
+	}
+	defer s.recoveryIndex.Unlock()
+	if err := s.catalogMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.catalogMu.Unlock()
 	p, err := s.buildClearPreview(ctx, req.AccountIDs, t.ID)
 	if err != nil {

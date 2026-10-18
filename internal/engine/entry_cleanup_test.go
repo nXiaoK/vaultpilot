@@ -180,7 +180,8 @@ func TestCleanupHandlesNullableHistoricalTaskIDs(t *testing.T) {
 
 func TestCleanupWaitsForImportedIndexPublication(t *testing.T) {
 	s := cancellationService(t)
-	unlock := s.lock("recovery-index")
+	s.recoveryIndex.Lock()
+	unlock := s.recoveryIndex.Unlock
 	insertCleanupEntries(t, s, "import-publishing", 1)
 	done := make(chan error, 1)
 	go func() { done <- s.cleanupOrphanEntries(context.Background()) }()

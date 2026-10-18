@@ -372,8 +372,10 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 	return preview, nil
 }
 func (s *Service) restorePreviewHTTP(w http.ResponseWriter, r *http.Request) {
-	unlockIndex := s.lock("recovery-index")
-	defer unlockIndex()
+	if err := s.recoveryIndex.RLockContext(r.Context()); err != nil {
+		return
+	}
+	defer s.recoveryIndex.RUnlock()
 	var req RestoreRequest
 	if err := decode(r, &req); err != nil {
 		problem(w, err)
@@ -548,8 +550,10 @@ func (s *Service) copyRestored(out, private *os.Root, e Entry, overwrite bool, l
 	return restoreTargetError(out.Rename(temp, target), outputPath)
 }
 func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
-	unlockIndex := s.lock("recovery-index")
-	defer unlockIndex()
+	if err := s.recoveryIndex.RLockContext(ctx); err != nil {
+		return err
+	}
+	defer s.recoveryIndex.RUnlock()
 	var req RestoreRequest
 	if err := json.Unmarshal(t.Request, &req); err != nil {
 		return err
@@ -624,8 +628,10 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 		if !ready {
 			continue
 		}
-		unlockAccount := s.lock("account:" + account.ID)
-		unlockRepo := s.lock("repo:" + repo.ID)
+		unlockResources, err := s.lockResources(ctx, []string{account.ID}, repo.ID)
+		if err != nil {
+			return err
+		}
 		filter := where + " AND repo_id=?"
 		filterArgs := append(append([]any{}, args...), repo.ID)
 		err = s.eachEntry(ctx, filter, filterArgs, 128, func(entries []Entry) error {
@@ -701,8 +707,7 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 			}
 			return nil
 		})
-		unlockRepo()
-		unlockAccount()
+		unlockResources()
 		if err != nil {
 			return err
 		}

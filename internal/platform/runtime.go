@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"vaultpilot/internal/ctxlock"
 	"vaultpilot/internal/store"
 )
 
@@ -59,7 +60,7 @@ type Runtime struct {
 	vaultID, mode      string
 	rcloneMu           sync.Mutex
 	credentialsMu      sync.Mutex
-	accountMu          sync.Mutex
+	accountMu          ctxlock.Mutex
 	recentDrives       map[string]cachedDrives // guarded by accountMu
 	accountTransferMu  sync.Mutex
 	rclonePath         string
@@ -387,4 +388,12 @@ func (r *Runtime) Register(m *http.ServeMux) {
 func (r *Runtime) LockAccountConfiguration() func() {
 	r.accountMu.Lock()
 	return r.accountMu.Unlock
+}
+
+// LockAccountConfigurationContext allows maintenance to abandon a cancelled wait.
+func (r *Runtime) LockAccountConfigurationContext(ctx context.Context) (func(), error) {
+	if err := r.accountMu.LockContext(ctx); err != nil {
+		return nil, err
+	}
+	return r.accountMu.Unlock, nil
 }

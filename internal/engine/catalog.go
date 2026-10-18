@@ -532,9 +532,13 @@ func saveCatalogEntity(ctx context.Context, tx *sql.Tx, table, id string, value 
 }
 
 func (s *Service) discover(ctx context.Context, t *Task) error {
-	unlock := s.lock("recovery-index")
-	defer unlock()
-	s.catalogMu.Lock()
+	if err := s.recoveryIndex.LockContext(ctx); err != nil {
+		return err
+	}
+	defer s.recoveryIndex.Unlock()
+	if err := s.catalogMu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.catalogMu.Unlock()
 	s.stage(t, "discovering")
 	raws, err := s.rt.Store.All(ctx, "accounts")
