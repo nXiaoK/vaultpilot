@@ -171,8 +171,16 @@ func (e *failure) Error() string         { return e.Message }
 func fail(code, message string) *failure { return &failure{Code: code, Message: message} }
 func uid() string                        { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func now() string                        { return time.Now().UTC().Format(time.RFC3339Nano) }
+
+var terminalStatuses = [...]string{"completed", "failed", "partial_failed", "cancelled", "interrupted"}
+
 func terminal(s string) bool {
-	return s == "completed" || s == "failed" || s == "partial_failed" || s == "cancelled" || s == "interrupted"
+	for _, status := range terminalStatuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
 }
 
 func degraded(err error) bool {

@@ -128,6 +128,14 @@ func (s *Service) Close() {
 	s.wg.Wait()
 }
 func (s *Service) save(t *Task) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelled[t.ID] {
+		t.CancelRequested = true
+	}
+	return s.saveTask(t)
+}
+func (s *Service) saveTask(t *Task) error {
 	v, err := s.rt.Store.Save(context.Background(), "backup_runs", t.ID, -1, t)
 	if err == nil {
 		t.Version = v
@@ -197,7 +205,7 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 		return Task{}, err
 	}
 	t := Task{ID: uid(), Kind: kind, PlanID: plan, Status: "queued", Stage: "queued", Request: b}
-	if err = s.save(&t); err != nil {
+	if err = s.saveTask(&t); err != nil {
 		return Task{}, err
 	}
 	if key != "" {
@@ -221,7 +229,7 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 		t.Status = "failed"
 		t.Code = "QUEUE_FULL"
 		t.Error = "任务队列已满"
-		s.save(&t)
+		s.saveTask(&t)
 		delete(s.active, plan)
 		if kind == "account-clear" {
 			delete(s.active, "account-clear")
@@ -693,8 +701,24 @@ func (s *Service) taskCancel(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, t)
 		return
 	}
-	t.CancelRequested = true
-	s.save(&t)
+	var err error
+	t, err = s.cancelTask(r.Context(), t)
+	if err != nil {
+		problem(w, err)
+		return
+	}
+	if terminal(t.Status) {
+		s.mu.Lock()
+		if s.cancels[t.ID] == nil {
+			delete(s.cancelled, t.ID)
+		}
+		s.mu.Unlock()
+		write(w, 200, t)
+		return
+	}
+	write(w, 202, t)
+}
+func (s *Service) cancelTask(ctx context.Context, t Task) (Task, error) {
 	s.mu.Lock()
 	s.cancelled[t.ID] = true
 	if t.PlanID != "" {
@@ -705,8 +729,20 @@ func (s *Service) taskCancel(w http.ResponseWriter, r *http.Request) {
 		cancel()
 	}
 	s.mu.Unlock()
-	write(w, 202, t)
+	args := []any{now(), t.ID}
+	for _, status := range terminalStatuses {
+		args = append(args, status)
+	}
+	_, err := s.rt.Store.DB.ExecContext(ctx, "UPDATE backup_runs SET data=json_set(data,'$.cancel_requested',json('true'),'$.version',version+1),version=version+1,updated_at=? WHERE id=? AND coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+")", args...)
+	if err != nil {
+		return t, err
+	}
+	if err = s.rt.Store.Get(ctx, "backup_runs", t.ID, &t); err != nil {
+		return t, err
+	}
+	return t, nil
 }
+
 func (s *Service) taskLogs(w http.ResponseWriter, r *http.Request) {
 	l, o := paging(r)
 	var n int
