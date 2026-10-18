@@ -294,3 +294,57 @@ func TestDeriveKeyWaitsForGlobalSlot(t *testing.T) {
 		t.Fatal("Argon2 derivation did not resume after releasing a slot")
 	}
 }
+
+func TestSensitiveExportsRequireAdminPassword(t *testing.T) {
+	h := newHarness(t, false)
+	account := transferFixture(t, h, "rclone", "reauth-drive")
+	for _, path := range []string{"/api/security/recovery-kit", "/api/accounts/export"} {
+		for _, password := range []string{"", "incorrect-login-password"} {
+			response := h.call("POST", path, map[string]any{"password": transferPassword, "admin_password": password, "account_ids": []string{account.ID}}, true)
+			if response.Code != 401 || !strings.Contains(response.Body.String(), `"code":"admin_password_invalid"`) {
+				t.Fatalf("unauthorized %s: %d %s", path, response.Code, response.Body.String())
+			}
+		}
+		var count int
+		if err := h.r.Store.DB.QueryRow("SELECT count(*) FROM audit_events WHERE json_extract(data,'$.action') IN ('recovery-kit.export','accounts.export')").Scan(&count); err != nil || count != 0 {
+			t.Fatalf("failed exports changed audit history: count=%d err=%v", count, err)
+		}
+	}
+	for _, path := range []string{"/api/security/recovery-kit", "/api/accounts/export"} {
+		response := h.call("POST", path, map[string]any{"password": transferPassword, "admin_password": adminPassword, "account_ids": []string{account.ID}}, true)
+		if response.Code != 200 {
+			t.Fatalf("authorized %s: %d %s", path, response.Code, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), adminPassword) {
+			t.Fatal("export exposed admin password")
+		}
+	}
+}
+
+func TestExportReauthenticationThrottleAndReset(t *testing.T) {
+	h := newHarness(t, false)
+	for i := 0; i < 9; i++ {
+		response := h.call("POST", "/api/accounts/export", map[string]string{"password": transferPassword}, true)
+		if response.Code != 401 {
+			t.Fatalf("failed reauthentication %d: %d %s", i+1, response.Code, response.Body.String())
+		}
+	}
+	response := h.call("POST", "/api/security/recovery-kit", map[string]string{"password": recoveryPassword, "admin_password": adminPassword}, true)
+	if response.Code != 200 {
+		t.Fatalf("successful reauthentication: %d %s", response.Code, response.Body.String())
+	}
+	for i := 0; i < 10; i++ {
+		response = h.call("POST", "/api/accounts/export", map[string]string{"password": transferPassword}, true)
+		if response.Code != 401 {
+			t.Fatalf("reauthentication was not reset: %d %s", response.Code, response.Body.String())
+		}
+	}
+	response = h.call("POST", "/api/security/recovery-kit", map[string]string{"password": recoveryPassword, "admin_password": adminPassword}, true)
+	if response.Code != 429 || response.Header().Get("Retry-After") == "" {
+		t.Fatalf("exports do not share reauthentication throttle: %d %s", response.Code, response.Body.String())
+	}
+	response = h.call("POST", "/api/auth/login", map[string]string{"username": "admin", "password": adminPassword}, false)
+	if response.Code != 200 {
+		t.Fatalf("reauthentication throttle leaked to login: %d %s", response.Code, response.Body.String())
+	}
+}

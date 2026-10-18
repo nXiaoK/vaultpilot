@@ -34,11 +34,11 @@ func TestAccountTransferBetweenNodes(t *testing.T) {
 	b := newPendingCloudHarness(t, adminPassword)
 	first := transferFixture(t, a, "rclone", "drive-one")
 	second := transferFixture(t, a, "custom", "drive-two")
-	res := a.call("POST", "/api/accounts/export", map[string]any{"password": transferPassword, "account_ids": []string{first.ID, second.ID}}, false)
+	res := a.call("POST", "/api/accounts/export", map[string]any{"admin_password": adminPassword, "password": transferPassword, "account_ids": []string{first.ID, second.ID}}, false)
 	if res.Code != 403 {
 		t.Fatal("export missing CSRF accepted")
 	}
-	res = a.call("POST", "/api/accounts/export", map[string]any{"password": transferPassword, "account_ids": []string{first.ID, second.ID}}, true)
+	res = a.call("POST", "/api/accounts/export", map[string]any{"admin_password": adminPassword, "password": transferPassword, "account_ids": []string{first.ID, second.ID}}, true)
 	if res.Code != 200 {
 		t.Fatal(res.Body.String())
 	}

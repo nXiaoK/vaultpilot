@@ -80,7 +80,7 @@ func TestPendingCloudSetupHasLocalAdminWithoutProvisionalVault(t *testing.T) {
 func TestCloudBootstrapUsesOriginalPasswordAndDoesNotUnlockWriter(t *testing.T) {
 	w := newHarness(t, false)
 	exportPassword := "independent-export-protection-password"
-	res := w.call("POST", "/api/security/recovery-kit", map[string]string{"password": exportPassword}, true)
+	res := w.call("POST", "/api/security/recovery-kit", map[string]string{"admin_password": adminPassword, "password": exportPassword}, true)
 	if res.Code != 200 {
 		t.Fatal(res.Body.String())
 	}

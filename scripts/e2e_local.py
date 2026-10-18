@@ -163,7 +163,7 @@ def run(args):
         duplicate = api.call("POST", "/plans/" + plan["id"] + "/run", {}, {"Idempotency-Key": "first-run"})
         assert duplicate["id"] == first["id"], "idempotency violated"
         point1 = api.call("GET", "/recovery-points")["items"][0]
-        kit = api.call("POST", "/security/recovery-kit", {"password": RECOVERY_PASSWORD})
+        kit = api.call("POST", "/security/recovery-kit", {"password": RECOVERY_PASSWORD, "admin_password": LOGIN_PASSWORD})
         initial_repository_count = len(api.call("GET", "/repositories")["items"])
         report["allocation_evidence"] = {"single_account_budget_bytes": initial_budget,
                                          "single_source_logical_bytes": preview["result"]["logical_bytes"],

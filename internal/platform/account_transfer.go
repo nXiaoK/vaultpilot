@@ -23,10 +23,11 @@ type transferPayload struct {
 	Entries []transferEntry `json:"entries"`
 }
 type transferRequest struct {
-	Password   string      `json:"password"`
-	AccountIDs []string    `json:"account_ids"`
-	DriveIDs   []string    `json:"drive_ids"`
-	Package    RecoveryKit `json:"package"`
+	Password      string      `json:"password"`
+	AdminPassword string      `json:"admin_password"`
+	AccountIDs    []string    `json:"account_ids"`
+	DriveIDs      []string    `json:"drive_ids"`
+	Package       RecoveryKit `json:"package"`
 }
 
 // Only portable settings cross nodes. Status, IDs, paths and measured capacity
@@ -132,7 +133,11 @@ func (r *Runtime) decodeTransfer(w http.ResponseWriter, req *http.Request, v *tr
 }
 func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 	var v transferRequest
-	if !r.decodeTransfer(w, req, &v, maxAuthRequestBytes) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) || !r.requireAdminPassword(w, req, v.AdminPassword) {
+		return
+	}
+	if len(v.Password) < 12 || len(v.Password) > 1024 {
+		fail(w, 400, "weak_credentials", "账号包保护密码至少 12 个字符，最多 1024 个字节")
 		return
 	}
 	if len(v.AccountIDs) < 1 || len(v.AccountIDs) > 50 {
@@ -180,7 +185,6 @@ func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_export_failed", err.Error())
 		return
 	}
-	r.resetAttempts(req, "transfer")
 	_ = r.Store.Audit(req.Context(), "accounts.export", "accounts")
 	w.Header().Set("Content-Disposition", `attachment; filename="vaultpilot-accounts.json"`)
 	writeJSON(w, 200, kit)
