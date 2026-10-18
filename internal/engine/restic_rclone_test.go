@@ -21,7 +21,7 @@ func TestRealResticRcloneTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("VP_TEST_RCLONE", rclone)
+	shellQuote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 	program := filepath.Join(t.TempDir(), "rclone")
 	for _, name := range []string{"ordinary-cache", "cache with spaces, \"quotes\", 'apostrophe', \\backslash\nand-newline"} {
 		t.Run(name, func(t *testing.T) {
@@ -32,12 +32,11 @@ func TestRealResticRcloneTransport(t *testing.T) {
 			}
 			s.rt.Config.CacheDir = cache
 			record := filepath.Join(t.TempDir(), "config-path")
-			t.Setenv("VP_TEST_CONFIG_RECORD", record)
 			// Check the inherited config, then forward every operation to the actual engine.
 			wrapper := "#!/bin/sh\n" +
 				"if [ ! -f \"$RCLONE_CONFIG\" ]; then echo 'missing task config' >&2; exit 1; fi\n" +
-				"printf '%s' \"$RCLONE_CONFIG\" > \"$VP_TEST_CONFIG_RECORD\"\n" +
-				"exec \"$VP_TEST_RCLONE\" \"$@\"\n"
+				"printf '%s' \"$RCLONE_CONFIG\" > " + shellQuote(record) + "\n" +
+				"exec " + shellQuote(rclone) + " \"$@\"\n"
 			if err := os.WriteFile(program, []byte(wrapper), 0700); err != nil {
 				t.Fatal(err)
 			}

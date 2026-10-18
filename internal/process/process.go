@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -105,9 +106,27 @@ func OutputLimited(ctx context.Context, bin string, args []string, env []string,
 	return data, err
 }
 
+// BaseEnvironment returns the host variables engines may inherit.
+func BaseEnvironment() []string {
+	env := []string{}
+	for _, value := range os.Environ() {
+		name, _, _ := strings.Cut(value, "=")
+		name = strings.ToUpper(name)
+		switch name {
+		case "PATH", "HOME", "USER", "TMPDIR", "TZ", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY":
+			env = append(env, value)
+		default:
+			if strings.HasPrefix(name, "LC_") {
+				env = append(env, value)
+			}
+		}
+	}
+	return env
+}
+
 func processCommand(ctx context.Context, bin string, args []string, env []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(BaseEnvironment(), env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {

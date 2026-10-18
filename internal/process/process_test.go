@@ -21,6 +21,8 @@ func TestProcessHelper(t *testing.T) {
 	case "output":
 		_, _ = os.Stdout.WriteString("out-data")
 		_, _ = os.Stderr.WriteString("err-data")
+	case "environment":
+		_, _ = os.Stdout.WriteString(strings.Join(os.Environ(), "\n"))
 	case "exact-output":
 		_, _ = os.Stdout.WriteString(strings.Repeat("x", 64))
 	case "too-long":
@@ -48,6 +50,26 @@ func TestRunDrainsOversizedLines(t *testing.T) {
 	}
 	if strings.Contains(string(data), "x") || len(lines) != 1 || lines[0] != strings.Repeat("y", 128*1024) {
 		t.Fatal("partial oversized line reached output or callback")
+	}
+}
+
+func TestProcessEnvironmentIsAllowlisted(t *testing.T) {
+	for name, value := range map[string]string{"RCLONE_DRY_RUN": "true", "RESTIC_PASSWORD": "x", "VP_OAUTH_CLIENT_SECRET": "s", "HTTPS_PROXY": "http://p", "LC_ALL": "C", "https_proxy": "http://lower"} {
+		t.Setenv(name, value)
+	}
+	data, err := Output(context.Background(), os.Args[0], []string{"-test.run=TestProcessHelper"}, []string{"VP_PROCESS_HELPER=1", "VP_HELPER_MODE=environment", "RCLONE_CONFIG=/x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"RCLONE_DRY_RUN", "RESTIC_PASSWORD", "VP_OAUTH_CLIENT_SECRET"} {
+		if strings.Contains(string(data), name+"=") {
+			t.Fatalf("host setting inherited: %s", name)
+		}
+	}
+	for _, value := range []string{"HTTPS_PROXY=http://p", "https_proxy=http://lower", "LC_ALL=C", "RCLONE_CONFIG=/x"} {
+		if !strings.Contains(string(data), value) {
+			t.Fatalf("allowed or explicit setting missing: %s", value)
+		}
 	}
 }
 

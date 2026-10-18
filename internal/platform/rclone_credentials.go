@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"vaultpilot/internal/process"
 )
 
 // These settings are encrypted with the token. Rclone-mode credentials keep
@@ -221,12 +223,5 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 	return fresh, nil
 }
 func rcloneEnvironment() []string {
-	// Host RCLONE_* settings must not override this allowlisted configuration.
-	env := []string{}
-	for _, v := range os.Environ() {
-		if !strings.HasPrefix(strings.ToUpper(v), "RCLONE_") {
-			env = append(env, v)
-		}
-	}
-	return env
+	return process.BaseEnvironment()
 }
