@@ -68,6 +68,9 @@ func (s *Service) cleanupOrphanEntries(ctx context.Context) error {
 }
 
 func (s *Service) cleanupTaskEntries(t *Task) {
+	if t.Kind != "backup" && t.Kind != "preview" {
+		return
+	}
 	if t.Status == "completed" && t.Kind != "preview" {
 		return
 	}
@@ -78,8 +81,8 @@ func (s *Service) cleanupTaskEntries(t *Task) {
 	}
 }
 
-func (s *Service) cleanupDeletedPointEntries(t *Task, planID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (s *Service) cleanupDeletedPointEntries(ctx context.Context, t *Task, planID string) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.cleanupFileEntries(ctx, "run_id IN (SELECT coalesce(json_extract(data,'$.run_id'),'') FROM recovery_points WHERE json_extract(data,'$.plan_id')=? AND coalesce(json_extract(data,'$.deleted_at'),'')<>'')", []any{planID}); err != nil {
 		s.log(t, "清理已删除恢复点文件清单失败，启动时将重试："+err.Error())

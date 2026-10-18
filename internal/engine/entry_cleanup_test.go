@@ -60,7 +60,7 @@ func TestFailedRunEntriesAreRemoved(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, task := range []Task{{ID: "failed", Status: "failed"}, {ID: "cancelled", Status: "cancelled"}, {ID: "preview", Kind: "preview", Status: "completed"}, {ID: "degraded", Status: "partial_failed"}} {
+	for _, task := range []Task{{ID: "failed", Kind: "backup", Status: "failed"}, {ID: "cancelled", Kind: "backup", Status: "cancelled"}, {ID: "preview", Kind: "preview", Status: "completed"}, {ID: "degraded", Kind: "backup", Status: "partial_failed"}} {
 		s.cleanupTaskEntries(&task)
 	}
 	for run, want := range map[string]int{"failed": 0, "cancelled": 0, "preview": 0, "successful": 1, "degraded": 1} {
@@ -72,7 +72,7 @@ func TestFailedRunEntriesAreRemoved(t *testing.T) {
 
 func TestStartupSweepPreservesLiveImportedAndActiveEntries(t *testing.T) {
 	s := cancellationService(t)
-	for _, task := range []Task{{ID: "running", Status: "running"}, {ID: "queued", Status: "queued"}, {ID: "failed", Status: "failed"}, {ID: "completed-orphan", Status: "completed"}} {
+	for _, task := range []Task{{ID: "running", Status: "running"}, {ID: "queued", Status: "queued"}, {ID: "failed", Kind: "backup", Status: "failed"}, {ID: "completed-orphan", Status: "completed"}} {
 		if err := s.save(&task); err != nil {
 			t.Fatal(err)
 		}
@@ -214,7 +214,7 @@ func TestDeletedPointCleanupPreservesOtherLiveReferences(t *testing.T) {
 	for _, run := range []string{"deleted-run", "shared-run", "other-run"} {
 		insertCleanupEntries(t, s, run, 1)
 	}
-	s.cleanupDeletedPointEntries(&Task{ID: "retention"}, "plan")
+	s.cleanupDeletedPointEntries(t.Context(), &Task{ID: "retention"}, "plan")
 	for run, want := range map[string]int{"deleted-run": 0, "shared-run": 1, "other-run": 1} {
 		if got := cleanupEntryCount(t, s, run); got != want {
 			t.Fatalf("run=%s count=%d want=%d", run, got, want)

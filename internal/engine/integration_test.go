@@ -341,7 +341,7 @@ func TestRealResticRetentionPruneRetriesAfterFailure(t *testing.T) {
 	if len(snapshots) != 1 || snapshots[0].ID != points[1].Snapshots[0].SnapshotID {
 		t.Fatalf("live snapshot lost or deleted snapshot returned: %s", out)
 	}
-	if err = s.updatePendingForget(ctx, repo.ID, []string{snapshots[0].ID}, nil); err != nil {
+	if err = s.recordRetentionDeletion(ctx, nil, map[string][]string{repo.ID: {snapshots[0].ID}}); err != nil {
 		t.Fatal(err)
 	}
 	task = Task{ID: uid(), Kind: "retention", PlanID: plan.ID, Request: request}

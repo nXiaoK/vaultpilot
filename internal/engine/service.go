@@ -288,8 +288,9 @@ func (s *Service) execute(id string) {
 		for _, status := range terminalStatuses {
 			args = append(args, status)
 		}
-		_, _ = s.rt.Store.DB.ExecContext(ctx, "UPDATE backup_runs SET data=json_set(data,'$.id',?,'$.status',?,'$.stage',?,'$.code',?,'$.error',?,'$.finished_at',?,'$.version',version+1),version=version+1,updated_at=? WHERE id=? AND coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+")", args...)
-		s.cleanupTaskEntries(&Task{ID: id, Status: "failed"})
+		var kind sql.NullString
+		_ = s.rt.Store.DB.QueryRowContext(ctx, "UPDATE backup_runs SET data=json_set(data,'$.id',?,'$.status',?,'$.stage',?,'$.code',?,'$.error',?,'$.finished_at',?,'$.version',version+1),version=version+1,updated_at=? WHERE id=? AND coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+") RETURNING json_extract(data,'$.kind')", args...).Scan(&kind)
+		s.cleanupTaskEntries(&Task{ID: id, Kind: kind.String, Status: "failed"})
 		return
 	}
 	ctx, cancel := context.WithCancel(s.ctx)
