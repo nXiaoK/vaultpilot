@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,18 +31,18 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	filename, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	options := url.Values{"_pragma": {"busy_timeout(10000)", "foreign_keys(1)", "journal_mode(WAL)", "synchronous(NORMAL)"}}
+	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(filename), RawQuery: options.Encode()}
+	db, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	s := &Store{DB: db, logLimit: 100000}
-	for _, p := range []string{"PRAGMA journal_mode=WAL", "PRAGMA foreign_keys=ON", "PRAGMA busy_timeout=10000"} {
-		if _, err = db.Exec(p); err != nil {
-			db.Close()
-			return nil, err
-		}
-	}
 	schema := `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS file_entries(run_id TEXT NOT NULL,source_id TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,size INTEGER NOT NULL DEFAULT 0,mtime_ns INTEGER NOT NULL DEFAULT 0,mode INTEGER NOT NULL DEFAULT 0,link_target TEXT NOT NULL DEFAULT '',repo_id TEXT NOT NULL DEFAULT '',snapshot_path TEXT NOT NULL DEFAULT '',PRIMARY KEY(run_id,source_id,path));
@@ -247,8 +249,15 @@ func (s *Store) SetMeta(ctx context.Context, key, value string) error {
 	return err
 }
 func (s *Store) Audit(ctx context.Context, action, resource string) error {
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
-	_, err := s.Save(ctx, "audit_events", id, 0, map[string]any{"action": action, "resource": resource, "at": time.Now().UTC()})
+	return s.auditAt(ctx, action, resource, time.Now().UTC())
+}
+func (s *Store) auditAt(ctx context.Context, action, resource string, at time.Time) error {
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	id := fmt.Sprintf("%d-%x", at.UnixNano(), suffix)
+	_, err := s.Save(ctx, "audit_events", id, 0, map[string]any{"action": action, "resource": resource, "at": at})
 	return err
 }
 func (s *Store) Log(ctx context.Context, task, level, message string) error {
@@ -256,7 +265,7 @@ func (s *Store) Log(ctx context.Context, task, level, message string) error {
 	defer s.logMu.Unlock()
 	message = strings.TrimSpace(message)
 	if len(message) > 8192 {
-		message = message[:8192]
+		message = strings.ToValidUTF8(message[:8192], "")
 	}
 	_, err := s.DB.ExecContext(ctx, "INSERT INTO task_logs(task_id,level,message,created_at) VALUES(?,?,?,?)", task, level, message, time.Now().UTC().Format(time.RFC3339Nano))
 	if err == nil {
