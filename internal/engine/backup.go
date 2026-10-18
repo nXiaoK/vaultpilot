@@ -354,19 +354,32 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 			repos[repo.ID] = repo
 		}
 	}
-	tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return Planning{}, nil, err
-	}
-	defer tx.Rollback()
 	free := map[string]int64{}
 	reservations := map[string]int64{}
+	reservationArgs := []any{t.ID}
 	for id, a := range accounts {
-		var n int64
-		if err := tx.QueryRowContext(ctx, "SELECT coalesce(sum(bytes),0) FROM capacity_reservations WHERE account_id=? AND run_id<>?", id, t.ID).Scan(&n); err != nil {
+		free[id] = capacity(a, 0)
+		reservationArgs = append(reservationArgs, id)
+	}
+	if len(accounts) > 0 {
+		rows, err := s.rt.Store.DB.QueryContext(ctx, "SELECT account_id,sum(bytes) FROM capacity_reservations WHERE run_id<>? AND account_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(accounts)), ",")+") GROUP BY account_id", reservationArgs...)
+		if err != nil {
 			return Planning{}, nil, err
 		}
-		free[id] = capacity(a, n)
+		for rows.Next() {
+			var id string
+			var reserved int64
+			if err = rows.Scan(&id, &reserved); err != nil {
+				rows.Close()
+				return Planning{}, nil, err
+			}
+			free[id] = capacity(accounts[id], reserved)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return Planning{}, nil, err
+		}
 	}
 	target := pool.ShardTarget
 	if target < 1 {
@@ -374,16 +387,26 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 	}
 	alloc := map[string]*Allocation{}
 	result := Planning{Shards: []Allocation{}, CatalogReplicas: pool.CatalogReplicas, Warnings: []string{}}
-	offset := 0
+	after := entryCursor{}
 	for {
-		rows, err := tx.QueryContext(ctx, "SELECT source_id,path,kind,size,mtime_ns,mode,link_target FROM file_entries WHERE run_id=? ORDER BY source_id,path LIMIT 512 OFFSET ?", t.ID, offset)
+		query := "SELECT f.source_id,f.path,f.kind,f.size,f.mtime_ns,f.mode,f.link_target,coalesce(a.repo_id,''),a.size,a.mtime_ns FROM file_entries f LEFT JOIN assignments a ON a.plan_id=? AND a.source_id=f.source_id AND a.path=f.path WHERE f.run_id=?"
+		args := []any{p.ID, t.ID}
+		if after.set {
+			query += " AND (f.source_id,f.path) > (?,?)"
+			args = append(args, after.SourceID, after.Path)
+		}
+		rows, err := s.rt.Store.DB.QueryContext(ctx, query+" ORDER BY f.source_id,f.path LIMIT 512", args...)
 		if err != nil {
 			return result, nil, err
 		}
-		batch := []Entry{}
+		type assignedEntry struct {
+			Entry
+			previousSize, previousMtime sql.NullInt64
+		}
+		batch := []assignedEntry{}
 		for rows.Next() {
-			var e Entry
-			if err := rows.Scan(&e.SourceID, &e.Path, &e.Kind, &e.Size, &e.MtimeNS, &e.Mode, &e.LinkTarget); err != nil {
+			var e assignedEntry
+			if err := rows.Scan(&e.SourceID, &e.Path, &e.Kind, &e.Size, &e.MtimeNS, &e.Mode, &e.LinkTarget, &e.RepositoryID, &e.previousSize, &e.previousMtime); err != nil {
 				rows.Close()
 				return result, nil, err
 			}
@@ -397,15 +420,13 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 		if len(batch) == 0 {
 			break
 		}
-		offset += len(batch)
-		for _, e := range batch {
-			var repoID string
-			var size, mtime int64
-			err := tx.QueryRowContext(ctx, "SELECT repo_id,size,mtime_ns FROM assignments WHERE plan_id=? AND source_id=? AND path=?", p.ID, e.SourceID, e.Path).Scan(&repoID, &size, &mtime)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return result, nil, err
-			}
-			growth := estimate(e, err == nil && size == e.Size && mtime == e.MtimeNS)
+		last := batch[len(batch)-1]
+		after = entryCursor{SourceID: last.SourceID, Path: last.Path, set: true}
+		updates := make([]Entry, 0, len(batch))
+		for _, assigned := range batch {
+			e := assigned.Entry
+			repoID := e.RepositoryID
+			growth := estimate(e, assigned.previousSize.Valid && assigned.previousSize.Int64 == e.Size && assigned.previousMtime.Int64 == e.MtimeNS)
 			if repoID != "" {
 				repo, ok := repos[repoID]
 				if !ok {
@@ -473,19 +494,16 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 			sh.EstimatedGrowth += growth
 			result.FileCount++
 			result.LogicalBytes += e.Size
-			if _, err = tx.ExecContext(ctx, "UPDATE file_entries SET repo_id=? WHERE run_id=? AND source_id=? AND path=?", repoID, t.ID, e.SourceID, e.Path); err != nil {
-				return result, nil, err
-			}
+			e.RepositoryID = repoID
+			updates = append(updates, e)
+		}
+		if err = s.writeEntryPage(ctx, "UPDATE file_entries SET repo_id=? WHERE run_id=? AND source_id=? AND path=?", updates, func(e Entry) []any {
+			return []any{e.RepositoryID, t.ID, e.SourceID, e.Path}
+		}); err != nil {
+			return result, nil, err
 		}
 	}
-	if t.Kind != "preview" {
-		for id, n := range reservations {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO capacity_reservations(run_id,account_id,bytes) VALUES(?,?,?) ON CONFLICT(run_id,account_id) DO UPDATE SET bytes=excluded.bytes", t.ID, id, n); err != nil {
-				return result, nil, err
-			}
-		}
-	}
-	if err = tx.Commit(); err != nil {
+	if err = s.reserveCapacity(ctx, t, accounts, reservations); err != nil {
 		return result, nil, err
 	}
 	for _, a := range alloc {
@@ -494,6 +512,95 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 	sort.Slice(result.Shards, func(i, j int) bool { return result.Shards[i].RepositoryID < result.Shards[j].RepositoryID })
 	return result, repos, nil
 }
+
+// Recheck current quota and reservations together: another task may have refreshed
+// usage and released its reservation while the file pages were being planned.
+func (s *Service) reserveCapacity(ctx context.Context, t *Task, accounts map[string]Account, reservations map[string]int64) error {
+	if len(reservations) == 0 {
+		return ctx.Err()
+	}
+	tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	args := []any{t.ID}
+	for id := range reservations {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT a.id,a.data,coalesce(sum(r.bytes),0) FROM accounts a LEFT JOIN capacity_reservations r ON r.account_id=a.id AND r.run_id<>? WHERE a.id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(reservations)), ",")+") GROUP BY a.id,a.data", args...)
+	if err != nil {
+		return err
+	}
+	checked := 0
+	for rows.Next() {
+		var id string
+		var raw []byte
+		var reserved int64
+		if err = rows.Scan(&id, &raw, &reserved); err != nil {
+			rows.Close()
+			return err
+		}
+		var current Account
+		if err = json.Unmarshal(raw, &current); err != nil {
+			rows.Close()
+			return err
+		}
+		if !current.Enabled || !current.Verified {
+			rows.Close()
+			return fail("ASSIGNED_ACCOUNT_OFFLINE", "规划期间账号已停用或失效，请重新规划")
+		}
+		if capacity(current, reserved) < reservations[id] || capacity(accounts[id], reserved) < reservations[id] {
+			rows.Close()
+			return fail("CAPACITY_EXHAUSTED", "规划期间账号配额或预留变化，请重新规划")
+		}
+		checked++
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if checked != len(reservations) {
+		return sql.ErrNoRows
+	}
+	if t.Kind != "preview" {
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO capacity_reservations(run_id,account_id,bytes) VALUES(?,?,?) ON CONFLICT(run_id,account_id) DO UPDATE SET bytes=excluded.bytes")
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for id, required := range reservations {
+			if _, err = stmt.ExecContext(ctx, t.ID, id, required); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Service) writeEntryPage(ctx context.Context, query string, entries []Entry, args func(Entry) []any) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, e := range entries {
+		if _, err = stmt.ExecContext(ctx, args(e)...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Service) backup(ctx context.Context, t *Task) error {
 	releasePlan := s.lock("plan:" + t.PlanID)
 	defer releasePlan()
@@ -704,36 +811,32 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if err = os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	offset := 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=?", []any{t.ID, repo.ID}, 512, offset)
-		if err != nil {
-			return "", err
-		}
-		if len(entries) == 0 {
-			break
-		}
-		offset += len(entries)
-		for _, e := range entries {
+	err = s.eachEntry(ctx, "run_id=? AND repo_id=?", []any{t.ID, repo.ID}, 512, func(entries []Entry) error {
+		for i := range entries {
+			e := &entries[i]
 			path := filepath.Join(sources[e.SourceID].Path, filepath.FromSlash(e.Path))
 			if e.Kind == "dir" {
 				path = filepath.Join(root, e.SourceID, filepath.FromSlash(e.Path))
 				if err = os.MkdirAll(path, 0700); err != nil {
-					return "", err
+					return err
 				}
 			} else {
 				info, err := os.Lstat(path)
 				if err != nil || e.Kind == "file" && !info.Mode().IsRegular() || e.Kind == "symlink" && info.Mode()&os.ModeSymlink == 0 {
-					return "", fail("SOURCE_CHANGED", "扫描后源类型变化："+path)
+					return fail("SOURCE_CHANGED", "扫描后源类型变化："+path)
 				}
 				if _, err = list.Write(append([]byte(path), 0)); err != nil {
-					return "", err
+					return err
 				}
 			}
-			if _, err = s.rt.Store.DB.ExecContext(ctx, "UPDATE file_entries SET snapshot_path=? WHERE run_id=? AND source_id=? AND path=?", filepath.ToSlash(path), t.ID, e.SourceID, e.Path); err != nil {
-				return "", err
-			}
+			e.SnapshotPath = filepath.ToSlash(path)
 		}
+		return s.writeEntryPage(ctx, "UPDATE file_entries SET snapshot_path=? WHERE run_id=? AND source_id=? AND path=?", entries, func(e Entry) []any {
+			return []any{e.SnapshotPath, t.ID, e.SourceID, e.Path}
+		})
+	})
+	if err != nil {
+		return "", err
 	}
 	// Only the private metadata tree is traversed recursively; business directories are never roots.
 	if _, err = list.Write(append([]byte(root), 0)); err != nil {
@@ -742,16 +845,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if err = list.Close(); err != nil {
 		return "", err
 	}
-	offset = 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=? AND kind=\x27dir\x27", []any{t.ID, repo.ID}, 512, offset)
-		if err != nil {
-			return "", err
-		}
-		if len(entries) == 0 {
-			break
-		}
-		offset += len(entries)
+	err = s.eachEntry(ctx, "run_id=? AND repo_id=? AND kind='dir'", []any{t.ID, repo.ID}, 512, func(entries []Entry) error {
 		for _, e := range entries {
 			path := filepath.FromSlash(e.SnapshotPath)
 			// Keep the private staging tree at 0700. Source permissions can rely
@@ -760,9 +854,13 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 			// the original mode for restore's final directory metadata pass.
 			at := time.Unix(0, e.MtimeNS)
 			if err = os.Chtimes(path, at, at); err != nil {
-				return "", err
+				return err
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	args := []string{"backup", "--files-from-raw", list.Name(), "--tag", "vaultpilot-run:" + t.ID, "--tag", "vaultpilot-repository:" + repo.ID}
 	if p.BandwidthKiB > 0 {
@@ -837,6 +935,17 @@ func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, 
 	}
 	_, _ = s.rt.Store.DB.ExecContext(ctx, "DELETE FROM engine_snapshot_entries_v2 WHERE task_id=? AND repo_id=?", t.ID, repo.ID)
 	var callbackErr error
+	batch := make([]Entry, 0, 512)
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		err := s.writeEntryPage(ctx, "INSERT OR REPLACE INTO engine_snapshot_entries_v2(task_id,repo_id,path,kind,size,mtime_ns,link_target) VALUES(?,?,?,?,?,?,?)", batch, func(e Entry) []any {
+			return []any{t.ID, repo.ID, e.Path, e.Kind, e.Size, e.MtimeNS, e.LinkTarget}
+		})
+		batch = batch[:0]
+		return err
+	}
 	_, err = s.restic(ctx, t, repo, a, []string{"ls", snapshot}, func(line string) {
 		if callbackErr != nil {
 			return
@@ -852,13 +961,19 @@ func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, 
 		if json.Unmarshal([]byte(line), &node) != nil || node.Type != "node" {
 			return
 		}
-		_, callbackErr = s.rt.Store.DB.ExecContext(ctx, "INSERT OR REPLACE INTO engine_snapshot_entries_v2(task_id,repo_id,path,kind,size,mtime_ns,link_target) VALUES(?,?,?,?,?,?,?)", t.ID, repo.ID, node.Path, node.Kind, node.Size, parseMtime(node.Mtime), node.LinkTarget)
+		batch = append(batch, Entry{Path: node.Path, Kind: node.Kind, Size: node.Size, MtimeNS: parseMtime(node.Mtime), LinkTarget: node.LinkTarget})
+		if len(batch) == cap(batch) {
+			callbackErr = flush()
+		}
 	})
 	if err != nil {
 		return err
 	}
 	if callbackErr != nil {
 		return callbackErr
+	}
+	if err = flush(); err != nil {
+		return err
 	}
 	var missing int
 	if err = s.rt.Store.DB.QueryRowContext(ctx, "SELECT count(*) FROM file_entries f LEFT JOIN engine_snapshot_entries_v2 e ON e.task_id=f.run_id AND e.repo_id=f.repo_id AND e.path=f.snapshot_path WHERE f.run_id=? AND f.repo_id=? AND (e.path IS NULL OR e.kind<>CASE f.kind WHEN \x27symlink\x27 THEN \x27symlink\x27 ELSE f.kind END OR (f.kind=\x27file\x27 AND (e.size<>f.size OR e.mtime_ns<>f.mtime_ns)))", t.ID, repo.ID).Scan(&missing); err != nil {
@@ -902,16 +1017,7 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 		return err
 	}
 	defer root.Close()
-	offset := 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=? AND kind='symlink'", []any{t.ID, repo.ID}, 128, offset)
-		if err != nil {
-			return err
-		}
-		if len(entries) == 0 {
-			return nil
-		}
-		offset += len(entries)
+	return s.eachEntry(ctx, "run_id=? AND repo_id=? AND kind='symlink'", []any{t.ID, repo.ID}, 128, func(entries []Entry) error {
 		args := []string{"restore", snapshot, "--target", dir}
 		for _, e := range entries {
 			args = append(args, "--include", globLiteral(e.SnapshotPath))
@@ -932,7 +1038,8 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 				return err
 			}
 		}
-	}
+		return nil
+	})
 }
 
 func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...string) ([]byte, error) {

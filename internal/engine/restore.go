@@ -252,20 +252,11 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 	available := int64(stat.Bavail) * int64(stat.Bsize)
 	missing := map[string]bool{}
 	maxFile := int64(0)
-	offset := 0
-	for {
-		entries, err := s.entries(ctx, where, args, 512, offset)
-		if err != nil {
-			return preview, err
-		}
-		if len(entries) == 0 {
-			break
-		}
-		offset += len(entries)
+	err = s.eachEntry(ctx, where, args, 512, func(entries []Entry) error {
 		for _, e := range entries {
 			rel, err := restoreOutputPath(e, preview.Layout)
 			if err != nil {
-				return preview, err
+				return err
 			}
 			preview.FileCount++
 			preview.LogicalBytes += e.Size
@@ -284,7 +275,7 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 			}
 			// Query only; no target writes during preview.
 			if err = checkRestoreDirectoryWritable(root, filepath.Dir(filepath.Join(targetRel, rel)), checkedDirectories); err != nil {
-				return preview, err
+				return err
 			}
 			path := filepath.Join(target, rel)
 			_, err = os.Lstat(path)
@@ -300,9 +291,13 @@ func (s *Service) restorePreview(ctx context.Context, req RestoreRequest) (Resto
 					preview.Conflicts = append(preview.Conflicts, PathSelection{e.SourceID, e.Path})
 				}
 			} else if !errors.Is(err, os.ErrNotExist) {
-				return preview, restoreTargetError(err, path)
+				return restoreTargetError(err, path)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return preview, err
 	}
 	for id := range missing {
 		preview.MissingAccounts = append(preview.MissingAccounts, id)
@@ -631,96 +626,86 @@ func (s *Service) restore(ctx context.Context, t *Task) (resultErr error) {
 		}
 		unlockAccount := s.lock("account:" + account.ID)
 		unlockRepo := s.lock("repo:" + repo.ID)
-		offset := 0
-		for {
-			if e := s.rt.CheckCacheBudget(); e != nil {
-				unlockRepo()
-				unlockAccount()
-				return fail("CACHE_LIMIT_EXCEEDED", e.Error())
-			}
-			filter := where + " AND repo_id=?"
-			filterArgs := append(append([]any{}, args...), repo.ID)
-			entries, err := s.entries(ctx, filter, filterArgs, 128, offset)
-			if err != nil {
-				unlockRepo()
-				unlockAccount()
-				return err
-			}
-			if len(entries) == 0 {
-				break
-			}
-			batchBytes := int64(0)
-			take := 0
-			for _, entry := range entries {
-				if take > 0 && batchBytes+entry.Size > 64<<20 {
-					break
+		filter := where + " AND repo_id=?"
+		filterArgs := append(append([]any{}, args...), repo.ID)
+		err = s.eachEntry(ctx, filter, filterArgs, 128, func(entries []Entry) error {
+			for len(entries) > 0 {
+				if err := s.rt.CheckCacheBudget(); err != nil {
+					return fail("CACHE_LIMIT_EXCEEDED", err.Error())
 				}
-				batchBytes += entry.Size
-				take++
-			}
-			entries = entries[:take]
-			offset += len(entries)
-			restoreArgs := []string{"restore", snap.SnapshotID, "--target", privateDir, "--verify"}
-			for _, e := range entries {
-				restoreArgs = append(restoreArgs, "--include", globLiteral(e.SnapshotPath))
-			}
-			if _, err = s.restic(ctx, t, repo, account, restoreArgs, func(line string) {
-				var msg struct {
-					Type string `json:"message_type"`
-				}
-				if json.Unmarshal([]byte(line), &msg) != nil || msg.Type == "error" {
-					s.log(t, line)
-				}
-			}); err != nil {
-				unlockRepo()
-				unlockAccount()
-				failed += int64(len(entries))
-				verificationUnknown = true
+				batchBytes := int64(0)
+				take := 0
 				for _, entry := range entries {
-					failureCount++
-					if len(failures) < 200 {
-						failures = append(failures, map[string]any{"source_id": entry.SourceID, "path": entry.Path, "code": "RESTORE_ENGINE_FAILED", "stage": "engine_restore_or_verify"})
+					if take > 0 && batchBytes+entry.Size > 64<<20 {
+						break
+					}
+					batchBytes += entry.Size
+					take++
+				}
+				batch := entries[:take]
+				entries = entries[take:]
+				restoreArgs := []string{"restore", snap.SnapshotID, "--target", privateDir, "--verify"}
+				for _, e := range batch {
+					restoreArgs = append(restoreArgs, "--include", globLiteral(e.SnapshotPath))
+				}
+				if _, err = s.restic(ctx, t, repo, account, restoreArgs, func(line string) {
+					var msg struct {
+						Type string `json:"message_type"`
+					}
+					if json.Unmarshal([]byte(line), &msg) != nil || msg.Type == "error" {
+						s.log(t, line)
+					}
+				}); err != nil {
+					failed += int64(len(batch))
+					verificationUnknown = true
+					for _, entry := range batch {
+						failureCount++
+						if len(failures) < 200 {
+							failures = append(failures, map[string]any{"source_id": entry.SourceID, "path": entry.Path, "code": "RESTORE_ENGINE_FAILED", "stage": "engine_restore_or_verify"})
+						}
+					}
+					return fail("RESTORE_ENGINE_FAILED", "Restic 恢复或校验失败："+err.Error())
+				}
+				for _, e := range batch {
+					if err = s.copyRestored(out, private, e, req.Overwrite, preview.Layout); err != nil {
+						var f *failure
+						code := "RESTORE_WRITE_FAILED"
+						if errors.As(err, &f) {
+							code = f.Code
+						}
+						if code == "RESTORE_CONFLICT" {
+							conflicts++
+						} else {
+							failed++
+						}
+						if code == "RESTORE_SIZE_MISMATCH" || code == "RESTORE_LINK_MISMATCH" || code == "RESTORE_TYPE_MISMATCH" {
+							verificationErrors++
+						}
+						failureCount++
+						if len(failures) < 200 {
+							failures = append(failures, map[string]any{"source_id": e.SourceID, "path": e.Path, "code": code, "stage": "output_write"})
+						}
+						return err
+					}
+					if e.Kind != "dir" {
+						relative, _ := sourceSnapshotRelative(e.SnapshotPath)
+						_ = private.Remove(relative)
+					}
+					restored++
+					t.Progress = float64(restored) / float64(preview.FileCount)
+					if e.Kind == "file" {
+						t.UploadedBytes += e.Size
 					}
 				}
-				return fail("RESTORE_ENGINE_FAILED", "Restic 恢复或校验失败："+err.Error())
+				s.save(t)
 			}
-			for _, e := range entries {
-				if err = s.copyRestored(out, private, e, req.Overwrite, preview.Layout); err != nil {
-					var f *failure
-					code := "RESTORE_WRITE_FAILED"
-					if errors.As(err, &f) {
-						code = f.Code
-					}
-					if code == "RESTORE_CONFLICT" {
-						conflicts++
-					} else {
-						failed++
-					}
-					if code == "RESTORE_SIZE_MISMATCH" || code == "RESTORE_LINK_MISMATCH" || code == "RESTORE_TYPE_MISMATCH" {
-						verificationErrors++
-					}
-					failureCount++
-					if len(failures) < 200 {
-						failures = append(failures, map[string]any{"source_id": e.SourceID, "path": e.Path, "code": code, "stage": "output_write"})
-					}
-					unlockRepo()
-					unlockAccount()
-					return err
-				}
-				if e.Kind != "dir" {
-					relative, _ := sourceSnapshotRelative(e.SnapshotPath)
-					_ = private.Remove(relative)
-				}
-				restored++
-				t.Progress = float64(restored) / float64(preview.FileCount)
-				if e.Kind == "file" {
-					t.UploadedBytes += e.Size
-				}
-			}
-			s.save(t)
-		}
+			return nil
+		})
 		unlockRepo()
 		unlockAccount()
+		if err != nil {
+			return err
+		}
 	}
 	// Apply directory permissions and timestamps after every descendant is written.
 	rows, err := s.rt.Store.DB.QueryContext(ctx, "SELECT source_id,path,mode,mtime_ns,repo_id FROM file_entries WHERE "+where+" AND kind=\x27dir\x27 ORDER BY length(path) DESC,path DESC", args...)

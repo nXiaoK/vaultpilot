@@ -980,9 +980,50 @@ func entryFilter(run, source, prefix, search string) (string, []any) {
 	}
 	return w, a
 }
+
+type entryCursor struct {
+	SourceID, Path string
+	set            bool
+}
+
 func (s *Service) entries(ctx context.Context, where string, args []any, limit, offset int) ([]Entry, error) {
 	a := append(append([]any{}, args...), limit, offset)
-	rows, err := s.rt.Store.DB.QueryContext(ctx, "SELECT source_id,path,kind,size,mtime_ns,mode,link_target,repo_id,snapshot_path FROM file_entries WHERE "+where+" ORDER BY source_id,path LIMIT ? OFFSET ?", a...)
+	return s.queryEntries(ctx, "SELECT source_id,path,kind,size,mtime_ns,mode,link_target,repo_id,snapshot_path FROM file_entries WHERE "+where+" ORDER BY source_id,path LIMIT ? OFFSET ?", a)
+}
+
+func (s *Service) entriesAfter(ctx context.Context, where string, args []any, after entryCursor, limit int) ([]Entry, error) {
+	if limit < 1 {
+		return nil, errors.New("文件清单分页大小无效")
+	}
+	a := append([]any{}, args...)
+	if after.set || after.SourceID != "" || after.Path != "" {
+		where = "(" + where + ") AND (source_id,path) > (?,?)"
+		a = append(a, after.SourceID, after.Path)
+	}
+	a = append(a, limit)
+	return s.queryEntries(ctx, "SELECT source_id,path,kind,size,mtime_ns,mode,link_target,repo_id,snapshot_path FROM file_entries WHERE "+where+" ORDER BY source_id,path LIMIT ?", a)
+}
+
+func (s *Service) eachEntry(ctx context.Context, where string, args []any, pageSize int, fn func([]Entry) error) error {
+	after := entryCursor{}
+	for {
+		entries, err := s.entriesAfter(ctx, where, args, after, pageSize)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		last := entries[len(entries)-1]
+		after = entryCursor{SourceID: last.SourceID, Path: last.Path, set: true}
+		if err = fn(entries); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *Service) queryEntries(ctx context.Context, query string, args []any) ([]Entry, error) {
+	rows, err := s.rt.Store.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
