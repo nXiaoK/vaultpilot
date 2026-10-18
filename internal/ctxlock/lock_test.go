@@ -149,9 +149,15 @@ func TestRWCancelledReaderDoesNotAffectWriter(t *testing.T) {
 		t.Fatalf("reader cancellation: %v", err)
 	}
 	m.Unlock()
-	m.RLock()
+	reuse, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stop()
+	if err := m.RLockContext(reuse); err != nil {
+		t.Fatalf("cancelled reader stranded read admission: %v", err)
+	}
 	m.RUnlock()
-	m.Lock()
+	if err := m.LockContext(reuse); err != nil {
+		t.Fatalf("cancelled reader stranded writer admission: %v", err)
+	}
 	m.Unlock()
 }
 
