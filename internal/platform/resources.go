@@ -2,10 +2,8 @@ package platform
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -468,10 +466,4 @@ func (r *Runtime) deleteResource(w http.ResponseWriter, req *http.Request, table
 	}
 	_ = r.Store.Audit(req.Context(), table+".delete", id)
 	w.WriteHeader(204)
-}
-func describeError(e error) string {
-	if errors.Is(e, sql.ErrNoRows) {
-		return "记录不存在"
-	}
-	return fmt.Sprint(e)
 }

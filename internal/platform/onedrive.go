@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -38,9 +37,6 @@ func (e cloudError) Error() string {
 		return "授权已失效或未授予所需权限，请重新授权"
 	}
 	return fmt.Sprintf("微软接口请求失败（HTTP %d）", e.Status)
-}
-func (r *Runtime) tokenEndpoint() string {
-	return "https://login.microsoftonline.com/" + url.PathEscape(r.Config.OAuthTenant) + "/oauth2/v2.0/token"
 }
 func (r *Runtime) tokenExchange(ctx context.Context, values url.Values) (OAuthToken, error) {
 	return r.tokenExchangeFor(ctx, r.customCredential(OAuthToken{}), values)
@@ -689,13 +685,4 @@ func (r *Runtime) refreshQuota(w http.ResponseWriter, req *http.Request) {
 	v, e := r.Store.Save(req.Context(), "accounts", a.ID, a.Version, a)
 	a.Version = v
 	saved(w, 200, e, a)
-}
-func retryDuration(header string) time.Duration {
-	if secs, e := strconv.Atoi(header); e == nil && secs >= 0 {
-		return time.Duration(secs) * time.Second
-	}
-	if t, e := http.ParseTime(header); e == nil {
-		return time.Until(t)
-	}
-	return 30 * time.Second
 }
