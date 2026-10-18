@@ -374,9 +374,15 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 	}
 	alloc := map[string]*Allocation{}
 	result := Planning{Shards: []Allocation{}, CatalogReplicas: pool.CatalogReplicas, Warnings: []string{}}
-	offset := 0
+	after := entryCursor{}
 	for {
-		rows, err := tx.QueryContext(ctx, "SELECT source_id,path,kind,size,mtime_ns,mode,link_target FROM file_entries WHERE run_id=? ORDER BY source_id,path LIMIT 512 OFFSET ?", t.ID, offset)
+		query := "SELECT source_id,path,kind,size,mtime_ns,mode,link_target FROM file_entries WHERE run_id=?"
+		args := []any{t.ID}
+		if after.set {
+			query += " AND (source_id,path) > (?,?)"
+			args = append(args, after.SourceID, after.Path)
+		}
+		rows, err := tx.QueryContext(ctx, query+" ORDER BY source_id,path LIMIT 512", args...)
 		if err != nil {
 			return result, nil, err
 		}
@@ -397,7 +403,8 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 		if len(batch) == 0 {
 			break
 		}
-		offset += len(batch)
+		last := batch[len(batch)-1]
+		after = entryCursor{SourceID: last.SourceID, Path: last.Path, set: true}
 		for _, e := range batch {
 			var repoID string
 			var size, mtime int64
@@ -704,36 +711,31 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if err = os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	offset := 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=?", []any{t.ID, repo.ID}, 512, offset)
-		if err != nil {
-			return "", err
-		}
-		if len(entries) == 0 {
-			break
-		}
-		offset += len(entries)
+	err = s.eachEntry(ctx, "run_id=? AND repo_id=?", []any{t.ID, repo.ID}, 512, func(entries []Entry) error {
 		for _, e := range entries {
 			path := filepath.Join(sources[e.SourceID].Path, filepath.FromSlash(e.Path))
 			if e.Kind == "dir" {
 				path = filepath.Join(root, e.SourceID, filepath.FromSlash(e.Path))
 				if err = os.MkdirAll(path, 0700); err != nil {
-					return "", err
+					return err
 				}
 			} else {
 				info, err := os.Lstat(path)
 				if err != nil || e.Kind == "file" && !info.Mode().IsRegular() || e.Kind == "symlink" && info.Mode()&os.ModeSymlink == 0 {
-					return "", fail("SOURCE_CHANGED", "扫描后源类型变化："+path)
+					return fail("SOURCE_CHANGED", "扫描后源类型变化："+path)
 				}
 				if _, err = list.Write(append([]byte(path), 0)); err != nil {
-					return "", err
+					return err
 				}
 			}
 			if _, err = s.rt.Store.DB.ExecContext(ctx, "UPDATE file_entries SET snapshot_path=? WHERE run_id=? AND source_id=? AND path=?", filepath.ToSlash(path), t.ID, e.SourceID, e.Path); err != nil {
-				return "", err
+				return err
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	// Only the private metadata tree is traversed recursively; business directories are never roots.
 	if _, err = list.Write(append([]byte(root), 0)); err != nil {
@@ -742,16 +744,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if err = list.Close(); err != nil {
 		return "", err
 	}
-	offset = 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=? AND kind=\x27dir\x27", []any{t.ID, repo.ID}, 512, offset)
-		if err != nil {
-			return "", err
-		}
-		if len(entries) == 0 {
-			break
-		}
-		offset += len(entries)
+	err = s.eachEntry(ctx, "run_id=? AND repo_id=? AND kind='dir'", []any{t.ID, repo.ID}, 512, func(entries []Entry) error {
 		for _, e := range entries {
 			path := filepath.FromSlash(e.SnapshotPath)
 			// Keep the private staging tree at 0700. Source permissions can rely
@@ -760,9 +753,13 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 			// the original mode for restore's final directory metadata pass.
 			at := time.Unix(0, e.MtimeNS)
 			if err = os.Chtimes(path, at, at); err != nil {
-				return "", err
+				return err
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	args := []string{"backup", "--files-from-raw", list.Name(), "--tag", "vaultpilot-run:" + t.ID, "--tag", "vaultpilot-repository:" + repo.ID}
 	if p.BandwidthKiB > 0 {
@@ -902,16 +899,7 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 		return err
 	}
 	defer root.Close()
-	offset := 0
-	for {
-		entries, err := s.entries(ctx, "run_id=? AND repo_id=? AND kind='symlink'", []any{t.ID, repo.ID}, 128, offset)
-		if err != nil {
-			return err
-		}
-		if len(entries) == 0 {
-			return nil
-		}
-		offset += len(entries)
+	return s.eachEntry(ctx, "run_id=? AND repo_id=? AND kind='symlink'", []any{t.ID, repo.ID}, 128, func(entries []Entry) error {
 		args := []string{"restore", snapshot, "--target", dir}
 		for _, e := range entries {
 			args = append(args, "--include", globLiteral(e.SnapshotPath))
@@ -932,7 +920,8 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 				return err
 			}
 		}
-	}
+		return nil
+	})
 }
 
 func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...string) ([]byte, error) {
