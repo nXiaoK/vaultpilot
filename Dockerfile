@@ -34,4 +34,5 @@ COPY --from=frontend /src/web/dist/ /app/web/dist/
 WORKDIR /app
 USER 1000:1000
 EXPOSE 8080
+HEALTHCHECK CMD ["/app/healthcheck"]
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/vaultpilot"]
