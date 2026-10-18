@@ -2361,7 +2361,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '502':
           "$ref": "#/components/responses/APIError"
-      description: 先提交全局删除决策，再forget/prune。保护点、挂载异常、异常减少和持续失败会阻止清理；恢复节点拒绝。
+      description: 先检查账号可用及维护预留，再提交全局删除决策及待回收清单，最后 forget/prune。空 point_ids 重试已提交的数据回收，任务结果包含 deleted_point_ids、pruned_repositories、cleanup_pending。保护点、挂载异常、异常减少和持续失败会阻止清理及重试；恢复节点拒绝。
       parameters:
       - "$ref": "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -2404,7 +2404,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '502':
           "$ref": "#/components/responses/APIError"
-      description: 正常迁移冻结计划/账号/仓库，完整复制及全量读取验证，提交新位置，保留旧副本。cleanup_old是独立确认的破坏性操作；恢复节点拒绝。
+      description: 目标账号必须属于仓库所在计划的存储池，否则任务返回 MIGRATION_TARGET_OUTSIDE_POOL。正常迁移冻结计划/账号/仓库，完整复制及全量读取验证，提交新位置，保留旧副本。cleanup_old是独立确认的破坏性操作；恢复节点拒绝。
       parameters:
       - "$ref": "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -3879,6 +3879,12 @@ components:
           type: array
           items:
             "$ref": "#/components/schemas/Location"
+        pending_forget:
+          type: array
+          readOnly: true
+          description: 已提交删除决策但尚未完成 forget/prune 的快照 ID，重试成功后清空。
+          items:
+            type: string
         logical_bytes:
           type: integer
           format: int64
@@ -4345,11 +4351,11 @@ components:
           type: array
           items:
             type: string
-          minItems: 1
+          description: 空数组只重试本计划已提交的仓库数据回收；已完成回收的计划再次重试会幂等成功。
         confirm:
           type: boolean
           const: true
-      description: 实际执行重新计算全局引用及保留集合，拒绝受保护点或仍需保留的点。
+      description: 实际执行重新计算全局引用及保留集合，拒绝受保护点或仍需保留的点。提交前检查账号可用及维护预留；RETENTION_ACCOUNT_UNAVAILABLE 或 MAINTENANCE_RESERVE_REQUIRED 不会发布新的删除决策。RETENTION_ENGINE_FAILED 保留待回收清单，可用空 point_ids 重试。未完成备份等阻塞项仍返回 RETENTION_PAUSED；从未清理且无待回收数据时空选择返回 EMPTY_RETENTION_SELECTION。
       required:
       - plan_id
       - point_ids
@@ -4371,6 +4377,10 @@ components:
           type: array
           items:
             "$ref": "#/components/schemas/Snapshot"
+        pending_prune_repositories:
+          type: integer
+          minimum: 0
+          description: 本计划存在待重试数据回收的仓库数
         blocked:
           type: boolean
         reasons:
@@ -4382,6 +4392,7 @@ components:
       - keep_ids
       - delete_ids
       - snapshots
+      - pending_prune_repositories
       - blocked
       - reasons
     MigrateRepositoryRequest:

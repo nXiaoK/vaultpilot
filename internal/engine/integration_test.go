@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"vaultpilot/internal/platform"
@@ -192,5 +194,151 @@ func TestRealResticMidRunRestoreReportsPartialOutput(t *testing.T) {
 	}
 	if stats["verification_status"] != "partial" {
 		t.Fatalf("unattempted entries reported fully verified: %#v", stats)
+	}
+}
+
+func TestRealResticRetentionPruneRetriesAfterFailure(t *testing.T) {
+	s, plan, pool, account := realFixture(t)
+	ctx := context.Background()
+	pool.CatalogReplicas = 1
+	if _, err := s.rt.Store.Save(ctx, "storage_pools", pool.ID, -1, pool); err != nil {
+		t.Fatal(err)
+	}
+	var source Source
+	if err := s.rt.Store.Get(ctx, "sources", plan.SourceIDs[0], &source); err != nil {
+		t.Fatal(err)
+	}
+	points := []Point{}
+	for i := 0; i < 2; i++ {
+		if err := os.WriteFile(filepath.Join(source.Path, "file.txt"), []byte(fmt.Sprintf("backup content %d", i)), 0600); err != nil {
+			t.Fatal(err)
+		}
+		task := Task{ID: uid(), Kind: "backup", PlanID: plan.ID, StartedAt: now()}
+		if err := s.backup(ctx, &task); err != nil {
+			t.Fatal(err)
+		}
+		var point Point
+		if err := s.rt.Store.Get(ctx, "recovery_points", task.Result.(map[string]any)["point_id"].(string), &point); err != nil {
+			t.Fatal(err)
+		}
+		points = append(points, point)
+	}
+	binary := s.rt.Config.ResticBin
+	wrapper := filepath.Join(t.TempDir(), "restic-prune-failure")
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = prune ]; then echo injected-prune-failure >&2; exit 73; fi\ndone\nexec '" + strings.ReplaceAll(binary, "'", "'\\''") + "' \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s.rt.Config.ResticBin = wrapper
+	request, _ := json.Marshal(RetentionRequest{PlanID: plan.ID, PointIDs: []string{points[0].ID}, Confirm: true})
+	task := Task{ID: uid(), Kind: "retention", PlanID: plan.ID, Request: request}
+	err := s.retain(ctx, &task)
+	failure, ok := err.(*failure)
+	if !ok || failure.Code != "RETENTION_ENGINE_FAILED" {
+		t.Fatalf("expected injected prune failure: %v", err)
+	}
+	var repo Repository
+	if err = s.rt.Store.Get(ctx, "repositories", points[0].Snapshots[0].RepositoryID, &repo); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.PendingForget) == 0 || task.Result.(map[string]any)["cleanup_pending"] != true {
+		t.Fatalf("retry intent lost: %+v %#v", repo, task.Result)
+	}
+	var deleted Point
+	if err = s.rt.Store.Get(ctx, "recovery_points", points[0].ID, &deleted); err != nil || deleted.DeletedAt == "" {
+		t.Fatalf("delete decision missing: %+v %v", deleted, err)
+	}
+	// The deletion catalog must carry the retry intent even before the local registration is saved.
+	if err = s.discover(ctx, &Task{ID: uid(), Kind: "discover"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.rt.Store.Get(ctx, "repositories", repo.ID, &repo); err != nil || len(repo.PendingForget) == 0 {
+		t.Fatalf("catalog lost pending cleanup: %+v %v", repo, err)
+	}
+	s.rt.Config.ResticBin = binary
+	out, err := s.restic(ctx, &task, repo, account, []string{"snapshots", "--json"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshots []struct {
+		ID string `json:"id"`
+	}
+	if err = json.Unmarshal(out, &snapshots); err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == points[0].Snapshots[0].SnapshotID {
+			t.Fatal("fault occurred before forget; expected prune-only retry")
+		}
+	}
+	request, _ = json.Marshal(RetentionRequest{PlanID: plan.ID, PointIDs: []string{}, Confirm: true})
+	catalogPath := filepath.Join(account.LocalPath, "VaultPilot", s.rt.VaultID(), "catalog")
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+	wrapper = filepath.Join(t.TempDir(), "restic-catalog-failure")
+	script = "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = prune ]; then\n    " + quote(binary) + " \"$@\" || exit $?\n    mv " + quote(catalogPath) + " " + quote(catalogPath+".saved") + " || exit $?\n    : > " + quote(catalogPath) + "\n    exit 0\n  fi\ndone\nexec " + quote(binary) + " \"$@\"\n"
+	if err = os.WriteFile(wrapper, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s.rt.Config.ResticBin = wrapper
+	task = Task{ID: uid(), Kind: "retention", PlanID: plan.ID, Request: request}
+	if err = s.retain(ctx, &task); err == nil || task.Result.(map[string]any)["cleanup_pending"] != true {
+		t.Fatalf("failed cleanup catalog lost retry intent: %v %#v", err, task.Result)
+	}
+	if err = os.Remove(catalogPath); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(catalogPath+".saved", catalogPath); err != nil {
+		t.Fatal(err)
+	}
+	s.rt.Config.ResticBin = binary
+	for i := 0; i < 2; i++ {
+		task = Task{ID: uid(), Kind: "retention", PlanID: plan.ID, Request: request}
+		if err = s.retain(ctx, &task); err != nil {
+			t.Fatalf("retry %d: %v", i, err)
+		}
+		if task.Result.(map[string]any)["cleanup_pending"] != false {
+			t.Fatalf("cleanup remains pending: %#v", task.Result)
+		}
+	}
+	repoID := repo.ID
+	repo = Repository{}
+	if err = s.rt.Store.Get(ctx, "repositories", repoID, &repo); err != nil || len(repo.PendingForget) != 0 {
+		t.Fatalf("pending cleanup not cleared: %+v %v", repo, err)
+	}
+	if err = s.rt.Store.SetMeta(ctx, "catalog_discovered", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.discover(ctx, &Task{ID: uid(), Kind: "discover"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.rt.Store.Get(ctx, "repositories", repoID, &repo); err != nil || len(repo.PendingForget) != 0 {
+		t.Fatalf("discovery resurrected completed cleanup: %+v %v", repo, err)
+	}
+	if _, err = s.restic(ctx, &task, repo, account, []string{"check", "--read-data"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err = s.restic(ctx, &task, repo, account, []string{"snapshots", "--json"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(out, &snapshots); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 1 || snapshots[0].ID != points[1].Snapshots[0].SnapshotID {
+		t.Fatalf("live snapshot lost or deleted snapshot returned: %s", out)
+	}
+	if err = s.updatePendingForget(ctx, repo.ID, []string{snapshots[0].ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	task = Task{ID: uid(), Kind: "retention", PlanID: plan.ID, Request: request}
+	if err = s.retain(ctx, &task); err != nil {
+		t.Fatalf("new live reference must remain protected: %v", err)
+	}
+	if _, err = s.restic(ctx, &task, repo, account, []string{"cat", "snapshot", snapshots[0].ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.pendingPruneRepositories(ctx, plan.ID)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("protected snapshot left a pending cleanup: %v %v", pending, err)
 	}
 }

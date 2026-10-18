@@ -3,14 +3,17 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"vaultpilot/internal/platform"
 	"vaultpilot/internal/process"
+	"vaultpilot/internal/store"
 )
 
 type CheckRequest struct {
@@ -88,12 +91,13 @@ type RetentionRequest struct {
 	Confirm  bool     `json:"confirm"`
 }
 type RetentionPreview struct {
-	PlanID    string     `json:"plan_id"`
-	KeepIDs   []string   `json:"keep_ids"`
-	DeleteIDs []string   `json:"delete_ids"`
-	Snapshots []Snapshot `json:"snapshots"`
-	Blocked   bool       `json:"blocked"`
-	Reasons   []string   `json:"reasons"`
+	PendingPruneRepositories int        `json:"pending_prune_repositories"`
+	PlanID                   string     `json:"plan_id"`
+	KeepIDs                  []string   `json:"keep_ids"`
+	DeleteIDs                []string   `json:"delete_ids"`
+	Snapshots                []Snapshot `json:"snapshots"`
+	Blocked                  bool       `json:"blocked"`
+	Reasons                  []string   `json:"reasons"`
 }
 
 func (s *Service) retentionPreview(ctx context.Context, planID string) (RetentionPreview, error) {
@@ -102,6 +106,11 @@ func (s *Service) retentionPreview(ctx context.Context, planID string) (Retentio
 	if err := s.rt.Store.Get(ctx, "backup_plans", planID, &plan); err != nil {
 		return preview, err
 	}
+	pending, err := s.pendingPruneRepositories(ctx, planID)
+	if err != nil {
+		return preview, err
+	}
+	preview.PendingPruneRepositories = len(pending)
 	points := []Point{}
 	raws, err := s.rt.Store.All(ctx, "recovery_points")
 	if err != nil {
@@ -114,6 +123,7 @@ func (s *Service) retentionPreview(ctx context.Context, planID string) (Retentio
 			if p.Status != "completed" {
 				preview.Blocked = true
 				preview.Reasons = append(preview.Reasons, "存在未完成恢复点")
+				continue
 			}
 			points = append(points, p)
 		}
@@ -232,7 +242,243 @@ func (s *Service) retentionPreviewHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, preview)
 }
+func retentionSnapshots(raws []json.RawMessage, selected map[string]bool) (map[string][]string, error) {
+	referenced := map[string]bool{}
+	points := make([]Point, 0, len(raws))
+	for _, raw := range raws {
+		var p Point
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+		if p.DeletedAt != "" || selected[p.ID] {
+			continue
+		}
+		for _, snap := range p.Snapshots {
+			if !snap.Empty {
+				referenced[snap.RepositoryID+":"+snap.SnapshotID] = true
+			}
+		}
+	}
+	snapshots := map[string][]string{}
+	for _, p := range points {
+		if !selected[p.ID] {
+			continue
+		}
+		for _, snap := range p.Snapshots {
+			if !snap.Empty && !referenced[snap.RepositoryID+":"+snap.SnapshotID] {
+				snapshots[snap.RepositoryID] = append(snapshots[snap.RepositoryID], snap.SnapshotID)
+			}
+		}
+	}
+	for id, ids := range snapshots {
+		slices.Sort(ids)
+		snapshots[id] = slices.Compact(ids)
+	}
+	return snapshots, nil
+}
+
+func (s *Service) pendingPruneRepositories(ctx context.Context, planID string) ([]Repository, error) {
+	raws, err := s.rt.Store.All(ctx, "repositories")
+	if err != nil {
+		return nil, err
+	}
+	repos := []Repository{}
+	for _, raw := range raws {
+		var repo Repository
+		if err = json.Unmarshal(raw, &repo); err != nil {
+			return nil, err
+		}
+		if repo.PlanID == planID && repo.Status != "retired" && len(repo.PendingForget) > 0 {
+			repos = append(repos, repo)
+		}
+	}
+	return repos, nil
+}
+
+func (s *Service) recordRetentionDeletion(ctx context.Context, selected map[string]bool, snapshots map[string][]string) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		err := func() error {
+			tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer tx.Rollback()
+			for _, table := range []string{"repositories", "recovery_points"} {
+				ids := []string{}
+				if table == "repositories" {
+					for id := range snapshots {
+						ids = append(ids, id)
+					}
+				} else {
+					for id := range selected {
+						ids = append(ids, id)
+					}
+				}
+				for _, id := range ids {
+					var raw []byte
+					var version int
+					if err = tx.QueryRowContext(ctx, "SELECT data,version FROM "+table+" WHERE id=?", id).Scan(&raw, &version); err != nil {
+						return err
+					}
+					var object map[string]any
+					if err = json.Unmarshal(raw, &object); err != nil {
+						return err
+					}
+					if table == "repositories" {
+						var repo Repository
+						if err = json.Unmarshal(raw, &repo); err != nil {
+							return err
+						}
+						pending := append(repo.PendingForget, snapshots[id]...)
+						slices.Sort(pending)
+						object["pending_forget"] = slices.Compact(pending)
+					} else {
+						object["status"], object["deleted_at"] = "deleted", now()
+					}
+					object["version"] = version + 1
+					raw, err = json.Marshal(object)
+					if err != nil {
+						return err
+					}
+					result, err := tx.ExecContext(ctx, "UPDATE "+table+" SET version=?,data=?,updated_at=? WHERE id=? AND version=?", version+1, string(raw), now(), id, version)
+					if err != nil {
+						return err
+					}
+					changed, err := result.RowsAffected()
+					if err != nil {
+						return err
+					}
+					if changed != 1 {
+						return store.ErrConflict
+					}
+				}
+			}
+			return tx.Commit()
+		}()
+		if !errors.Is(err, store.ErrConflict) {
+			return err
+		}
+	}
+	return store.ErrConflict
+}
+
+func (s *Service) updatePendingForget(ctx context.Context, repoID string, add, remove []string) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		var repo Repository
+		if err := s.rt.Store.Get(ctx, "repositories", repoID, &repo); err != nil {
+			return err
+		}
+		pending := map[string]bool{}
+		for _, id := range repo.PendingForget {
+			pending[id] = true
+		}
+		for _, id := range add {
+			pending[id] = true
+		}
+		for _, id := range remove {
+			delete(pending, id)
+		}
+		repo.PendingForget = make([]string, 0, len(pending))
+		for id := range pending {
+			repo.PendingForget = append(repo.PendingForget, id)
+		}
+		slices.Sort(repo.PendingForget)
+		_, err := s.rt.Store.Save(ctx, "repositories", repo.ID, repo.Version, repo)
+		if !errors.Is(err, store.ErrConflict) {
+			return err
+		}
+	}
+	return store.ErrConflict
+}
+
+// 调用方持有计划和目录锁，保持有效快照引用不变。
+func (s *Service) prunePending(ctx context.Context, t *Task, planID string) (int, error) {
+	repos, err := s.pendingPruneRepositories(ctx, planID)
+	if err != nil {
+		return 0, err
+	}
+	raws, err := s.rt.Store.All(ctx, "recovery_points")
+	if err != nil {
+		return 0, err
+	}
+	referenced := map[string]bool{}
+	for _, raw := range raws {
+		var p Point
+		if err = json.Unmarshal(raw, &p); err != nil {
+			return 0, err
+		}
+		if p.DeletedAt != "" {
+			continue
+		}
+		for _, snap := range p.Snapshots {
+			if !snap.Empty {
+				referenced[snap.RepositoryID+":"+snap.SnapshotID] = true
+			}
+		}
+	}
+	t.prunedSnapshots = map[string][]string{}
+	s.stage(t, "pruning")
+	pruned := 0
+	for _, repo := range repos {
+		var account Account
+		if err = s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil || !account.Verified || !account.Enabled {
+			return pruned, fail("RETENTION_ACCOUNT_UNAVAILABLE", "清理所需账号不存在、未验证或已停用；恢复账号后可重试")
+		}
+		if account.MaintenanceReserve <= 0 {
+			return pruned, fail("MAINTENANCE_RESERVE_REQUIRED", "清理需要明确的维护空间预留")
+		}
+		unlockAccount := s.lock("account:" + account.ID)
+		unlockRepo := s.lock("repo:" + repo.ID)
+		err = func() error {
+			defer unlockAccount()
+			defer unlockRepo()
+			var snapshots []struct {
+				ID string `json:"id"`
+			}
+			out, err := s.restic(ctx, t, repo, account, []string{"snapshots", "--json"}, nil)
+			if err != nil {
+				return err
+			}
+			if err = json.Unmarshal(out, &snapshots); err != nil {
+				return err
+			}
+			existing := map[string]bool{}
+			for _, snap := range snapshots {
+				existing[snap.ID] = true
+			}
+			ids := []string{}
+			for _, id := range repo.PendingForget {
+				if !referenced[repo.ID+":"+id] && existing[id] {
+					ids = append(ids, id)
+				}
+			}
+			// Restic 0.18.1 对不存在的 ID 退出 0，但输出 "Ignoring ... failed to load snapshot"，只 forget 现存快照。
+			if len(ids) > 0 {
+				if _, err = s.restic(ctx, t, repo, account, append([]string{"forget"}, ids...), func(line string) { s.log(t, line) }); err != nil {
+					return err
+				}
+			}
+			// 上次可能已完成 forget，但 prune 失败；即使没有现存待忘记快照也要重试 prune。
+			if _, err = s.restic(ctx, t, repo, account, []string{"prune"}, func(line string) { s.log(t, line) }); err != nil {
+				return err
+			}
+			t.prunedSnapshots[repo.ID] = append([]string(nil), repo.PendingForget...)
+			return nil
+		}()
+		if err != nil {
+			return pruned, fail("RETENTION_ENGINE_FAILED", "删除决策已提交，仓库清理失败，可在历史清理中重试："+err.Error())
+		}
+		pruned++
+		if err = s.refreshAccount(ctx, &account); err != nil {
+			return pruned, err
+		}
+	}
+	return pruned, nil
+}
+
 func (s *Service) retain(ctx context.Context, t *Task) error {
+	t.prunedSnapshots = nil
 	var req RetentionRequest
 	if err := json.Unmarshal(t.Request, &req); err != nil {
 		return err
@@ -251,101 +497,107 @@ func (s *Service) retain(ctx context.Context, t *Task) error {
 	if preview.Blocked {
 		return fail("RETENTION_PAUSED", strings.Join(preview.Reasons, "；"))
 	}
-	if len(req.PointIDs) == 0 {
-		return fail("EMPTY_RETENTION_SELECTION", "请从预览选择需要删除的恢复点")
+	raws, err := s.rt.Store.All(ctx, "recovery_points")
+	if err != nil {
+		return err
+	}
+	if len(req.PointIDs) == 0 && preview.PendingPruneRepositories == 0 {
+		completedCleanup := false
+		for _, raw := range raws {
+			var p Point
+			if err = json.Unmarshal(raw, &p); err != nil {
+				return err
+			}
+			if p.PlanID == req.PlanID && p.DeletedAt != "" {
+				completedCleanup = true
+			}
+		}
+		if !completedCleanup {
+			return fail("EMPTY_RETENTION_SELECTION", "请从预览选择需要删除的恢复点")
+		}
 	}
 	allowed := map[string]bool{}
 	for _, id := range preview.DeleteIDs {
 		allowed[id] = true
 	}
+	selected := map[string]bool{}
 	for _, id := range req.PointIDs {
 		if !allowed[id] {
 			return fail("RETENTION_REFERENCE_PROTECTED", "选择包含受保护或保留策略需要的恢复点")
 		}
-	}
-	var plan Plan
-	_ = s.rt.Store.Get(ctx, "backup_plans", req.PlanID, &plan)
-	var pool Pool
-	_ = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool)
-	s.stage(t, "recording_deletions")
-	commitErr := s.commit(ctx, t, pool, nil, req.PointIDs)
-	if commitErr != nil && !degraded(commitErr) {
-		return commitErr
-	}
-	selected := map[string]bool{}
-	for _, id := range req.PointIDs {
 		selected[id] = true
-		var p Point
-		if err = s.rt.Store.Get(ctx, "recovery_points", id, &p); err != nil {
-			return err
-		}
-		p.Status = "deleted"
-		p.DeletedAt = now()
-		if _, err = s.rt.Store.Save(ctx, "recovery_points", id, -1, p); err != nil {
-			return err
-		}
 	}
-	if commitErr != nil {
-		t.Result = map[string]any{"deleted_point_ids": req.PointIDs, "cleanup_pending": true}
-		return commitErr
-	}
-	snapshots := map[string][]string{}
-	raws, err := s.rt.Store.All(ctx, "recovery_points")
+	snapshots, err := retentionSnapshots(raws, selected)
 	if err != nil {
 		return err
 	}
-	referenced := map[string]bool{}
-	for _, raw := range raws {
-		var p Point
-		_ = json.Unmarshal(raw, &p)
-		if p.DeletedAt != "" {
-			continue
-		}
-		for _, snap := range p.Snapshots {
-			referenced[snap.RepositoryID+":"+snap.SnapshotID] = true
-		}
+	var plan Plan
+	if err = s.rt.Store.Get(ctx, "backup_plans", req.PlanID, &plan); err != nil {
+		return err
 	}
-	for _, raw := range raws {
-		var p Point
-		_ = json.Unmarshal(raw, &p)
-		if !selected[p.ID] {
-			continue
-		}
-		for _, snap := range p.Snapshots {
-			if !snap.Empty && !referenced[snap.RepositoryID+":"+snap.SnapshotID] {
-				snapshots[snap.RepositoryID] = append(snapshots[snap.RepositoryID], snap.SnapshotID)
-			}
-		}
+	var pool Pool
+	if err = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
+		return err
 	}
-	s.stage(t, "pruning")
-	for id, ids := range snapshots {
+	for id := range snapshots {
 		var repo Repository
 		if err = s.rt.Store.Get(ctx, "repositories", id, &repo); err != nil {
 			return err
 		}
 		var account Account
-		if err = s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil {
-			return err
+		if err = s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil || !account.Verified || !account.Enabled {
+			return fail("RETENTION_ACCOUNT_UNAVAILABLE", "清理所需账号不存在、未验证或已停用")
 		}
 		if account.MaintenanceReserve <= 0 {
 			return fail("MAINTENANCE_RESERVE_REQUIRED", "清理需要明确的维护空间预留")
 		}
-		unlockAccount := s.lock("account:" + account.ID)
-		unlockRepo := s.lock("repo:" + repo.ID)
-		_, err = s.restic(ctx, t, repo, account, append([]string{"forget"}, ids...), func(line string) { s.log(t, line) })
-		if err == nil {
-			_, err = s.restic(ctx, t, repo, account, []string{"prune"}, func(line string) { s.log(t, line) })
+	}
+	if req.PointIDs == nil {
+		req.PointIDs = []string{}
+	}
+	result := map[string]any{"deleted_point_ids": []string{}, "pruned_repositories": 0, "cleanup_pending": preview.PendingPruneRepositories > 0}
+	t.Result = result
+	if len(req.PointIDs) > 0 {
+		s.stage(t, "recording_deletions")
+		commitErr := s.commit(ctx, t, pool, nil, req.PointIDs)
+		if commitErr != nil && !degraded(commitErr) {
+			return commitErr
 		}
-		unlockRepo()
-		unlockAccount()
+		result["deleted_point_ids"] = req.PointIDs
+		result["cleanup_pending"] = len(snapshots) > 0 || preview.PendingPruneRepositories > 0
+		localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		err = s.recordRetentionDeletion(localCtx, selected, snapshots)
+		cancel()
 		if err != nil {
-			return fail("RETENTION_ENGINE_FAILED", "删除决策已提交，仓库清理失败可重试："+err.Error())
-		}
-		if err = s.refreshAccount(ctx, &account); err != nil {
 			return err
 		}
+		if commitErr != nil {
+			return commitErr
+		}
 	}
-	t.Result = map[string]any{"deleted_point_ids": req.PointIDs, "pruned_repositories": len(snapshots)}
+	pruned, cleanupErr := s.prunePending(ctx, t, req.PlanID)
+	result["pruned_repositories"] = pruned
+	if cleanupErr == nil && len(t.prunedSnapshots) > 0 {
+		cleanupErr = s.commit(ctx, t, pool, nil, nil)
+		if cleanupErr == nil || degraded(cleanupErr) {
+			localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			for id, ids := range t.prunedSnapshots {
+				if clearErr := s.updatePendingForget(localCtx, id, nil, ids); clearErr != nil {
+					cleanupErr = clearErr
+					break
+				}
+			}
+			cancel()
+		}
+	}
+	pending, err := s.pendingPruneRepositories(context.WithoutCancel(ctx), req.PlanID)
+	result["cleanup_pending"] = err != nil || len(pending) > 0
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	if err != nil {
+		return err
+	}
 	return s.rt.Store.Audit(ctx, "retention.complete", t.ID)
 }
 
@@ -375,6 +627,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	s.catalogMu.Lock()
 	defer s.catalogMu.Unlock()
 
+	repo = Repository{}
 	if err := s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
 		return err
 	}
@@ -394,6 +647,17 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	}
 	if source.ID == target.ID || !target.Verified || !target.Enabled {
 		return fail("INVALID_MIGRATION_TARGET", "目标必须是其他已验证启用账号")
+	}
+	var plan Plan
+	if err := s.rt.Store.Get(ctx, "backup_plans", repo.PlanID, &plan); err != nil {
+		return err
+	}
+	var pool Pool
+	if err := s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
+		return err
+	}
+	if !slices.Contains(pool.AccountIDs, target.ID) {
+		return fail("MIGRATION_TARGET_OUTSIDE_POOL", "目标账号必须属于该仓库所在计划的存储池；如需使用新账号，请先将其加入存储池")
 	}
 	if err := s.refreshAccount(ctx, &target); err != nil {
 		return err
@@ -458,16 +722,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if err != nil {
 		return err
 	}
-	var plan Plan
-	if err = s.rt.Store.Get(ctx, "backup_plans", repo.PlanID, &plan); err != nil {
-		_, _ = s.rt.Store.Save(ctx, "repositories", old.ID, -1, old)
-		return err
-	}
-	var pool Pool
-	if err = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
-		_, _ = s.rt.Store.Save(ctx, "repositories", old.ID, -1, old)
-		return err
-	}
+
 	s.stage(t, "committing_location")
 	commitErr := s.commit(ctx, t, pool, nil, nil)
 	if commitErr != nil && !degraded(commitErr) {

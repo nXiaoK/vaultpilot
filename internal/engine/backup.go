@@ -378,7 +378,7 @@ func (s *Service) allocate(ctx context.Context, t *Task, p Plan, pool Pool, acco
 					return result, nil, fail("ASSIGNMENT_BROKEN", "稳定归属指向不存在仓库")
 				}
 				if _, ok := accounts[repo.AccountID]; !ok {
-					return result, nil, fail("ASSIGNED_ACCOUNT_OFFLINE", "现有文件归属账号已停用或不可用")
+					return result, nil, fail("ASSIGNED_ACCOUNT_OFFLINE", "现有文件归属账号已停用、不可用或不在当前存储池中；请启用该账号或将其加入存储池")
 				}
 				if free[repo.AccountID] < growth {
 					return result, nil, fail("CAPACITY_EXHAUSTED", "原分片容量不足，请扩容或整仓迁移："+e.SourceID+"/"+e.Path)
