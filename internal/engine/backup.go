@@ -20,6 +20,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"vaultpilot/internal/platform"
 	"vaultpilot/internal/process"
+	"vaultpilot/internal/store"
 )
 
 func within(root, path string) bool {
@@ -209,6 +210,9 @@ func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, 
 	return out, nil
 }
 func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var free, total, used, project int64
 	if a.Backend == "local" {
 		var st syscall.Statfs_t
@@ -220,6 +224,9 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 		used = total - free
 		root := filepath.Join(a.LocalPath, "VaultPilot", s.rt.VaultID())
 		err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
@@ -269,18 +276,46 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 	a.Free = free
 	a.ProjectUsed = project
 	a.QuotaAt = now()
-	var raw map[string]any
-	if err := s.rt.Store.Get(ctx, "accounts", a.ID, &raw); err != nil {
-		return err
+	return saveAccountQuota(ctx, s.rt.Store, *a, total, used)
+}
+
+type accountQuotaStore interface {
+	Get(context.Context, string, string, any) error
+	Save(context.Context, string, string, int, any) (int, error)
+}
+
+func saveAccountQuota(ctx context.Context, db accountQuotaStore, a Account, total, used int64) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		var raw map[string]any
+		if err := db.Get(ctx, "accounts", a.ID, &raw); err != nil {
+			return err
+		}
+		version, ok := raw["version"].(float64)
+		if !ok || version < 1 {
+			return errors.New("账号版本无效")
+		}
+		raw["free_bytes"] = a.Free
+		raw["total_bytes"] = total
+		raw["used_bytes"] = used
+		raw["project_used_bytes"] = a.ProjectUsed
+		raw["quota_at"] = a.QuotaAt
+		if _, err := db.Save(ctx, "accounts", a.ID, int(version), raw); !errors.Is(err, store.ErrConflict) {
+			return err
+		}
 	}
-	raw["free_bytes"] = free
-	raw["total_bytes"] = total
-	raw["used_bytes"] = used
-	raw["project_used_bytes"] = project
-	raw["quota_at"] = a.QuotaAt
-	_, err := s.rt.Store.Save(ctx, "accounts", a.ID, -1, raw)
+	return store.ErrConflict
+}
+
+func (s *Service) refreshAccountAfterTask(t *Task, a *Account) error {
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+	err := s.refreshAccount(ctx, a)
+	if err != nil {
+		s.log(t, "收尾刷新账号配额失败："+a.Name+"："+err.Error())
+	}
 	return err
 }
+
 func capacity(a Account, reserved int64) int64 {
 	cloud := a.Free - a.CloudReserve
 	budget := a.Budget - a.ProjectUsed - a.MaintenanceReserve
@@ -497,7 +532,7 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 		growth := int64(0)
 		for id := range accounts {
 			a := accounts[id]
-			if s.refreshAccount(context.Background(), &a) != nil {
+			if s.refreshAccountAfterTask(t, &a) != nil {
 				clean = false
 			} else {
 				growth += a.ProjectUsed - accounts[id].ProjectUsed

@@ -430,7 +430,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 		return err
 	}
 	defer func() {
-		if s.refreshAccount(context.Background(), &target) == nil {
+		if s.refreshAccountAfterTask(t, &target) == nil {
 			_, _ = s.rt.Store.DB.Exec("DELETE FROM capacity_reservations WHERE run_id=?", t.ID)
 		}
 	}()
