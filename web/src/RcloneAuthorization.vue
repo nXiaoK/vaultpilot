@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { ArrowUpRight, FileUp, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-vue-next'
+import { ArrowUpRight, FileUp, LoaderCircle, RefreshCw, ShieldCheck } from '@lucide/vue'
 import { api, date } from './api'
 import type { Entity } from './api'
 const props = defineProps<{ account: Entity; customOAuth: boolean; rcloneAvailable: boolean; busy?: boolean }>()

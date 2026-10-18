@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cloud, Database, Download, Ellipsis, Eraser, File, Files, Folder, FolderOpen, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings2, ShieldCheck, Shield, SlidersHorizontal, Square, Terminal, Trash2, UnlockKeyhole, X } from 'lucide-vue-next'
+import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cloud, Database, Download, Ellipsis, Eraser, File, Files, Folder, FolderOpen, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings2, ShieldCheck, Shield, SlidersHorizontal, Square, Terminal, Trash2, UnlockKeyhole, X } from '@lucide/vue'
 import { api, ApiError, bytes, date, dateInZone, downloadBlob, isActive, setCSRF, statusLabel, tone, subscribeActivity } from './api'
 import ResultReport from './ResultReport.vue'
 import { pollWhileVisible } from './polling'

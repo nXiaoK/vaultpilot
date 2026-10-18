@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, Cloud, File, ShieldCheck } from 'lucide-vue-next'
+import { Check, Cloud, File, ShieldCheck } from '@lucide/vue'
 import { bytes, date, statusLabel } from './api'
 const props=defineProps<{result:any;accounts?:Record<string,any>[];sources?:Record<string,any>[]}>()
 const accountName=(id:string)=>props.accounts?.find(a=>a.id===id)?.name??id

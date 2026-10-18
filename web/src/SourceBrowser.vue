@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ChevronRight, ChevronLeft, Folder, File, Link, Search, RefreshCw, ArrowUp, LoaderCircle, X, Home } from 'lucide-vue-next'
+import { ChevronRight, ChevronLeft, Folder, File, Link, Search, RefreshCw, ArrowUp, LoaderCircle, X, Home } from '@lucide/vue'
 import { api, bytes, date } from './api'
 import type { Entity } from './api'
 

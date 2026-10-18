@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ArrowUpRight, ArrowDownToLine, Activity } from 'lucide-vue-next'
+import { ArrowUpRight, ArrowDownToLine, Activity } from '@lucide/vue'
 import { api, bytes } from './api'
 import { pollWhileVisible } from './polling'
 
