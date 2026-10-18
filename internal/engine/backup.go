@@ -933,7 +933,16 @@ func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, 
 	if err != nil {
 		return err
 	}
-	_, _ = s.rt.Store.DB.ExecContext(ctx, "DELETE FROM engine_snapshot_entries_v2 WHERE task_id=? AND repo_id=?", t.ID, repo.ID)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.cleanupSnapshotEntries(cleanupCtx, "task_id=? AND repo_id=?", []any{t.ID, repo.ID}); err != nil {
+			s.log(t, "清理快照校验清单失败，启动时将重试："+err.Error())
+		}
+	}()
+	if err = s.cleanupSnapshotEntries(ctx, "task_id=? AND repo_id=?", []any{t.ID, repo.ID}); err != nil {
+		return err
+	}
 	var callbackErr error
 	batch := make([]Entry, 0, 512)
 	flush := func() error {
@@ -993,7 +1002,6 @@ func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, 
 	if err = s.verifySnapshotLinks(ctx, t, repo, a, snapshot); err != nil {
 		return err
 	}
-	_, _ = s.rt.Store.DB.ExecContext(ctx, "DELETE FROM engine_snapshot_entries_v2 WHERE task_id=? AND repo_id=?", t.ID, repo.ID)
 	return nil
 }
 

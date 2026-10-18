@@ -118,6 +118,10 @@ func TestRealResticSameTypeSourceChangeRejectsSnapshot(t *testing.T) {
 	if points != 0 {
 		t.Fatal("inaccurate restore point was published")
 	}
+	var verificationRows int
+	if err = s.rt.Store.DB.QueryRow("SELECT count(*) FROM engine_snapshot_entries_v2 WHERE task_id=?", task.ID).Scan(&verificationRows); err != nil || verificationRows != 0 {
+		t.Fatalf("failed verification leaked rows: %d %v", verificationRows, err)
+	}
 }
 
 func TestRealResticMidRunRestoreReportsPartialOutput(t *testing.T) {
@@ -217,6 +221,10 @@ func TestRealResticRetentionPruneRetriesAfterFailure(t *testing.T) {
 		if err := s.backup(ctx, &task); err != nil {
 			t.Fatal(err)
 		}
+		task.Status, task.Stage, task.FinishedAt = "completed", "completed", now()
+		if err := s.save(&task); err != nil {
+			t.Fatal(err)
+		}
 		var point Point
 		if err := s.rt.Store.Get(ctx, "recovery_points", task.Result.(map[string]any)["point_id"].(string), &point); err != nil {
 			t.Fatal(err)
@@ -247,6 +255,12 @@ func TestRealResticRetentionPruneRetriesAfterFailure(t *testing.T) {
 	var deleted Point
 	if err = s.rt.Store.Get(ctx, "recovery_points", points[0].ID, &deleted); err != nil || deleted.DeletedAt == "" {
 		t.Fatalf("delete decision missing: %+v %v", deleted, err)
+	}
+	if got := cleanupEntryCount(t, s, points[0].RunID); got != 0 {
+		t.Fatalf("deleted point kept its file list after prune failure: %d", got)
+	}
+	if got := cleanupEntryCount(t, s, points[1].RunID); int64(got) != points[1].FileCount {
+		t.Fatalf("live point lost its file list: %d want=%d", got, points[1].FileCount)
 	}
 	// The deletion catalog must carry the retry intent even before the local registration is saved.
 	if err = s.discover(ctx, &Task{ID: uid(), Kind: "discover"}); err != nil {
