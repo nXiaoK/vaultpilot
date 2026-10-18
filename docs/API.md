@@ -14,7 +14,7 @@
 | POST | /auth/logout | 结束当前会话 |
 | POST | /security/unlock | password（当前库恢复密码） |
 | POST | /security/lock | 清除内存主密钥 |
-| POST | /security/recovery-kit | password（新包保护密码） → 加密恢复包JSON，不含OAuth Token |
+| POST | /security/recovery-kit | password（新包保护密码）及 admin_password（当前登录密码） → 加密恢复包JSON，不含OAuth Token |
 | POST | /security/discover | {} → 发现/重建任务；导入节点需先重新授权正确Drive |
 
 登录密码和恢复密码分别至少12字符且必须不同。初次导入恢复包使用保护该包的密码。恢复包导出可使用不同密码，但不隐式更改当前库重启解锁密码。
@@ -119,10 +119,10 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 
 ## 加密账号迁移
 
-- `POST /api/accounts/export`：`{password, account_ids}`，选择 1–50 个已验证 OneDrive Personal 账号，返回加密账号包。
+- `POST /api/accounts/export`：`{password, admin_password, account_ids}`，选择 1–50 个已验证 OneDrive Personal 账号，返回加密账号包。
 - `POST /api/accounts/import/preview`：`{password, package}`，返回 `items: [{account, duplicate}]`；无授权凭据，重复 Drive 标记为已存在。
 - `POST /api/accounts/import`：`{password, package, drive_ids}`，显式选择包中的 Drive，原子写入账号与凭据，返回 `items`（新账号）、`skipped`（已有 Drive）和 `total`。新账号待验证，客户端随后调用原 `/accounts/{id}/verify`，使用保留的 `drive_id` 和新账号 `version`。
 
-三个接口都要求管理员会话、CSRF、同源校验，并对密码尝试限速。密码 12–1024 字节；请求体最多 2 MiB，加密明文最多 1 MiB，固定 Argon2id 参数先校验再解密。不会导入本地路径、原节点 ID、Verified 状态或备份密钥。
+三个接口都要求管理员会话、CSRF、同源校验，并对密码尝试限速。导出还须重新验证当前登录密码，失败按 reauth 操作计数；成功清零该计数。包保护密码 12–1024 字节；导出请求最多 8 KiB，导入请求最多 2 MiB，加密明文最多 1 MiB，固定 Argon2id 参数先校验再解密。不会导入本地路径、原节点 ID、Verified 状态或备份密钥。
 
 账号列表新增 `account_email`、`account_display_name`；`GET /accounts/{id}/drives` 返回可选身份读取后的 `account`（版本可能更新），客户端需使用该版本验证。相同 Drive ID 的别名合并。

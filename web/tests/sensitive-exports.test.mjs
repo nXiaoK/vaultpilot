@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+import vm from 'node:vm'
+import ts from 'typescript'
+
+function actions(file, names) {
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8').split('<script setup lang="ts">')[1].split('</script>')[0]
+  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.ES2022, true)
+  const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text)).map(node => node.getText(ast)).join('\n')
+  return ts.transpileModule(functions, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText
+}
+const recoveryActions = actions('../src/App.vue', ['exportKit', 'closeModal'])
+const accountActions = actions('../src/AccountTransfer.vue', ['run', 'exportFile'])
+
+for (const failed of [false, true]) {
+  test(`recovery export sends current login password and clears it after ${failed ? 'failure' : 'success'}`, async () => {
+    const calls = []
+    const context = vm.createContext({
+      form: {password: 'new-package-password', admin_password: 'current-login-password'},
+      status: {value: {vault_id: 'vault'}}, modal: {value: 'export'}, busy: {value: false}, confirmAction: {value: null},
+      action: async fn => { try { await fn() } catch {} }, toast: () => {}, Blob, downloadBlob: () => {},
+      api: async (path, options) => { calls.push({path, options}); if (failed) throw new Error('reauth failed'); return {format: 'encrypted'} },
+    })
+    vm.runInContext(recoveryActions, context)
+    await context.exportKit()
+    assert.equal(calls[0].path, '/security/recovery-kit')
+    assert.equal(calls[0].options.body.admin_password, 'current-login-password')
+    assert.equal(calls[0].options.body.password, 'new-package-password')
+    assert.equal(context.form.admin_password, '')
+    context.form.admin_password = 'entered-again'
+    context.closeModal()
+    assert.equal(context.form.admin_password, '')
+  })
+  test(`account export sends current login password and clears it after ${failed ? 'failure' : 'success'}`, async () => {
+    const calls = []
+    const context = vm.createContext({
+      password: {value: 'new-package-password'}, repeat: {value: 'new-package-password'}, adminPassword: {value: 'current-login-password'},
+      agreed: {value: true}, selected: {value: ['account']}, working: {value: false}, failure: {value: ''}, message: {value: ''}, emit: () => {},
+      Blob, URL: {createObjectURL: () => 'blob:export', revokeObjectURL: () => {}}, document: {createElement: () => ({click: () => {}})}, setTimeout: () => {},
+      api: async (path, options) => { calls.push({path, options}); if (failed) throw new Error('reauth failed'); return {format: 'encrypted'} },
+    })
+    vm.runInContext(accountActions, context)
+    await context.exportFile()
+    assert.equal(calls[0].path, '/accounts/export')
+    assert.equal(calls[0].options.body.admin_password, 'current-login-password')
+    assert.equal(calls[0].options.body.password, 'new-package-password')
+    assert.equal(context.adminPassword.value, '')
+    assert.equal(context.working.value, false)
+  })
+}

@@ -399,11 +399,28 @@ func (r *Runtime) lockHandler(w http.ResponseWriter, req *http.Request) {
 	r.Keys.Lock()
 	writeJSON(w, 200, map[string]bool{"unlocked": false})
 }
+func (r *Runtime) requireAdminPassword(w http.ResponseWriter, req *http.Request, password string) bool {
+	if r.throttled(req, "reauth") {
+		w.Header().Set("Retry-After", "900")
+		fail(w, 429, "rate_limited", "密码验证过于频繁，请稍后重试")
+		return false
+	}
+	raw, e := r.meta("admin_password")
+	var hash PasswordHash
+	if e != nil || password == "" || len(password) > 1024 || json.Unmarshal([]byte(raw), &hash) != nil || !verifyPassword(password, hash) {
+		fail(w, 401, "admin_password_invalid", "请重新输入正确的当前登录密码")
+		return false
+	}
+	r.resetAttempts(req, "reauth")
+	return true
+}
+
 func (r *Runtime) exportKit(w http.ResponseWriter, req *http.Request) {
 	var v struct {
-		Password string `json:"password"`
+		Password      string `json:"password"`
+		AdminPassword string `json:"admin_password"`
 	}
-	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) || !r.requireAdminPassword(w, req, v.AdminPassword) {
 		return
 	}
 	if len(v.Password) < 12 || len(v.Password) > 1024 {

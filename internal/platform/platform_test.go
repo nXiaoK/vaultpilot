@@ -85,7 +85,7 @@ func TestRecoveryKitRejectsTamperingAndFreshInstanceRecovers(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	res := h.call("POST", "/api/security/recovery-kit", map[string]string{"password": recoveryPassword}, true)
+	res := h.call("POST", "/api/security/recovery-kit", map[string]string{"admin_password": adminPassword, "password": recoveryPassword}, true)
 	if res.Code != 200 {
 		t.Fatalf("export %s", res.Body.String())
 	}
@@ -437,7 +437,7 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 	if _, e = os.Stat(path); !os.IsNotExist(e) {
 		t.Fatal("completed config not cleaned")
 	}
-	kitRes := h.call("POST", "/api/security/recovery-kit", map[string]string{"password": recoveryPassword}, true)
+	kitRes := h.call("POST", "/api/security/recovery-kit", map[string]string{"admin_password": adminPassword, "password": recoveryPassword}, true)
 	payload, e := UnlockRecoveryKit(kitRes.Body.Bytes(), recoveryPassword)
 	if e != nil || len(payload.Entries) != 1 || payload.Entries[0].DriveID != a.DriveID {
 		t.Fatal("recovery discovery entries missing")

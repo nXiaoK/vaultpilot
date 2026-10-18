@@ -5,6 +5,7 @@ import { api, bytes, downloadBlob, type Entity } from './api'
 const props = defineProps<{ mode: 'export' | 'import'; accounts: Entity[] }>()
 const emit = defineEmits<{ busy: [value: boolean]; changed: [] }>()
 const password = ref('')
+const adminPassword = ref('')
 const repeat = ref('')
 const agreed = ref(false)
 const selected = ref<string[]>([])
@@ -26,11 +27,12 @@ async function run(fn: () => Promise<void>) {
 async function exportFile() {
   await run(async () => {
     if (password.value !== repeat.value) throw new Error('两次输入的保护密码不一致。')
-    const encrypted = await api('/accounts/export', {method: 'POST', body: {password: password.value, account_ids: selected.value}})
+    const encrypted = await api('/accounts/export', {method: 'POST', body: {password: password.value, admin_password: adminPassword.value, account_ids: selected.value}})
     downloadBlob(new Blob([JSON.stringify(encrypted, null, 2)], {type: 'application/json'}), 'vaultpilot-accounts.json')
     password.value = ''; repeat.value = ''; agreed.value = false
     message.value = '加密账号包已下载。将文件交给 B 节点，在“存储账号 → 导入账号”中使用保护密码打开。'
   })
+  adminPassword.value = ''
 }
 async function readFile(event: Event) {
   const input = event.target as HTMLInputElement
@@ -66,7 +68,7 @@ async function importFile() {
     message.value = `已导入 ${response.total} 个账号，跳过 ${response.skipped.length} 个已存在的 Drive。${results.value.some(item => item.error) ? '未通过验证的账号已保留，可重试或重新授权。' : '云端访问验证已完成。'}`
   })
 }
-onBeforeUnmount(() => { password.value = ''; repeat.value = ''; packageData.value = null })
+onBeforeUnmount(() => { password.value = ''; adminPassword.value = ''; repeat.value = ''; packageData.value = null })
 </script>
 
 <template>
@@ -77,6 +79,7 @@ onBeforeUnmount(() => { password.value = ''; repeat.value = ''; packageData.valu
     <div v-if="message" class="alert info" role="status">{{message}}</div>
     <form v-if="mode==='export'" @submit.prevent="exportFile">
       <div class="checkbox-list"><label v-for="account in available" :key="account.id" class="check-label"><input v-model="selected" type="checkbox" :value="account.id" :disabled="working"/><span>{{account.name}}<small>{{account.account_email||account.account_display_name||account.drive_name}} · {{bytes(account.budget_bytes)}} 预算</small></span></label><p v-if="!available.length" class="text-secondary">没有可导出的账号，请先验证 OneDrive 访问。</p></div>
+      <label class="field">当前登录密码<input v-model="adminPassword" type="password" maxlength="1024" autocomplete="current-password" required :disabled="working"/></label>
       <label class="field">账号包保护密码<input v-model="password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required :disabled="working"/><small>至少 12 个字符，请使用独立密码并告知 B 节点部署者。</small></label>
       <label class="field">再次输入保护密码<input v-model="repeat" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required :disabled="working"/></label>
       <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认将所选微软账号的授权共享给接收节点。</label>

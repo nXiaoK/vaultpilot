@@ -343,13 +343,13 @@ paths:
           "$ref": "#/components/responses/APIError"
         '423':
           "$ref": "#/components/responses/APIError"
-      description: 需要已解锁。导出密码不会改变当前节点重启解锁密码。包含定位入口和受保护主密钥，不包含OAuth Token。
+      description: 需要已解锁并重新验证当前管理员登录密码，请求最多8KiB，失败按reauth操作限速。导出密码不会改变当前节点重启解锁密码。包含定位入口和受保护主密钥，不包含OAuth Token。
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/PasswordRequest"
+              "$ref": "#/components/schemas/RecoveryExportRequest"
   "/security/discover":
     post:
       summary: 发现认证提交目录并重建本地索引
@@ -539,7 +539,7 @@ paths:
       security:
       - SessionAuth: []
         CSRFToken: []
-      description: 密码 12–1024 字节，请求最多 2 MiB，密码尝试限速。导入账号仍需调用 verify 重新验证原 Drive。
+      description: 必须提供当前管理员登录密码；包保护密码12–1024字节，请求最多8KiB，重新认证失败按reauth操作限速。
       requestBody:
         required: true
         content:
@@ -2866,6 +2866,12 @@ components:
       required:
       - csrf_token
       - unlocked
+    RecoveryExportRequest:
+      type: object
+      required: [password, admin_password]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true, description: 本次恢复包保护密码}
+        admin_password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true, description: 当前管理员登录密码}
     PasswordRequest:
       type: object
       properties:
@@ -2978,8 +2984,9 @@ components:
         ciphertext: {type: string, contentEncoding: base64}
     AccountExportRequest:
       type: object
-      required: [password, account_ids]
+      required: [password, admin_password, account_ids]
       properties:
+        admin_password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true, description: 当前管理员登录密码}
         password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true}
         account_ids:
           type: array
