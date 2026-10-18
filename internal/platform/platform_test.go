@@ -271,8 +271,8 @@ func TestStartupPreservesRcloneRefreshAfterCrash(t *testing.T) {
 	if e := h.r.saveToken(a.ID, original); e != nil {
 		t.Fatal(e)
 	}
-	path := h.r.RcloneConfig()
-	if path == "" {
+	path, configErr := h.r.RcloneConfigFor(context.Background(), a.ID)
+	if configErr != nil {
 		t.Fatal("missing config")
 	}
 	updated := original
@@ -405,8 +405,8 @@ func TestOAuthStatePKCEExplicitSelectionDuplicateDriveAndRefresh(t *testing.T) {
 	if res.Code != 409 || !strings.Contains(res.Body.String(), "duplicate_drive") {
 		t.Fatal("duplicate drive accepted")
 	}
-	path := h.r.RcloneConfig()
-	if path == "" {
+	path, configErr := h.r.RcloneConfigFor(context.Background(), a.ID)
+	if configErr != nil {
 		t.Fatal("rclone config generation failed")
 	}
 	config, e := os.ReadFile(path)

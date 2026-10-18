@@ -20,6 +20,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"vaultpilot/internal/platform"
 	"vaultpilot/internal/process"
+	"vaultpilot/internal/store"
 )
 
 func within(root, path string) bool {
@@ -209,6 +210,9 @@ func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, 
 	return out, nil
 }
 func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var free, total, used, project int64
 	if a.Backend == "local" {
 		var st syscall.Statfs_t
@@ -220,6 +224,9 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 		used = total - free
 		root := filepath.Join(a.LocalPath, "VaultPilot", s.rt.VaultID())
 		err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
@@ -239,11 +246,10 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 			return err
 		}
 	} else {
-		args := s.rcloneArgs("about", a.Remote+":", "--json")
-		out, err := s.rcloneOutput(ctx, args)
+		out, err := s.rcloneOutput(ctx, []Account{*a}, "about", a.Remote+":", "--json")
 		_ = s.rt.SyncRcloneCredentials()
 		if err != nil {
-			return fail("QUOTA_UNAVAILABLE", "无法刷新账号配额："+a.Name)
+			return fail("QUOTA_UNAVAILABLE", "无法刷新账号配额："+a.Name+"："+err.Error())
 		}
 		var quota struct {
 			Free  *int64 `json:"free"`
@@ -254,10 +260,10 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 			return fail("QUOTA_UNKNOWN", "账号未返回完整容量："+a.Name)
 		}
 		free, total, used = *quota.Free, *quota.Total, *quota.Used
-		out, err = s.rcloneOutput(ctx, s.rcloneArgs("size", a.Remote+":VaultPilot/"+s.rt.VaultID(), "--json"))
+		out, err = s.rcloneOutput(ctx, []Account{*a}, "size", a.Remote+":VaultPilot/"+s.rt.VaultID(), "--json")
 		_ = s.rt.SyncRcloneCredentials()
 		if err != nil {
-			return fail("PROJECT_SIZE_UNKNOWN", "无法核对项目占用："+a.Name)
+			return fail("PROJECT_SIZE_UNKNOWN", "无法核对项目占用："+a.Name+"："+err.Error())
 		}
 		var usage struct {
 			Bytes int64 `json:"bytes"`
@@ -270,18 +276,46 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 	a.Free = free
 	a.ProjectUsed = project
 	a.QuotaAt = now()
-	var raw map[string]any
-	if err := s.rt.Store.Get(ctx, "accounts", a.ID, &raw); err != nil {
-		return err
+	return saveAccountQuota(ctx, s.rt.Store, *a, total, used)
+}
+
+type accountQuotaStore interface {
+	Get(context.Context, string, string, any) error
+	Save(context.Context, string, string, int, any) (int, error)
+}
+
+func saveAccountQuota(ctx context.Context, db accountQuotaStore, a Account, total, used int64) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		var raw map[string]any
+		if err := db.Get(ctx, "accounts", a.ID, &raw); err != nil {
+			return err
+		}
+		version, ok := raw["version"].(float64)
+		if !ok || version < 1 {
+			return errors.New("账号版本无效")
+		}
+		raw["free_bytes"] = a.Free
+		raw["total_bytes"] = total
+		raw["used_bytes"] = used
+		raw["project_used_bytes"] = a.ProjectUsed
+		raw["quota_at"] = a.QuotaAt
+		if _, err := db.Save(ctx, "accounts", a.ID, int(version), raw); !errors.Is(err, store.ErrConflict) {
+			return err
+		}
 	}
-	raw["free_bytes"] = free
-	raw["total_bytes"] = total
-	raw["used_bytes"] = used
-	raw["project_used_bytes"] = project
-	raw["quota_at"] = a.QuotaAt
-	_, err := s.rt.Store.Save(ctx, "accounts", a.ID, -1, raw)
+	return store.ErrConflict
+}
+
+func (s *Service) refreshAccountAfterTask(t *Task, a *Account) error {
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+	err := s.refreshAccount(ctx, a)
+	if err != nil {
+		s.log(t, "收尾刷新账号配额失败："+a.Name+"："+err.Error())
+	}
 	return err
 }
+
 func capacity(a Account, reserved int64) int64 {
 	cloud := a.Free - a.CloudReserve
 	budget := a.Budget - a.ProjectUsed - a.MaintenanceReserve
@@ -498,7 +532,7 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 		growth := int64(0)
 		for id := range accounts {
 			a := accounts[id]
-			if s.refreshAccount(context.Background(), &a) != nil {
+			if s.refreshAccountAfterTask(t, &a) != nil {
 				clean = false
 			} else {
 				growth += a.ProjectUsed - accounts[id].ProjectUsed
@@ -599,9 +633,6 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 	_ = s.rt.Store.Audit(ctx, "backup.commit", point.ID)
 	return commitErr
 }
-func (s *Service) rcloneArgs(args ...string) []string {
-	return append([]string{"--config", s.rt.RcloneConfig()}, args...)
-}
 func (s *Service) repoAddress(repo Repository, a Account) string {
 	if a.Backend == "local" {
 		return filepath.Join(a.LocalPath, filepath.FromSlash(repo.Path))
@@ -638,9 +669,9 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 	full := []string{"--repo", s.repoAddress(repo, a), "--password-file", name, "--cache-dir", filepath.Join(s.rt.Config.CacheDir, "restic"), "--json"}
 	var env []string
 	if a.Backend != "local" {
-		config := s.rt.RcloneConfig()
-		if config == "" {
-			return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+		config, err := s.rt.RcloneConfigFor(ctx, a.ID)
+		if err != nil {
+			return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
 		}
 		defer s.rt.ReleaseRcloneConfig(config)
 		// Inherit the config path in Rclone's subprocess without nested command quoting.
@@ -904,44 +935,45 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 	}
 }
 
-func (s *Service) rcloneOutput(ctx context.Context, args []string) ([]byte, error) {
-	if len(args) < 2 || args[1] == "" {
-		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...string) ([]byte, error) {
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.ID)
 	}
-	defer s.rt.ReleaseRcloneConfig(args[1])
-	output, err := process.Output(ctx, s.rt.Config.RcloneBin, args, nil)
-	s.observeRcloneAccounts(args, output, err)
+	config, err := s.rt.RcloneConfigFor(ctx, ids...)
+	if err != nil {
+		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
+	}
+	defer s.rt.ReleaseRcloneConfig(config)
+	output, err := process.Output(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil)
+	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
-func (s *Service) rcloneRun(ctx context.Context, args []string, onLine func(string)) ([]byte, error) {
-	if len(args) < 2 || args[1] == "" {
-		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据")
+func (s *Service) rcloneRun(ctx context.Context, accounts []Account, onLine func(string), args ...string) ([]byte, error) {
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.ID)
 	}
-	defer s.rt.ReleaseRcloneConfig(args[1])
-	output, err := process.Run(ctx, s.rt.Config.RcloneBin, args, nil, onLine)
-	s.observeRcloneAccounts(args, output, err)
+	config, err := s.rt.RcloneConfigFor(ctx, ids...)
+	if err != nil {
+		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
+	}
+	defer s.rt.ReleaseRcloneConfig(config)
+	output, err := process.Run(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil, onLine)
+	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
 
-func (s *Service) observeRcloneAccounts(args []string, output []byte, err error) {
+func (s *Service) observeRcloneAccounts(accounts []Account, output []byte, err error) {
 	if err == nil {
 		return
 	}
-	raws, e := s.rt.Store.All(context.Background(), "accounts")
-	if e != nil {
-		return
-	}
 	matched := []Account{}
-	for _, raw := range raws {
-		var a Account
-		if json.Unmarshal(raw, &a) != nil || a.Backend != "onedrive" || a.Remote == "" {
-			continue
-		}
-		for _, arg := range args {
-			if strings.HasPrefix(arg, a.Remote+":") {
-				matched = append(matched, a)
-				break
-			}
+	seen := map[string]bool{}
+	for _, a := range accounts {
+		if a.Backend == "onedrive" && !seen[a.ID] {
+			seen[a.ID] = true
+			matched = append(matched, a)
 		}
 	}
 	// A two-remote copy can fail on either side. Without remote attribution in
