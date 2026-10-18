@@ -14,7 +14,7 @@ func (s *Service) cleanupFileEntries(ctx context.Context, where string, args []a
 		statuses = append(statuses, status)
 	}
 	args = append(append([]any{}, args...), statuses...)
-	protected := " AND run_id NOT IN (SELECT coalesce(json_extract(data,'$.run_id'),'') FROM recovery_points WHERE coalesce(json_extract(data,'$.deleted_at'),'')='') AND run_id NOT IN (SELECT id FROM backup_runs WHERE coalesce(json_extract(data,'$.status'),'') NOT IN (" + strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",") + "))"
+	protected := " AND run_id NOT IN (SELECT coalesce(json_extract(data,'$.run_id'),'') FROM recovery_points WHERE coalesce(json_extract(data,'$.deleted_at'),'')='') AND NOT EXISTS (SELECT 1 FROM backup_runs active_run WHERE active_run.id=file_entries.run_id AND coalesce(json_extract(active_run.data,'$.status'),'') NOT IN (" + strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",") + "))"
 	return s.deleteEntryBatches(ctx, "DELETE FROM file_entries WHERE rowid IN (SELECT rowid FROM file_entries WHERE "+where+protected+" LIMIT 5000)", args, true)
 }
 
@@ -61,7 +61,7 @@ func (s *Service) cleanupOrphanEntries(ctx context.Context) error {
 	for _, status := range terminalStatuses {
 		args = append(args, status)
 	}
-	return s.cleanupSnapshotEntries(ctx, "task_id NOT IN (SELECT id FROM backup_runs WHERE coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+"))", args)
+	return s.cleanupSnapshotEntries(ctx, "NOT EXISTS (SELECT 1 FROM backup_runs active_run WHERE active_run.id=engine_snapshot_entries_v2.task_id AND coalesce(json_extract(active_run.data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+"))", args)
 }
 
 func (s *Service) cleanupTaskEntries(t *Task) {

@@ -133,6 +133,51 @@ func TestStartSweepsInterruptedEntriesAsynchronously(t *testing.T) {
 	}
 }
 
+func TestCleanupHandlesNullableHistoricalTaskIDs(t *testing.T) {
+	for _, nullTask := range []bool{false, true} {
+		t.Run(fmt.Sprintf("null_task=%t", nullTask), func(t *testing.T) {
+			s := cancellationService(t)
+			for _, task := range []Task{{ID: "active", Status: "running"}, {ID: "queued", Status: "queued"}, {ID: "finished", Status: "completed"}} {
+				if err := s.save(&task); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if nullTask {
+				// The existing rowid table permits a NULL TEXT PRIMARY KEY.
+				if _, err := s.rt.Store.DB.Exec("INSERT INTO backup_runs(id,version,data,updated_at) VALUES(NULL,1,?,?)", `{"status":"running"}`, now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for id, data := range map[string]any{
+				"live":      Point{ID: "live", RunID: "live-run"},
+				"live-null": map[string]any{"id": "live-null", "run_id": nil, "deleted_at": nil},
+			} {
+				if _, err := s.rt.Store.Save(t.Context(), "recovery_points", id, 0, data); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, run := range []string{"active", "queued", "finished", "orphan", "live-run", ""} {
+				insertCleanupEntries(t, s, run, 1)
+			}
+			if _, err := s.rt.Store.DB.Exec("CREATE TABLE engine_snapshot_entries_v2(task_id TEXT,repo_id TEXT,path TEXT,kind TEXT,size INTEGER,mtime_ns INTEGER,link_target TEXT,PRIMARY KEY(task_id,repo_id,path)); INSERT INTO engine_snapshot_entries_v2(task_id,repo_id,path) VALUES('active','repo','active'),('queued','repo','queued'),('finished','repo','finished'),('orphan','repo','orphan'),(NULL,'repo','null-task')"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.cleanupOrphanEntries(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			for run, want := range map[string]int{"active": 1, "queued": 1, "finished": 0, "orphan": 0, "live-run": 1, "": 1} {
+				if got := cleanupEntryCount(t, s, run); got != want {
+					t.Fatalf("run=%q count=%d want=%d", run, got, want)
+				}
+			}
+			var total, active int
+			if err := s.rt.Store.DB.QueryRow("SELECT count(*),count(CASE WHEN task_id IN ('active','queued') THEN 1 END) FROM engine_snapshot_entries_v2").Scan(&total, &active); err != nil || total != 2 || active != 2 {
+				t.Fatalf("snapshot cleanup retained orphans or removed active rows: total=%d active=%d err=%v", total, active, err)
+			}
+		})
+	}
+}
+
 func TestCleanupWaitsForImportedIndexPublication(t *testing.T) {
 	s := cancellationService(t)
 	unlock := s.lock("recovery-index")
