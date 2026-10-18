@@ -74,7 +74,7 @@ export async function api<T = any>(path: string, options: { method?: string; bod
     if (response.status === 204) return undefined as T
     let data: any
     try { data = await response.json() } catch { throw new ApiError('服务响应无法读取，请检查服务日志。', 'invalid_response', true, response.status) }
-    if (!response.ok) throw new ApiError(data.error ?? '操作未完成', data.code ?? 'request_failed', Boolean(data.retryable), response.status)
+    if (!response.ok) throw new ApiError(data?.error ?? '操作未完成', data?.code ?? 'request_failed', Boolean(data?.retryable), response.status)
     return data
   } finally { if (activeRequests.delete(requestID)) publishActivity() }
 }

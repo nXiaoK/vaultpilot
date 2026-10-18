@@ -10,13 +10,13 @@ const { outputText } = ts.transpileModule(readFileSync(new URL('../src/api.ts', 
 })
 
 // Run the real request code with isolated browser capabilities and a fetch recorder.
-function client(crypto, globals = {}) {
+function client(crypto, globals = {}, response = { status: 200, ok: true, json: async () => ({ id: 'queued-task' }) }) {
   const requests = []
   const context = vm.createContext({
     exports: {}, crypto, ...globals,
     fetch: async (url, options) => {
       requests.push({ url, ...options })
-      return { status: 200, ok: true, json: async () => ({ id: 'queued-task' }) }
+      return response
     },
   })
   vm.runInContext(outputText, context)
@@ -64,6 +64,32 @@ test('ordinary requests need no crypto and receive no task key', async () => {
   const { api, requests } = client(undefined)
   await api('/plans')
   assert.equal(requests[0].headers['Idempotency-Key'], undefined)
+})
+
+test('JSON null error responses become ApiError and release the active request', async () => {
+  const { api, ApiError, subscribeActivity } = client(undefined, {}, { status: 503, ok: false, json: async () => null })
+  const counts = []
+  const unsubscribe = subscribeActivity(items => counts.push(items.length))
+  await assert.rejects(api('/status'), error => {
+    assert.ok(error instanceof ApiError)
+    assert.equal(error.message, '操作未完成')
+    assert.equal(error.code, 'request_failed')
+    assert.equal(error.retryable, false)
+    assert.equal(error.status, 503)
+    return true
+  })
+  unsubscribe()
+  assert.deepEqual(counts, [0, 1, 0])
+})
+
+test('structured errors retain their server message, code, retry policy and status', async () => {
+  const { api, ApiError } = client(undefined, {}, { status: 409, ok: false, json: async () => ({ error: 'version changed', code: 'conflict', retryable: true }) })
+  await assert.rejects(api('/accounts'), error => error instanceof ApiError && error.message === 'version changed' && error.code === 'conflict' && error.retryable && error.status === 409)
+})
+
+test('successful JSON null remains null', async () => {
+  const { api } = client(undefined, {}, { status: 200, ok: true, json: async () => null })
+  assert.equal(await api('/optional'), null)
 })
 
 test('downloads attach the link and revoke its URL only after the timer fires', () => {
