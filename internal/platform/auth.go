@@ -5,14 +5,19 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+const maxAuthRequestBytes = 8 << 10
+const maxSetupRequestBytes = 1 << 20
 
 func (r *Runtime) session(req *http.Request) (session, string, bool) {
 	c, e := req.Cookie("vaultpilot_session")
@@ -42,8 +47,39 @@ func (r *Runtime) makeSession(w http.ResponseWriter, username string) session {
 	http.SetCookie(w, &http.Cookie{Name: "vaultpilot_session", Value: id, Path: "/", HttpOnly: true, Secure: r.secureCookie(), SameSite: http.SameSiteLaxMode, MaxAge: 12 * 3600})
 	return s
 }
+func (r *Runtime) allowedHost(host string) bool {
+	host = strings.ToLower(host)
+	name, _, e := net.SplitHostPort(host)
+	if e != nil {
+		name = host
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && net.ParseIP(host[1:len(host)-1]) != nil {
+			name = host[1 : len(host)-1]
+		}
+	}
+	if name == "localhost" || name == "127.0.0.1" || name == "::1" {
+		return true
+	}
+	if public, e := url.Parse(r.Config.PublicURL); e == nil && public.Host != "" && strings.EqualFold(public.Host, host) {
+		return true
+	}
+	for _, allowed := range r.Config.AllowedHosts {
+		if strings.EqualFold(strings.TrimSpace(allowed), host) {
+			return true
+		}
+	}
+	return false
+}
 func (r *Runtime) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !r.allowedHost(req.Host) {
+			message := "请求主机名不在允许列表中，请通过 VP_PUBLIC_URL 或 VP_ALLOWED_HOSTS 配置访问地址"
+			if strings.HasPrefix(req.URL.Path, "/api/") {
+				fail(w, http.StatusMisdirectedRequest, "host_invalid", message)
+			} else {
+				http.Error(w, message, http.StatusMisdirectedRequest)
+			}
+			return
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -102,11 +138,19 @@ func (r *Runtime) Handler(next http.Handler) http.Handler {
 }
 func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 	s, _, ok := r.session(req)
-	r.mu.Lock()
-	mode := r.mode
-	r.mu.Unlock()
-	v := map[string]any{"initialized": r.Initialized(), "authenticated": ok, "unlocked": r.Keys.Unlocked(), "vault_id": r.VaultID(), "mode": mode, "cloud_pending": r.CloudPending(), "oauth_configured": r.Config.OAuthClientID != "" && r.Config.PublicURL != "", "allow_local": r.Config.AllowLocal, "engines": map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}, "source_roots": r.Config.SourceRoots, "restore_roots": r.Config.RestoreRoots}
+	v := map[string]any{"initialized": r.Initialized(), "authenticated": ok}
 	if ok {
+		r.mu.Lock()
+		v["mode"] = r.mode
+		r.mu.Unlock()
+		v["unlocked"] = r.Keys.Unlocked()
+		v["vault_id"] = r.VaultID()
+		v["cloud_pending"] = r.CloudPending()
+		v["oauth_configured"] = r.Config.OAuthClientID != "" && r.Config.PublicURL != ""
+		v["allow_local"] = r.Config.AllowLocal
+		v["engines"] = map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}
+		v["source_roots"] = r.Config.SourceRoots
+		v["restore_roots"] = r.Config.RestoreRoots
 		v["csrf_token"] = s.CSRF
 		v["cache_max_bytes"] = r.Config.CacheMaxBytes
 		v["log_max_rows"] = r.Config.LogMaxRows
@@ -119,11 +163,49 @@ func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (r *Runtime) throttled(req *http.Request) bool {
+func (r *Runtime) trustedProxy(addr netip.Addr) bool {
+	for _, prefix := range r.Config.TrustedProxies {
+		if prefix.Contains(addr) || addr.Is4() && prefix.Addr().Is4In6() && prefix.Contains(netip.AddrFrom16(addr.As16())) {
+			return true
+		}
+	}
+	return false
+}
+func (r *Runtime) clientIP(req *http.Request) string {
 	host, _, e := net.SplitHostPort(req.RemoteAddr)
 	if e != nil {
 		host = req.RemoteAddr
 	}
+	remote, e := netip.ParseAddr(host)
+	if e != nil {
+		return host
+	}
+	remote = remote.Unmap()
+	if !r.trustedProxy(remote) {
+		return remote.String()
+	}
+	forwarded := strings.Split(strings.Join(req.Header.Values("X-Forwarded-For"), ","), ",")
+	current := remote
+	for i := len(forwarded) - 1; i >= 0; i-- {
+		if !r.trustedProxy(current) {
+			return current.String()
+		}
+		addr, e := netip.ParseAddr(strings.TrimSpace(forwarded[i]))
+		if e != nil {
+			return remote.String()
+		}
+		current = addr.Unmap()
+	}
+	return current.String()
+}
+func (r *Runtime) resetAttempts(req *http.Request, action string) {
+	key := action + "|" + r.clientIP(req)
+	r.mu.Lock()
+	delete(r.attempts, key)
+	r.mu.Unlock()
+}
+func (r *Runtime) throttled(req *http.Request, action string) bool {
+	key := action + "|" + r.clientIP(req)
 	now := time.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -132,12 +214,12 @@ func (r *Runtime) throttled(req *http.Request) bool {
 			delete(r.attempts, k)
 		}
 	}
-	a := r.attempts[host]
+	a := r.attempts[key]
 	if a.Since.IsZero() {
 		a.Since = now
 	}
 	a.Count++
-	r.attempts[host] = a
+	r.attempts[key] = a
 	return a.Count > 10
 }
 func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
@@ -147,7 +229,7 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		fail(w, 409, "already_initialized", "实例已初始化")
 		return
 	}
-	if r.throttled(req) {
+	if r.throttled(req, "setup") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "请求过于频繁，请稍后重试")
 		return
@@ -159,7 +241,7 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 		Mode             string          `json:"mode"`
 		Kit              json.RawMessage `json:"recovery_kit"`
 	}
-	if !decode(w, req, &input) {
+	if !decodeLimit(w, req, &input, maxSetupRequestBytes) {
 		return
 	}
 	input.Username = strings.TrimSpace(input.Username)
@@ -242,11 +324,12 @@ func (r *Runtime) setup(w http.ResponseWriter, req *http.Request) {
 			key[i] = 0
 		}
 	}
+	r.resetAttempts(req, "setup")
 	s := r.makeSession(w, input.Username)
 	writeJSON(w, 201, map[string]any{"vault_id": p.VaultID, "mode": input.Mode, "cloud_pending": input.Mode == "cloud", "csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
 func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
-	if r.throttled(req) {
+	if r.throttled(req, "login") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "登录尝试过于频繁，请 15 分钟后重试")
 		return
@@ -255,7 +338,7 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if len(v.Password) > 1024 {
@@ -270,10 +353,15 @@ func (r *Runtime) login(w http.ResponseWriter, req *http.Request) {
 		fail(w, 401, "credentials_invalid", "用户名或密码错误")
 		return
 	}
+	r.resetAttempts(req, "login")
 	s := r.makeSession(w, username)
 	writeJSON(w, 200, map[string]any{"csrf_token": s.CSRF, "unlocked": r.Keys.Unlocked()})
 }
 func (r *Runtime) logout(w http.ResponseWriter, req *http.Request) {
+	if _, e := io.Copy(io.Discard, http.MaxBytesReader(w, req.Body, maxAuthRequestBytes)); e != nil {
+		fail(w, 400, "invalid_body", "请求体无效或超过 8 KiB")
+		return
+	}
 	_, id, _ := r.session(req)
 	r.mu.Lock()
 	delete(r.sessions, id)
@@ -290,20 +378,21 @@ func (r *Runtime) logout(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(204)
 }
 func (r *Runtime) unlockHandler(w http.ResponseWriter, req *http.Request) {
-	if r.throttled(req) {
+	if r.throttled(req, "unlock") {
 		fail(w, 429, "rate_limited", "解锁尝试过于频繁")
 		return
 	}
 	var v struct {
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if e := r.unlock(v.Password); e != nil {
 		fail(w, 400, "unlock_failed", e.Error())
 		return
 	}
+	r.resetAttempts(req, "unlock")
 	writeJSON(w, 200, map[string]bool{"unlocked": true})
 }
 func (r *Runtime) lockHandler(w http.ResponseWriter, req *http.Request) {
@@ -314,7 +403,7 @@ func (r *Runtime) exportKit(w http.ResponseWriter, req *http.Request) {
 	var v struct {
 		Password string `json:"password"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if len(v.Password) < 12 || len(v.Password) > 1024 {

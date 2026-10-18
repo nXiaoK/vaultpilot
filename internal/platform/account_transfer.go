@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/argon2"
 )
 
 const maxAccountTransfer = 1 << 20
@@ -75,7 +73,7 @@ func protectAccounts(p transferPayload, password string) (RecoveryKit, error) {
 	if len(plain) > maxAccountTransfer {
 		return kit, errors.New("账号包超过 1 MiB，请分批导出")
 	}
-	key := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
+	key := deriveKey([]byte(password), salt, 3, 64*1024, 2)
 	defer clear(key)
 	box, err := encrypt(key, plain, []byte(accountTransferAAD))
 	kit.Ciphertext = base64.StdEncoding.EncodeToString(box)
@@ -95,7 +93,7 @@ func openAccounts(kit RecoveryKit, password string) (transferPayload, error) {
 	if err != nil || len(box) < 28 || len(box) > maxAccountTransfer+32 {
 		return p, bad
 	}
-	key := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
+	key := deriveKey([]byte(password), salt, 3, 64*1024, 2)
 	defer clear(key)
 	plain, err := decrypt(key, box, []byte(accountTransferAAD))
 	if err != nil {
@@ -117,16 +115,15 @@ func openAccounts(kit RecoveryKit, password string) (transferPayload, error) {
 	}
 	return p, nil
 }
-func (r *Runtime) decodeTransfer(w http.ResponseWriter, req *http.Request, v *transferRequest) bool {
-	req.Body = http.MaxBytesReader(w, req.Body, 2*maxAccountTransfer)
-	if !decode(w, req, v) {
+func (r *Runtime) decodeTransfer(w http.ResponseWriter, req *http.Request, v *transferRequest, limit int64) bool {
+	if !decodeLimit(w, req, v, limit) {
 		return false
 	}
 	if len(v.Password) < 12 || len(v.Password) > 1024 {
 		fail(w, 400, "weak_credentials", "账号包保护密码至少 12 个字符，最多 1024 个字节")
 		return false
 	}
-	if !r.ConsumeSecretAttempt(req) {
+	if !r.ConsumeSecretAttempt(req, "transfer") {
 		w.Header().Set("Retry-After", "900")
 		fail(w, 429, "rate_limited", "密码操作过于频繁，请稍后重试")
 		return false
@@ -135,7 +132,7 @@ func (r *Runtime) decodeTransfer(w http.ResponseWriter, req *http.Request, v *tr
 }
 func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 	var v transferRequest
-	if !r.decodeTransfer(w, req, &v) {
+	if !r.decodeTransfer(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	if len(v.AccountIDs) < 1 || len(v.AccountIDs) > 50 {
@@ -183,6 +180,7 @@ func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_export_failed", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	_ = r.Store.Audit(req.Context(), "accounts.export", "accounts")
 	w.Header().Set("Content-Disposition", `attachment; filename="vaultpilot-accounts.json"`)
 	writeJSON(w, 200, kit)
@@ -203,7 +201,7 @@ func (r *Runtime) transferExisting(req *http.Request) (map[string]bool, error) {
 }
 func (r *Runtime) previewAccounts(w http.ResponseWriter, req *http.Request) {
 	var v transferRequest
-	if !r.decodeTransfer(w, req, &v) {
+	if !r.decodeTransfer(w, req, &v, 2*maxAccountTransfer) {
 		return
 	}
 	r.accountTransferMu.Lock()
@@ -213,6 +211,7 @@ func (r *Runtime) previewAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_package_invalid", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	seen, err := r.transferExisting(req)
 	if err != nil {
 		fail(w, 500, "database_error", "无法读取已有账号")
@@ -226,7 +225,7 @@ func (r *Runtime) previewAccounts(w http.ResponseWriter, req *http.Request) {
 }
 func (r *Runtime) importAccounts(w http.ResponseWriter, req *http.Request) {
 	var v transferRequest
-	if !r.decodeTransfer(w, req, &v) {
+	if !r.decodeTransfer(w, req, &v, 2*maxAccountTransfer) {
 		return
 	}
 	r.accountTransferMu.Lock()
@@ -236,6 +235,7 @@ func (r *Runtime) importAccounts(w http.ResponseWriter, req *http.Request) {
 		fail(w, 400, "account_package_invalid", err.Error())
 		return
 	}
+	r.resetAttempts(req, "transfer")
 	selected := map[string]bool{}
 	if len(v.DriveIDs) < 1 || len(v.DriveIDs) > 50 {
 		fail(w, 400, "account_selection_required", "请选择需要导入的账号")

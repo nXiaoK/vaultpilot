@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -21,7 +22,8 @@ import (
 
 type Config struct {
 	Addr, StateDir, CacheDir, PublicURL, ResticBin, RcloneBin, AutoUnlockFile string
-	SourceRoots, RestoreRoots                                                 []string
+	SourceRoots, RestoreRoots, AllowedHosts                                   []string
+	TrustedProxies                                                            []netip.Prefix
 	AllowLocal                                                                bool
 	GlobalConcurrency                                                         int
 	LogMaxRows                                                                int
@@ -306,7 +308,10 @@ func fail(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{"error": message, "code": code, "retryable": status == 429 || status == 503})
 }
 func decode(w http.ResponseWriter, req *http.Request, out any) bool {
-	req.Body = http.MaxBytesReader(w, req.Body, 16*1024*1024)
+	return decodeLimit(w, req, out, 16*1024*1024)
+}
+func decodeLimit(w http.ResponseWriter, req *http.Request, out any, limit int64) bool {
+	req.Body = http.MaxBytesReader(w, req.Body, limit)
 	d := json.NewDecoder(req.Body)
 	if e := d.Decode(out); e != nil {
 		fail(w, 400, "invalid_json", "请求 JSON 无效")

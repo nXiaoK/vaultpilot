@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -55,12 +56,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("VP_CACHE_MAX_BYTES 必须为整数: %w", err)
 	}
+	var trustedProxies []netip.Prefix
+	for _, value := range roots("VP_TRUSTED_PROXIES", "") {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return fmt.Errorf("VP_TRUSTED_PROXIES 包含无效 CIDR %q: %w", value, err)
+		}
+		trustedProxies = append(trustedProxies, prefix.Masked())
+	}
 	config := platform.Config{
 		Addr: env("VP_ADDR", "127.0.0.1:8080"), StateDir: env("VP_STATE_DIR", "./state"),
 		CacheDir: env("VP_CACHE_DIR", "./cache"), PublicURL: env("VP_PUBLIC_URL", "http://localhost:8080"),
 		ResticBin: env("VP_RESTIC_BIN", "restic"), RcloneBin: env("VP_RCLONE_BIN", "rclone"),
 		AutoUnlockFile: os.Getenv("VP_AUTO_UNLOCK_FILE"), SourceRoots: roots("VP_SOURCE_ROOTS", "/sources"),
-		RestoreRoots: roots("VP_RESTORE_ROOTS", "/restore"), AllowLocal: os.Getenv("VP_ALLOW_LOCAL") == "true",
+		AllowedHosts: roots("VP_ALLOWED_HOSTS", ""), TrustedProxies: trustedProxies, RestoreRoots: roots("VP_RESTORE_ROOTS", "/restore"), AllowLocal: os.Getenv("VP_ALLOW_LOCAL") == "true",
 		GlobalConcurrency: concurrency, LogMaxRows: logMaxRows, CacheMaxBytes: cacheMaxBytes,
 		MaintenanceWindow: os.Getenv("VP_MAINTENANCE_WINDOW"), MaintenanceTimezone: env("VP_MAINTENANCE_TIMEZONE", "Asia/Shanghai"),
 		OAuthClientID: os.Getenv("VP_OAUTH_CLIENT_ID"), OAuthClientSecret: os.Getenv("VP_OAUTH_CLIENT_SECRET"),

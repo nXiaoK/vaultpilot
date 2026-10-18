@@ -60,7 +60,9 @@ func TestTelegramSettingsEncryptionAuthenticationAndRotation(t *testing.T) {
 		t.Fatal("missing CSRF accepted")
 	}
 	unauth := httptest.NewRecorder()
-	h.h.ServeHTTP(unauth, httptest.NewRequest("GET", "/api/notifications/telegram", nil))
+	request := httptest.NewRequest("GET", "/api/notifications/telegram", nil)
+	request.Host = "localhost"
+	h.h.ServeHTTP(unauth, request)
 	if unauth.Code != 401 {
 		t.Fatal("unauthenticated configuration read")
 	}

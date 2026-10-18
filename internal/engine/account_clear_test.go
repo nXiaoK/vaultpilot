@@ -361,7 +361,9 @@ func TestAccountClearRejectsSymlinkAndRecoveryNode(t *testing.T) {
 	}
 	// Authentication/CSRF middleware also applies to the new routes.
 	res = httptest.NewRecorder()
-	rt.Handler(mux).ServeHTTP(res, httptest.NewRequest("POST", "/api/accounts/clear/preview", strings.NewReader(`{"account_ids":["one"]}`)))
+	request := httptest.NewRequest("POST", "/api/accounts/clear/preview", strings.NewReader(`{"account_ids":["one"]}`))
+	request.Host = "localhost"
+	rt.Handler(mux).ServeHTTP(res, request)
 	if res.Code != 401 {
 		t.Fatal("unauthenticated clear preview accepted")
 	}

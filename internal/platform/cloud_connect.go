@@ -23,10 +23,16 @@ type cloudBootstrap struct {
 	Kit     RecoveryKit `json:"kit"`
 }
 
-// ConsumeSecretAttempt applies the same IP-based attempt limit used for login
-// and vault unlocking. Callers must invoke it before processing a supplied
-// cloud connection password, including candidate scans.
-func (r *Runtime) ConsumeSecretAttempt(req *http.Request) bool { return !r.throttled(req) }
+// ConsumeSecretAttempt reserves an attempt for the supplied action and client.
+// Callers must invoke it before processing a supplied secret, including scans.
+func (r *Runtime) ConsumeSecretAttempt(req *http.Request, action string) bool {
+	return !r.throttled(req, action)
+}
+
+// ResetSecretAttempts clears the action's failed attempts after authentication.
+func (r *Runtime) ResetSecretAttempts(req *http.Request, action string) {
+	r.resetAttempts(req, action)
+}
 
 func validCloudPassword(password string) bool { return len(password) >= 12 && len(password) <= 1024 }
 

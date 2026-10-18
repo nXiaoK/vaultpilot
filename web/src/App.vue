@@ -142,7 +142,7 @@ async function submitAuth() { await action(async () => {
 }) }
 async function cloudConnected() { await initialLoad(); toast('已连接原备份库，正在发现云端恢复点。') }
 async function cloudActivity(task?: Entity) { await Promise.allSettled(['points','tasks','repos','sources'].map(key=>loadList(key))); if(task) await openTask(task) }
-async function readKit(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { if (file.size > 10*1024*1024) { showError(new Error('恢复包超过 10 MiB，请检查文件。')); return }; authForm.recovery_kit = await file.text(); importFilename.value = file.name } }
+async function readKit(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { if (file.size > 1024*1024) { showError(new Error('恢复包超过 1 MiB，请检查文件。')); return }; authForm.recovery_kit = await file.text(); importFilename.value = file.name } }
 async function logout() { await action(async () => { await api('/auth/logout',{method:'POST',body:{}}); await refreshStatus(); for (const key in data) data[key] = [];for(const key in catalog)catalog[key]=[] }) }
 async function saveForm() { await action(async () => {
   const kind = modal.value

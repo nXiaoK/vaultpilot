@@ -53,6 +53,7 @@ func cloudTestHTTP(t *testing.T, s *Service, setup string) *cloudHTTP {
 
 func (h *cloudHTTP) call(method, path, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Host = "localhost"
 	r.Header.Set("Content-Type", "application/json")
 	if h.cookie != nil {
 		r.AddCookie(h.cookie)
@@ -315,5 +316,29 @@ func TestCloudBootstrapRejectsSpecialFilesAndOversizedMetadata(t *testing.T) {
 	}
 	if _, err = s.readCloudBootstrap(context.Background(), account, id); err == nil {
 		t.Fatal("outside symlink accepted")
+	}
+}
+
+func TestCloudSecretRejectsOversizedBodies(t *testing.T) {
+	rt, err := platform.New(platform.Config{StateDir: filepath.Join(t.TempDir(), "state")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	s := &Service{rt: rt}
+	for _, handler := range []struct {
+		name string
+		call http.HandlerFunc
+	}{{"publish", s.cloudPublish}, {"join", s.cloudJoin}} {
+		for _, body := range []string{
+			`{"password":"` + strings.Repeat("x", 64<<10) + `"}`,
+			`{"password":"valid-cloud-password"}` + strings.Repeat(" ", 64<<10),
+		} {
+			response := httptest.NewRecorder()
+			handler.call(response, httptest.NewRequest("POST", "/", strings.NewReader(body)))
+			if response.Code != 400 || !strings.Contains(response.Body.String(), `"code":"INVALID_REQUEST"`) {
+				t.Errorf("oversized cloud %s: %d %s", handler.name, response.Code, response.Body.String())
+			}
+		}
 	}
 }
