@@ -18,7 +18,7 @@ for (const failed of [false, true]) {
     const calls = []
     const context = vm.createContext({
       form: {password: 'new-package-password', admin_password: 'current-login-password'},
-      status: {value: {vault_id: 'vault'}}, modal: {value: 'export'}, busy: {value: false}, confirmAction: {value: null},
+      status: {value: {vault_id: 'vault'}}, modal: {value: 'export'}, busy: {value: false}, authorizationBusy: {value: false}, confirmAction: {value: null},
       action: async fn => { try { await fn() } catch {} }, toast: () => {}, Blob, downloadBlob: () => {},
       api: async (path, options) => { calls.push({path, options}); if (failed) throw new Error('reauth failed'); return {format: 'encrypted'} },
     })
@@ -34,10 +34,12 @@ for (const failed of [false, true]) {
   })
   test(`account export sends current login password and clears it after ${failed ? 'failure' : 'success'}`, async () => {
     const calls = []
+    const downloads = []
     const context = vm.createContext({
       password: {value: 'new-package-password'}, repeat: {value: 'new-package-password'}, adminPassword: {value: 'current-login-password'},
       agreed: {value: true}, selected: {value: ['account']}, working: {value: false}, failure: {value: ''}, message: {value: ''}, emit: () => {},
-      Blob, URL: {createObjectURL: () => 'blob:export', revokeObjectURL: () => {}}, document: {createElement: () => ({click: () => {}})}, setTimeout: () => {},
+      Error, Blob, URL: {createObjectURL: () => 'blob:export', revokeObjectURL: () => {}}, document: {createElement: () => ({click: () => {}})}, setTimeout: () => {},
+      downloadBlob: (_blob, name) => downloads.push(name),
       api: async (path, options) => { calls.push({path, options}); if (failed) throw new Error('reauth failed'); return {format: 'encrypted'} },
     })
     vm.runInContext(accountActions, context)
@@ -47,5 +49,8 @@ for (const failed of [false, true]) {
     assert.equal(calls[0].options.body.password, 'new-package-password')
     assert.equal(context.adminPassword.value, '')
     assert.equal(context.working.value, false)
+    assert.deepEqual(downloads, failed ? [] : ['vaultpilot-accounts.json'])
+    assert.equal(context.failure.value, failed ? 'reauth failed' : '')
+    if (!failed) assert.match(context.message.value, /加密账号包已下载/)
   })
 }

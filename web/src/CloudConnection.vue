@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Cloud, KeyRound, LoaderCircle, LockKeyhole, RefreshCw, ShieldCheck } from 'lucide-vue-next'
+import { Cloud, KeyRound, LoaderCircle, LockKeyhole, RefreshCw, ShieldCheck } from '@lucide/vue'
 import { api, date } from './api'
 import type { Entity } from './api'
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Cloud, HardDrive, LoaderCircle, Search, ShieldCheck, Trash2 } from 'lucide-vue-next'
+import { Cloud, HardDrive, LoaderCircle, Search, ShieldCheck, Trash2 } from '@lucide/vue'
 import { api, bytes, type Entity } from './api'
 const props = defineProps<{ accounts: Entity[]; initialIds?: string[] }>()
 const emit = defineEmits<{ busy: [value: boolean]; submitted: [task: Entity] }>()

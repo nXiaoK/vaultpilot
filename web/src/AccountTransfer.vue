@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Download, FileUp, LoaderCircle, ShieldCheck } from 'lucide-vue-next'
+import { Download, FileUp, LoaderCircle, ShieldCheck } from '@lucide/vue'
 import { api, bytes, downloadBlob, type Entity } from './api'
 const props = defineProps<{ mode: 'export' | 'import'; accounts: Entity[] }>()
 const emit = defineEmits<{ busy: [value: boolean]; changed: [] }>()

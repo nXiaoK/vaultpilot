@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { Bell, Check, LoaderCircle, RefreshCw, Send, ShieldCheck } from 'lucide-vue-next'
+import { Bell, Check, LoaderCircle, RefreshCw, Send, ShieldCheck } from '@lucide/vue'
 import { api, date } from './api'
 const emit = defineEmits<{ busy: [value: boolean] }>()
 const settings = reactive({ version: 0, enabled: false, node_name: 'VaultPilot', chat_id: '', bot_token: '', clear_token: false, backup_success: true, backup_failure: true, account_error: true })
