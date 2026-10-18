@@ -262,3 +262,41 @@ func TestNewFileReusesRepositoryWithoutSecondInitializationReservation(t *testin
 		t.Fatalf("expected single reused repository: %+v", allocation)
 	}
 }
+
+func TestMigrateRejectsTargetOutsidePlanPool(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	plan := Plan{ID: "plan", PoolID: "pool"}
+	pool := Pool{ID: "pool", AccountIDs: []string{"a", "b"}}
+	repo := Repository{ID: "repo", PlanID: plan.ID, AccountID: "a", Path: "original", Locations: []Location{{AccountID: "a", Path: "original", Verified: true}}}
+	for _, item := range []struct {
+		table, id string
+		value     any
+	}{
+		{"backup_plans", plan.ID, plan}, {"storage_pools", pool.ID, pool}, {"repositories", repo.ID, repo},
+		{"accounts", "a", Account{ID: "a", Verified: true, Enabled: true}},
+		{"accounts", "c", Account{ID: "c", Verified: true, Enabled: true}},
+	} {
+		if _, err = db.Save(ctx, item.table, item.id, 0, item.value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Service{rt: &platform.Runtime{Store: db, Config: platform.Config{RcloneBin: filepath.Join(t.TempDir(), "missing-rclone")}}}
+	request, _ := json.Marshal(MigrateRequest{RepositoryID: repo.ID, TargetAccountID: "c", Confirm: true})
+	err = s.migrate(ctx, &Task{ID: "migration", Request: request})
+	failure, ok := err.(*failure)
+	if !ok || failure.Code != "MIGRATION_TARGET_OUTSIDE_POOL" {
+		t.Fatalf("expected pool validation before engine call: %v", err)
+	}
+	var got Repository
+	if err = db.Get(ctx, "repositories", repo.ID, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.AccountID != repo.AccountID || got.Path != repo.Path || len(got.Locations) != 1 || got.Locations[0] != repo.Locations[0] {
+		t.Fatalf("migration changed repository: %+v", got)
+	}
+}

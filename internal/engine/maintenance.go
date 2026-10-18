@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -395,6 +396,17 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if source.ID == target.ID || !target.Verified || !target.Enabled {
 		return fail("INVALID_MIGRATION_TARGET", "目标必须是其他已验证启用账号")
 	}
+	var plan Plan
+	if err := s.rt.Store.Get(ctx, "backup_plans", repo.PlanID, &plan); err != nil {
+		return err
+	}
+	var pool Pool
+	if err := s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
+		return err
+	}
+	if !slices.Contains(pool.AccountIDs, target.ID) {
+		return fail("MIGRATION_TARGET_OUTSIDE_POOL", "目标账号必须属于该仓库所在计划的存储池；如需使用新账号，请先将其加入存储池")
+	}
 	if err := s.refreshAccount(ctx, &target); err != nil {
 		return err
 	}
@@ -458,16 +470,7 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if err != nil {
 		return err
 	}
-	var plan Plan
-	if err = s.rt.Store.Get(ctx, "backup_plans", repo.PlanID, &plan); err != nil {
-		_, _ = s.rt.Store.Save(ctx, "repositories", old.ID, -1, old)
-		return err
-	}
-	var pool Pool
-	if err = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
-		_, _ = s.rt.Store.Save(ctx, "repositories", old.ID, -1, old)
-		return err
-	}
+
 	s.stage(t, "committing_location")
 	commitErr := s.commit(ctx, t, pool, nil, nil)
 	if commitErr != nil && !degraded(commitErr) {

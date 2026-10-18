@@ -2270,7 +2270,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '502':
           "$ref": "#/components/responses/APIError"
-      description: 正常迁移冻结计划/账号/仓库，完整复制及全量读取验证，提交新位置，保留旧副本。cleanup_old是独立确认的破坏性操作；恢复节点拒绝。
+      description: 目标账号必须属于仓库所在计划的存储池，否则任务返回 MIGRATION_TARGET_OUTSIDE_POOL。正常迁移冻结计划/账号/仓库，完整复制及全量读取验证，提交新位置，保留旧副本。cleanup_old是独立确认的破坏性操作；恢复节点拒绝。
       parameters:
       - "$ref": "#/components/parameters/IdempotencyKey"
       requestBody:
