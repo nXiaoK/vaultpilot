@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -103,11 +104,16 @@ func run() error {
 	runtime.Register(mux)
 	service.Register(mux)
 	server := &http.Server{Addr: config.Addr, Handler: runtime.Handler(mux), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 1 << 20}
+	listener, err := net.Listen("tcp", config.Addr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
 	service.Start(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("VaultPilot %s listening on %s", version, config.Addr)
-		errCh <- server.ListenAndServe()
+		errCh <- server.Serve(listener)
 	}()
 	select {
 	case <-ctx.Done():
