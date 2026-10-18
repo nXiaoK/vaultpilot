@@ -25,6 +25,8 @@ paths:
       operationId: get_telegram_notifications
       tags: [通知]
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 脱敏设置、队列统计与最近十条记录
           content:
@@ -43,6 +45,8 @@ paths:
           application/json:
             schema: {"$ref": "#/components/schemas/TelegramSettingsRequest"}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 保存成功后的脱敏设置
           content:
@@ -59,6 +63,8 @@ paths:
       tags: [通知]
       security: [{SessionAuth: [], CSRFToken: []}]
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 已排队，不代表已送达
           content:
@@ -77,6 +83,8 @@ paths:
       tags: [通知]
       security: [{SessionAuth: [], CSRFToken: []}]
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202': {description: 重试已提交}
         '401': {"$ref": "#/components/responses/APIError"}
         '403': {"$ref": "#/components/responses/APIError"}
@@ -88,6 +96,8 @@ paths:
       tags: [通知]
       security: [{SessionAuth: [], CSRFToken: []}]
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202': {description: 检查已提交}
         '401': {"$ref": "#/components/responses/APIError"}
         '403': {"$ref": "#/components/responses/APIError"}
@@ -100,6 +110,8 @@ paths:
       - 安全
       security: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 初始化、身份、密钥、引擎及部署限制状态
           content:
@@ -120,6 +132,8 @@ paths:
       - 安全
       security: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 创建备份库、导入恢复包或建立待连接云端恢复节点
           content:
@@ -149,6 +163,8 @@ paths:
       - 安全
       security: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 管理员登录
           content:
@@ -180,6 +196,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '204':
           description: 结束当前会话
         '400':
@@ -214,6 +232,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 使用当前节点恢复密码解锁主密钥
           content:
@@ -252,6 +272,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 清除内存中的主密钥
           content:
@@ -290,6 +312,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 导出独立密码保护的离线恢复包
           content:
@@ -336,6 +360,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 发现认证提交目录并重建本地索引
           content:
@@ -376,6 +402,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 账号列表，不返回敏感凭据
           content:
@@ -410,6 +438,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 创建OneDrive配置或显式启用的本地联调入口
           content:
@@ -453,6 +483,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/AccountClearSelection"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 账号、退役仓库、失效恢复点及暂停计划；受保护点或活动任务导致 blocked
           content:
@@ -483,6 +515,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/AccountClearRequest"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: account-clear 后台任务，结果记录每个账号的 cleared/error/warning 及 cleanup_pending
           content:
@@ -513,6 +547,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/AccountExportRequest"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 导出密码加密的已验证 OneDrive 账号包
           content:
@@ -545,6 +581,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/AccountImportRequest"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 解密账号包并返回不含凭据的预览
           content:
@@ -577,6 +615,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/AccountImportRequest"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 原子导入所选账号和本地加密凭据，跳过重复 Drive
           content:
@@ -603,6 +643,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 修改账号名称、启用状态与预算
           content:
@@ -642,6 +684,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 修改账号名称、启用状态与预算
           content:
@@ -681,6 +725,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '204':
           description: 删除未被仓库、历史位置或池引用的账号配置
         '400':
@@ -712,6 +758,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 生成会话绑定state与PKCE的微软授权地址
           content:
@@ -764,6 +812,8 @@ paths:
               properties:
                 version: {type: integer, minimum: 1}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 已启动，继续轮询
           content:
@@ -777,6 +827,8 @@ paths:
       parameters:
       - {name: flow_id, in: query, required: true, schema: {type: string}}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 状态、微软授权 URL 或完成后的账号；不包含凭据
           content:
@@ -793,6 +845,8 @@ paths:
       parameters:
       - {name: flow_id, in: query, required: true, schema: {type: string}}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 已请求取消，轮询至 cancelled
           content:
@@ -821,6 +875,8 @@ paths:
               properties:
                 url: {type: string, maxLength: 65536}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202': {description: 已提交，继续轮询授权状态}
         '400': {"$ref": "#/components/responses/APIError"}
         '409': {"$ref": "#/components/responses/APIError"}
@@ -842,6 +898,8 @@ paths:
               properties:
                 config: {type: string, maxLength: 1048576, description: 未加密 INI、dump JSON 或 authorize 结果；不原样保存}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: remote 名称、Drive 参考信息与 custom_client；不含 Token 或客户端密钥
           content:
@@ -883,6 +941,8 @@ paths:
                 remote: {type: string}
                 version: {type: integer, minimum: 1}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: awaiting_drive_selection 账号
           content:
@@ -898,6 +958,8 @@ paths:
       - 账号
       security: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '303':
           description: 微软授权回调，校验state并交换Token
           headers:
@@ -936,6 +998,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 列出授权可见Drive，必须由用户选择
           content:
@@ -970,6 +1034,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 显式Drive选择、根访问及项目目录读写验证
           content:
@@ -1011,6 +1077,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 刷新真实配额及项目占用
           content:
@@ -1050,6 +1118,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 存储池配置列表
           content:
@@ -1084,6 +1154,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 创建存储池配置
           content:
@@ -1122,6 +1194,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 保存完整存储池配置并检查version
           content:
@@ -1161,6 +1235,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 保存完整存储池配置并检查version
           content:
@@ -1200,6 +1276,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '204':
           description: 删除未被计划引用的存储池配置
         '400':
@@ -1229,6 +1307,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 目录配置列表
           content:
@@ -1263,6 +1343,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 创建目录配置
           content:
@@ -1301,6 +1383,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 保存完整目录配置并检查version
           content:
@@ -1340,6 +1424,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 保存完整目录配置并检查version
           content:
@@ -1379,6 +1465,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '204':
           description: 删除未被计划引用的目录配置
         '400':
@@ -1408,6 +1496,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 分页浏览服务器允许的直属目录
           content:
@@ -1447,6 +1537,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 分页读取管理操作审计事件
           content:
@@ -1481,6 +1573,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 计划列表及未来三次执行时间
           content:
@@ -1515,6 +1609,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 创建备份计划
           content:
@@ -1553,6 +1649,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '201':
           description: 更新完整计划配置并检查version
           content:
@@ -1593,6 +1691,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '204':
           description: 删除未运行的计划
         '400':
@@ -1623,6 +1723,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 扫描与容量分配预览，不上传业务数据
           content:
@@ -1665,6 +1767,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 触发异步增量备份
           content:
@@ -1706,6 +1810,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 分页任务列表
           content:
@@ -1740,6 +1846,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 读取持久化任务状态及结果
           content:
@@ -1773,6 +1881,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 分页任务日志
           content:
@@ -1809,6 +1919,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 请求终止任务引擎进程树
           content:
@@ -1854,6 +1966,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: text/event-stream事件流
           content:
@@ -1886,6 +2000,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 仓库及物理位置登记，不包含密码
           content:
@@ -1920,6 +2036,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 可恢复的未删除恢复点，保护状态单独标明
           content:
@@ -1954,6 +2072,8 @@ paths:
       security:
       - SessionAuth: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 浏览该恢复点的独立版本文件映射
           content:
@@ -2002,6 +2122,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 更新全局恢复点保护状态并提交目录
           content:
@@ -2049,6 +2171,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 恢复空间、冲突与缺失范围预检查
           content:
@@ -2087,6 +2211,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 恢复指定点、目录或文件并校验
           content:
@@ -2128,6 +2254,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 仓库结构、抽样或全量读取检查
           content:
@@ -2169,6 +2297,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 计算全局保留、未引用快照及清理阻塞项
           content:
@@ -2207,6 +2337,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 重新校验并明确确认后清理历史
           content:
@@ -2248,6 +2380,8 @@ paths:
       - SessionAuth: []
         CSRFToken: []
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '202':
           description: 整仓迁移或经再次确认清理旧副本
           content:
@@ -2285,6 +2419,8 @@ paths:
       operationId: get_cloud_connection
       tags: [安全]
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 状态不包含密码、密钥或加密连接资料本体
           content:
@@ -2305,6 +2441,8 @@ paths:
             schema:
               "$ref": "#/components/schemas/CloudPassword"
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 至少一个账号发布和读回成功；失败账号另行报告
           content:
@@ -2336,6 +2474,8 @@ paths:
               properties:
                 enabled: {type: boolean}
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 自动发现开关已保存
           content:
@@ -2351,6 +2491,8 @@ paths:
       tags: [安全]
       description: 不解密候选；最多检查100个库目录，扫描限时50秒。
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 候选备份库与账号标识
           content:
@@ -2388,6 +2530,8 @@ paths:
                     type: string
                     pattern: '^[0-9a-f]{32}$'
       responses:
+        '421':
+          "$ref": "#/components/responses/HostInvalid"
         '200':
           description: 已连接并默认开启自动发现；发现未入队时以discovery_error另行报告
           content:
@@ -2449,6 +2593,12 @@ components:
         maxLength: 200
       description: 同一任务类型及计划范围内重复键返回原任务；建议每次新操作生成新键。
   responses:
+    HostInvalid:
+      description: 请求 Host 不在回环、VP_PUBLIC_URL 或 VP_ALLOWED_HOSTS 允许范围，错误码 host_invalid
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/Error"
     APIError:
       description: 稳定错误码、中文说明及是否可重试
       content:
@@ -2509,6 +2659,7 @@ components:
       type: object
       properties: {}
     Status:
+      description: 未登录仅返回 initialized 和 authenticated；其余属性仅已登录时返回
       type: object
       properties:
         cloud_pending:
@@ -2580,12 +2731,6 @@ components:
       required:
       - initialized
       - authenticated
-      - unlocked
-      - vault_id
-      - mode
-      - engines
-      - oauth_configured
-      - allow_local
     RecoveryKit:
       type: object
       properties:

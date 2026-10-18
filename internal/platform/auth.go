@@ -42,8 +42,39 @@ func (r *Runtime) makeSession(w http.ResponseWriter, username string) session {
 	http.SetCookie(w, &http.Cookie{Name: "vaultpilot_session", Value: id, Path: "/", HttpOnly: true, Secure: r.secureCookie(), SameSite: http.SameSiteLaxMode, MaxAge: 12 * 3600})
 	return s
 }
+func (r *Runtime) allowedHost(host string) bool {
+	host = strings.ToLower(host)
+	name, _, e := net.SplitHostPort(host)
+	if e != nil {
+		name = host
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") && net.ParseIP(host[1:len(host)-1]) != nil {
+			name = host[1 : len(host)-1]
+		}
+	}
+	if name == "localhost" || name == "127.0.0.1" || name == "::1" {
+		return true
+	}
+	if public, e := url.Parse(r.Config.PublicURL); e == nil && public.Host != "" && strings.EqualFold(public.Host, host) {
+		return true
+	}
+	for _, allowed := range r.Config.AllowedHosts {
+		if strings.EqualFold(strings.TrimSpace(allowed), host) {
+			return true
+		}
+	}
+	return false
+}
 func (r *Runtime) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !r.allowedHost(req.Host) {
+			message := "请求主机名不在允许列表中，请通过 VP_PUBLIC_URL 或 VP_ALLOWED_HOSTS 配置访问地址"
+			if strings.HasPrefix(req.URL.Path, "/api/") {
+				fail(w, http.StatusMisdirectedRequest, "host_invalid", message)
+			} else {
+				http.Error(w, message, http.StatusMisdirectedRequest)
+			}
+			return
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -102,11 +133,19 @@ func (r *Runtime) Handler(next http.Handler) http.Handler {
 }
 func (r *Runtime) status(w http.ResponseWriter, req *http.Request) {
 	s, _, ok := r.session(req)
-	r.mu.Lock()
-	mode := r.mode
-	r.mu.Unlock()
-	v := map[string]any{"initialized": r.Initialized(), "authenticated": ok, "unlocked": r.Keys.Unlocked(), "vault_id": r.VaultID(), "mode": mode, "cloud_pending": r.CloudPending(), "oauth_configured": r.Config.OAuthClientID != "" && r.Config.PublicURL != "", "allow_local": r.Config.AllowLocal, "engines": map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}, "source_roots": r.Config.SourceRoots, "restore_roots": r.Config.RestoreRoots}
+	v := map[string]any{"initialized": r.Initialized(), "authenticated": ok}
 	if ok {
+		r.mu.Lock()
+		v["mode"] = r.mode
+		r.mu.Unlock()
+		v["unlocked"] = r.Keys.Unlocked()
+		v["vault_id"] = r.VaultID()
+		v["cloud_pending"] = r.CloudPending()
+		v["oauth_configured"] = r.Config.OAuthClientID != "" && r.Config.PublicURL != ""
+		v["allow_local"] = r.Config.AllowLocal
+		v["engines"] = map[string]bool{"restic": engineAvailable(r.Config.ResticBin), "rclone": engineAvailable(r.Config.RcloneBin)}
+		v["source_roots"] = r.Config.SourceRoots
+		v["restore_roots"] = r.Config.RestoreRoots
 		v["csrf_token"] = s.CSRF
 		v["cache_max_bytes"] = r.Config.CacheMaxBytes
 		v["log_max_rows"] = r.Config.LogMaxRows

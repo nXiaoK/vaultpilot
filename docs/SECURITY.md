@@ -8,6 +8,8 @@
 
 浏览器使用 HttpOnly / SameSite 会话 Cookie，写请求使用 CSRF token，登录限速并有会话过期。公网必须使用 HTTPS 和正确的 VP_PUBLIC_URL。默认 compose 仅绑定回环网络；需要通过配置好的反向代理访问，不要直接公开 8080。
 
+所有 API 和静态页面先校验 Host，阻止恶意域名通过 DNS rebinding 初始化或读取实例。默认允许回环主机；其他入口只接受 `VP_PUBLIC_URL` 的完整 Host（含端口）和 `VP_ALLOWED_HOSTS` 明确列出的 Host。不要把不受信任的域名加入允许列表。未登录的 `/api/status` 只返回初始化与登录状态，库标识、部署路径、密钥状态及引擎配置仅登录后提供。
+
 程序通过参数数组调用引擎，不接收任意 shell 或引擎命令。备份源仅来自部署授权目录，并校验实际目录、挂载身份和读取权限。链接保存本身，扫描不跟随链接；恢复目标独立授权、无默认覆盖，所有结果路径必须受目标根目录约束。
 
 只读挂载备份源、非 root、只读容器根目录、去除 capabilities、不挂 Docker Socket、不使用 privileged。UID/GID 应按真实源文件权限配置。恢复、维护可能需要引擎锁操作，recovery 模式属于应用写入限制，不能称为 OAuth 云端只读隔离。

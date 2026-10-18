@@ -67,6 +67,7 @@ func (h *testHarness) call(method, path string, value any, csrf bool) *httptest.
 		body = bytes.NewReader(b)
 	}
 	req := httptest.NewRequest(method, path, body)
+	req.Host = "localhost"
 	if h.cookie != nil {
 		req.AddCookie(h.cookie)
 	}
@@ -147,6 +148,7 @@ func TestSessionsCSRFVersionAndRateLimit(t *testing.T) {
 		t.Fatal("write without CSRF accepted")
 	}
 	req := httptest.NewRequest("POST", "/api/security/lock", strings.NewReader("{}"))
+	req.Host = "localhost"
 	req.AddCookie(h.cookie)
 	req.Header.Set("X-CSRF-Token", h.csrf)
 	req.Header.Set("Origin", "https://attacker.invalid")

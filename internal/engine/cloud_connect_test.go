@@ -53,6 +53,7 @@ func cloudTestHTTP(t *testing.T, s *Service, setup string) *cloudHTTP {
 
 func (h *cloudHTTP) call(method, path, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Host = "localhost"
 	r.Header.Set("Content-Type", "application/json")
 	if h.cookie != nil {
 		r.AddCookie(h.cookie)

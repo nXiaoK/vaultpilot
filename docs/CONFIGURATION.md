@@ -3,7 +3,8 @@
 | 环境变量 | 默认值 | 含义 |
 |---|---|---|
 | VP_ADDR | 127.0.0.1:8080 | 服务监听；compose 中为 0.0.0.0:8080 |
-| VP_PUBLIC_URL | http://localhost:8080 | 对外 URL，Cookie 安全与可选自定义应用回调依赖它；Rclone 标准回调不依赖此 URL |
+| VP_PUBLIC_URL | http://localhost:8080 | 对外 URL，Host 白名单、Cookie 安全与可选自定义应用回调依赖它；Rclone 标准回调不依赖此 URL |
+| VP_ALLOWED_HOSTS | 空 | 额外允许的 Host，逗号分隔，主机名或主机名:端口，与请求 Host 完整匹配（忽略大小写） |
 | VP_STATE_DIR | ./state | SQLite、受保护恢复包、节点凭据密钥、排他锁 |
 | VP_CACHE_DIR | ./cache | 引擎缓存与权限受控临时文件 |
 | VP_SOURCE_ROOTS | /sources | 逗号分隔的允许源目录；生产只读绑定挂载 |
@@ -32,6 +33,8 @@
 缓存阈值不是磁盘硬配额，大文件写入过程中可能暂时超过阈值。请为 state/cache 与恢复目标预留足够磁盘空间；需要硬上限时在宿主机设置文件系统配额。维护窗口限制任务启动，不在窗口结束时强行终止正在执行的任务。
 
 Compose 的 `VP_UID`/`VP_GID` 默认均为 1000，`VP_RESTORE_HOST` 是宿主机目录，而网页使用对应容器路径 `/restore`。自定义恢复目录必须提前创建并授权给该运行用户；Docker 自动创建的宿主机目录可能属于 root。恢复预检查检查有效用户、补充组和 ACL 下的目录写入及进入权限，不会创建探测文件。出现 `RESTORE_TARGET_NOT_WRITABLE` 时按 [恢复目录权限排查](RECOVERY.md#恢复目录权限错误) 调整实际宿主机目录及挂载。
+
+所有 API 与静态资源均校验 Host，未知主机返回 421。`localhost`、`127.0.0.1`、`[::1]` 允许任意端口；其他访问地址必须匹配 `VP_PUBLIC_URL` 的 Host 或 `VP_ALLOWED_HOSTS`，包含实际端口。局域网示例：`VP_ALLOWED_HOSTS=192.168.1.20:8080,nas.example:8080`。反向代理若保留原始 Host，需设置与之匹配的公开 URL 或白名单；若改写 Host，需允许实际传到上游的 Host。健康检查及本地脚本使用回环地址。
 
 ## 升级
 

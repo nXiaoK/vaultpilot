@@ -21,7 +21,7 @@ import (
 
 type Config struct {
 	Addr, StateDir, CacheDir, PublicURL, ResticBin, RcloneBin, AutoUnlockFile string
-	SourceRoots, RestoreRoots                                                 []string
+	SourceRoots, RestoreRoots, AllowedHosts                                   []string
 	AllowLocal                                                                bool
 	GlobalConcurrency                                                         int
 	LogMaxRows                                                                int

@@ -60,7 +60,7 @@ func run() error {
 		CacheDir: env("VP_CACHE_DIR", "./cache"), PublicURL: env("VP_PUBLIC_URL", "http://localhost:8080"),
 		ResticBin: env("VP_RESTIC_BIN", "restic"), RcloneBin: env("VP_RCLONE_BIN", "rclone"),
 		AutoUnlockFile: os.Getenv("VP_AUTO_UNLOCK_FILE"), SourceRoots: roots("VP_SOURCE_ROOTS", "/sources"),
-		RestoreRoots: roots("VP_RESTORE_ROOTS", "/restore"), AllowLocal: os.Getenv("VP_ALLOW_LOCAL") == "true",
+		AllowedHosts: roots("VP_ALLOWED_HOSTS", ""), RestoreRoots: roots("VP_RESTORE_ROOTS", "/restore"), AllowLocal: os.Getenv("VP_ALLOW_LOCAL") == "true",
 		GlobalConcurrency: concurrency, LogMaxRows: logMaxRows, CacheMaxBytes: cacheMaxBytes,
 		MaintenanceWindow: os.Getenv("VP_MAINTENANCE_WINDOW"), MaintenanceTimezone: env("VP_MAINTENANCE_TIMEZONE", "Asia/Shanghai"),
 		OAuthClientID: os.Getenv("VP_OAUTH_CLIENT_ID"), OAuthClientSecret: os.Getenv("VP_OAUTH_CLIENT_SECRET"),
