@@ -242,8 +242,44 @@ func (s *Service) enqueue(kind, plan, key string, request any) (Task, error) {
 	return t, nil
 }
 func (s *Service) execute(id string) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.cancels, id)
+		delete(s.cancelled, id)
+		var pendingPlans []string
+		for key, activeID := range s.active {
+			if activeID != id {
+				continue
+			}
+			delete(s.active, key)
+			if key == "account-clear" || key == "discover" {
+				continue
+			}
+			pending := s.pending[key]
+			delete(s.pending, key)
+			if !pending || s.ctx.Err() == nil {
+				_ = s.rt.Store.SetMeta(context.Background(), "pending:"+key, "0")
+			}
+			if pending && s.ctx.Err() == nil {
+				pendingPlans = append(pendingPlans, key)
+			}
+		}
+		s.mu.Unlock()
+		for _, plan := range pendingPlans {
+			_, _ = s.enqueue("backup", plan, "", nil)
+		}
+	}()
 	var t Task
-	if s.rt.Store.Get(s.ctx, "backup_runs", id, &t) != nil {
+	if err := s.rt.Store.Get(s.ctx, "backup_runs", id, &t); err != nil {
+		message := "无法读取待执行任务：" + err.Error()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.rt.Store.Log(ctx, id, "error", message)
+		args := []any{id, "failed", "failed", "TASK_LOAD_FAILED", message, now(), now(), id}
+		for _, status := range terminalStatuses {
+			args = append(args, status)
+		}
+		_, _ = s.rt.Store.DB.ExecContext(ctx, "UPDATE backup_runs SET data=json_set(data,'$.id',?,'$.status',?,'$.stage',?,'$.code',?,'$.error',?,'$.finished_at',?,'$.version',version+1),version=version+1,updated_at=? WHERE id=? AND coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+")", args...)
 		return
 	}
 	ctx, cancel := context.WithCancel(s.ctx)
@@ -257,30 +293,7 @@ func (s *Service) execute(id string) {
 		cancel()
 	}
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.cancels, id)
-		delete(s.cancelled, id)
-		if t.Kind == "account-clear" {
-			delete(s.active, "account-clear")
-		}
-		if t.Kind == "discover" {
-			delete(s.active, "discover")
-		}
-		pending := false
-		if t.Kind == "backup" {
-			delete(s.active, t.PlanID)
-			pending = s.pending[t.PlanID]
-			delete(s.pending, t.PlanID)
-			if !pending || s.ctx.Err() == nil {
-				_ = s.rt.Store.SetMeta(context.Background(), "pending:"+t.PlanID, "0")
-			}
-		}
-		s.mu.Unlock()
-		if pending && s.ctx.Err() == nil {
-			_, _ = s.enqueue("backup", t.PlanID, "", nil)
-		}
-	}()
+
 	if t.CancelRequested {
 		cancel()
 	}
