@@ -44,8 +44,6 @@ func Open(path string) (*Store, error) {
 	schema := `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS file_entries(run_id TEXT NOT NULL,source_id TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,size INTEGER NOT NULL DEFAULT 0,mtime_ns INTEGER NOT NULL DEFAULT 0,mode INTEGER NOT NULL DEFAULT 0,link_target TEXT NOT NULL DEFAULT '',repo_id TEXT NOT NULL DEFAULT '',snapshot_path TEXT NOT NULL DEFAULT '',PRIMARY KEY(run_id,source_id,path));
- CREATE INDEX IF NOT EXISTS file_entries_repo ON file_entries(run_id,repo_id);
- CREATE INDEX IF NOT EXISTS file_entries_tree ON file_entries(run_id,source_id,path);
  CREATE TABLE IF NOT EXISTS assignments(plan_id TEXT NOT NULL,source_id TEXT NOT NULL,path TEXT NOT NULL,repo_id TEXT NOT NULL,size INTEGER NOT NULL DEFAULT 0,mtime_ns INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(plan_id,source_id,path));
  CREATE INDEX IF NOT EXISTS assignments_repo ON assignments(plan_id,repo_id);
  CREATE TABLE IF NOT EXISTS capacity_reservations(run_id TEXT NOT NULL,account_id TEXT NOT NULL,bytes INTEGER NOT NULL CHECK(bytes>=0),PRIMARY KEY(run_id,account_id));
@@ -65,6 +63,10 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	if err = migrateNotifications(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = migrateEntryIndexes(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -94,6 +96,22 @@ func migrateNotifications(db *sql.DB) error {
 	}
 	return tx.Commit()
 }
+func migrateEntryIndexes(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS file_entries_repo_path ON file_entries(run_id,repo_id,source_id,path);
+ DROP INDEX IF EXISTS file_entries_repo;
+ DROP INDEX IF EXISTS file_entries_tree;
+ INSERT OR IGNORE INTO schema_migrations VALUES(3,strftime('%Y-%m-%dT%H:%M:%SZ','now'));`)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) Close() error { return s.DB.Close() }
 func table(t string) error {
 	if !tables[t] {
