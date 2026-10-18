@@ -1,6 +1,6 @@
 # T15：锁范围、取消与阶段交接设计
 
-状态：用户已确认本设计。已实现 context 锁原语、锁等待适配、恢复索引读写与 T14 清扫对接，以及 migrate/cleanupOld 的分阶段、短事务复核、CAS 发布与精确版本回退。复制、全量校验与旧位置 purge 不持 catalog；retain 的阶段拆分待后续提交完成。
+状态：用户已确认本设计。已实现 context 锁原语、锁等待适配、恢复索引读写与 T14 清扫对接，migrate/cleanupOld 的分阶段、短事务复核、CAS 发布与精确版本回退，以及 retain 的删除决策、prune、最终目录发布阶段拆分。复制、全量校验、旧位置 purge 与 prune 均不持 catalog；认证发布本身仍持 catalog。
 
 实现基线为 `5c4a746ec36cffa8e1a0a2368817d3ae7466dec6`，已含 T05、T10、T13、T14 及后续 NULL/并发边界补修。已基于合并后的 `entry_cleanup.go` 重新检索锁调用点。
 
@@ -128,7 +128,7 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 2. 在锁内重新预览并检查保护、保留策略和全局引用；认证发布删除决策后，使用 T05 已有的有界 WithoutCancel 本地事务记录 tombstone 和 pending_forget。这个原子边界不能被用户取消拆开。
 3. 释放 catalog 和索引 W；重新取得索引 R。W→R 不是原子降级，因此重新读当前仓库、pending_forget 和全局有效引用。若 discover 在间隙换代，必须基于新状态重新判断，不能使用阶段 1 的旧引用集合。
 4. prune 阶段保持索引 R，逐仓库 account→repo 执行 snapshots/forget/prune，不持 catalog。索引 R 防 discover 重建引用与账号清空；计划锁防本计划备份/迁移增加同仓库快照引用。其他计划备份只发布自己仓库的新快照；protect 只改变保护位，其他 retain 只减少引用。仍按每仓库最新全局引用排除任何被引用的 snapshot，不把“不同计划”当作一定没有共享历史引用。
-5. 完成物理清理后先释放所有 account/repo，才重新取 catalog。保持索引 R，重新读取仓库，基于真实处理过的 ID 发布完成目录，再用 updatePendingForget 的版本校验仅移除本任务处理的集合，保留期间新增的其他 pending ID。任何发布失败保留 pending，允许原有 retry。
+5. 完成物理清理后先释放所有 account/repo，才重新取 catalog。保持索引 R，重新读取仓库，基于真实处理过的 ID 发布完成目录，再以单条批量 UPDATE 的版本校验仅移除本任务处理的集合，保留期间新增的其他 pending ID。任何发布失败保留 pending，允许原有 retry。
 6. `t.prunedSnapshots` 和 pending_removals 的快照不能跨阶段被当作完整仓库实体回写；最终目录取最新仓库/点状态组装，避免覆盖别的计划在 prune 期间完成的提交。
 7. T14 的已删除清单清扫必须在计划、索引、catalog、账号/仓库锁全部释放后进行；不能在持索引 R 时触发它的 W，否则是锁升级死锁。
 
@@ -137,6 +137,8 @@ HTTP 锁等待取消时立即返回，不再启动目录提交，也不向已经
 ## 7. T14 接口与公共复用影响
 
 T14 负责者确认的接口为 `cleanupFileEntries`→`deleteEntryBatches(ctx, query, args, lockIndex)`：每次 DELETE 前获取旧字符串锁，执行后释放；入口包括 Start 异步 orphan 清扫、execute 终态后的 task 清扫、retain defer 的 deleted-point 清扫。
+
+清单写入方核对结果：仅 backup/preview 以任务 ID 建立 `file_entries`，discover 使用独立的 `import-*` RunID。执行器只对 backup/preview 做即时自有清单清理；取消的其他任务不再无谓等待索引写锁。retain 的已删除点清扫沿用任务 context，取消时可留下派生清单并记录日志，由下次启动补扫；快照校验的 defer 仍使用独立有界 context。
 
 T15 仅替换 `lockIndex=true` 分支为专用索引的 `LockContext(ctx)`/Unlock；原 SQL 每批重查 live point RunID 与非终态 task ID 的条件和 5000 行批大小保持不变。discover 未发布的 import-* 暂存清单继续由同一索引 W 保护。snapshot 校验临时表仍按 task/repo 独立清扫，不强行加入索引锁。
 
@@ -177,3 +179,5 @@ T15 仅替换 `lockIndex=true` 分支为专用索引的 `LockContext(ctx)`/Unloc
 本节记录整体方案的验证边界；具体提交实际执行的检查见交付记录。第一实现提交仍保留 maintenance 的长持 catalog 范围，完整阶段拆分及整仓 race 连续五次尚待后续提交与最终验收。真实 OneDrive 长复制/断网/并发重授权、Docker、生产规模大清单耗时均不能由假脚本测试替代。
 
 写者排队对新浏览的公平调度、清空/discover 仍长持 catalog、元数据认证发布本身仍有网络等待，是本方案明确保留的限制。尤其 discover 的进一步分阶段不包含在此次实现中，避免把未经评审的目录换代协议一起改动。
+
+已核对账号身份边界：生产账号编辑 DTO 不允许更改 backend/remote/Drive；重新授权保留已绑定 Drive，选择其他 Drive 会被拒绝。每条 Rclone 命令重新验证当前授权状态与固定身份，运行中的命令使用自己的配置快照。因此 prune 保留索引读锁与资源锁，不新增覆盖长时间物理清理的账号配置门禁。

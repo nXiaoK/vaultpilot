@@ -365,59 +365,11 @@ func (s *Service) recordRetentionDeletion(ctx context.Context, selected map[stri
 	return store.ErrConflict
 }
 
-func (s *Service) updatePendingForget(ctx context.Context, repoID string, add, remove []string) error {
-	for attempt := 0; attempt < 3; attempt++ {
-		var repo Repository
-		if err := s.rt.Store.Get(ctx, "repositories", repoID, &repo); err != nil {
-			return err
-		}
-		pending := map[string]bool{}
-		for _, id := range repo.PendingForget {
-			pending[id] = true
-		}
-		for _, id := range add {
-			pending[id] = true
-		}
-		for _, id := range remove {
-			delete(pending, id)
-		}
-		repo.PendingForget = make([]string, 0, len(pending))
-		for id := range pending {
-			repo.PendingForget = append(repo.PendingForget, id)
-		}
-		slices.Sort(repo.PendingForget)
-		_, err := s.rt.Store.Save(ctx, "repositories", repo.ID, repo.Version, repo)
-		if !errors.Is(err, store.ErrConflict) {
-			return err
-		}
-	}
-	return store.ErrConflict
-}
-
-// 调用方持有计划和目录锁，保持有效快照引用不变。
+// 调用方持有计划锁和恢复索引读锁，资源锁内重新读取每个仓库及全局引用。
 func (s *Service) prunePending(ctx context.Context, t *Task, planID string) (int, error) {
 	repos, err := s.pendingPruneRepositories(ctx, planID)
 	if err != nil {
 		return 0, err
-	}
-	raws, err := s.rt.Store.All(ctx, "recovery_points")
-	if err != nil {
-		return 0, err
-	}
-	referenced := map[string]bool{}
-	for _, raw := range raws {
-		var p Point
-		if err = json.Unmarshal(raw, &p); err != nil {
-			return 0, err
-		}
-		if p.DeletedAt != "" {
-			continue
-		}
-		for _, snap := range p.Snapshots {
-			if !snap.Empty {
-				referenced[snap.RepositoryID+":"+snap.SnapshotID] = true
-			}
-		}
 	}
 	t.prunedSnapshots = map[string][]string{}
 	s.stage(t, "pruning")
@@ -436,6 +388,32 @@ func (s *Service) prunePending(ctx context.Context, t *Task, planID string) (int
 		}
 		err = func() error {
 			defer unlockResources()
+			accountID := account.ID
+			if err := s.rt.Store.Get(ctx, "repositories", repo.ID, &repo); err != nil {
+				return err
+			}
+			if repo.AccountID != accountID || repo.PlanID != planID || repo.Status == "retired" {
+				return store.ErrConflict
+			}
+			var latest Account
+			if err := s.rt.Store.Get(ctx, "accounts", accountID, &latest); err != nil || !latest.Verified || !latest.Enabled {
+				return fail("RETENTION_ACCOUNT_UNAVAILABLE", "清理所需账号不存在、未验证或已停用；恢复账号后可重试")
+			}
+			if !sameAccountStorage(account, latest) {
+				return store.ErrConflict
+			}
+			if latest.MaintenanceReserve <= 0 {
+				return fail("MAINTENANCE_RESERVE_REQUIRED", "清理需要明确的维护空间预留")
+			}
+			account = latest
+			references, err := repositoryReferences(ctx, s.rt.Store.DB, repo.ID)
+			if err != nil {
+				return err
+			}
+			referenced := map[string]bool{}
+			for _, id := range references {
+				referenced[id] = true
+			}
 			var snapshots []struct {
 				ID string `json:"id"`
 			}
@@ -452,7 +430,7 @@ func (s *Service) prunePending(ctx context.Context, t *Task, planID string) (int
 			}
 			ids := []string{}
 			for _, id := range repo.PendingForget {
-				if !referenced[repo.ID+":"+id] && existing[id] {
+				if !referenced[id] && existing[id] {
 					ids = append(ids, id)
 				}
 			}
@@ -489,119 +467,141 @@ func (s *Service) retain(ctx context.Context, t *Task) error {
 	if !req.Confirm {
 		return fail("CONFIRM_REQUIRED", "删除历史数据必须显式 confirm")
 	}
-	// Run after the plan/catalog defers release their locks; discover locks the
-	// recovery index before the catalog and must not see the reverse order here.
-	defer s.cleanupDeletedPointEntries(t, req.PlanID)
+	// Cleanup runs after all plan/index/catalog defers, without an R-to-W upgrade.
+	defer s.cleanupDeletedPointEntries(ctx, t, req.PlanID)
 	releasePlan, err := s.lock(ctx, "plan:"+req.PlanID)
 	if err != nil {
 		return err
 	}
 	defer releasePlan()
-	if err := s.catalogMu.LockContext(ctx); err != nil {
-		return err
-	}
-	defer s.catalogMu.Unlock()
-	preview, err := s.retentionPreview(ctx, req.PlanID)
-	if err != nil {
-		return err
-	}
-	if preview.Blocked {
-		return fail("RETENTION_PAUSED", strings.Join(preview.Reasons, "；"))
-	}
-	raws, err := s.rt.Store.All(ctx, "recovery_points")
-	if err != nil {
-		return err
-	}
-	if len(req.PointIDs) == 0 && preview.PendingPruneRepositories == 0 {
-		completedCleanup := false
-		for _, raw := range raws {
-			var p Point
-			if err = json.Unmarshal(raw, &p); err != nil {
+	var result map[string]any
+	err = func() error {
+		if len(req.PointIDs) > 0 {
+			if err := s.recoveryIndex.LockContext(ctx); err != nil {
 				return err
 			}
-			if p.PlanID == req.PlanID && p.DeletedAt != "" {
-				completedCleanup = true
+			defer s.recoveryIndex.Unlock()
+		} else {
+			if err := s.recoveryIndex.RLockContext(ctx); err != nil {
+				return err
 			}
+			defer s.recoveryIndex.RUnlock()
 		}
-		if !completedCleanup {
-			return fail("EMPTY_RETENTION_SELECTION", "请从预览选择需要删除的恢复点")
-		}
-	}
-	allowed := map[string]bool{}
-	for _, id := range preview.DeleteIDs {
-		allowed[id] = true
-	}
-	selected := map[string]bool{}
-	for _, id := range req.PointIDs {
-		if !allowed[id] {
-			return fail("RETENTION_REFERENCE_PROTECTED", "选择包含受保护或保留策略需要的恢复点")
-		}
-		selected[id] = true
-	}
-	snapshots, err := retentionSnapshots(raws, selected)
-	if err != nil {
-		return err
-	}
-	var plan Plan
-	if err = s.rt.Store.Get(ctx, "backup_plans", req.PlanID, &plan); err != nil {
-		return err
-	}
-	var pool Pool
-	if err = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
-		return err
-	}
-	for id := range snapshots {
-		var repo Repository
-		if err = s.rt.Store.Get(ctx, "repositories", id, &repo); err != nil {
+		if err := s.catalogMu.LockContext(ctx); err != nil {
 			return err
 		}
-		var account Account
-		if err = s.rt.Store.Get(ctx, "accounts", repo.AccountID, &account); err != nil || !account.Verified || !account.Enabled {
-			return fail("RETENTION_ACCOUNT_UNAVAILABLE", "清理所需账号不存在、未验证或已停用")
-		}
-		if account.MaintenanceReserve <= 0 {
-			return fail("MAINTENANCE_RESERVE_REQUIRED", "清理需要明确的维护空间预留")
-		}
-	}
-	if req.PointIDs == nil {
-		req.PointIDs = []string{}
-	}
-	result := map[string]any{"deleted_point_ids": []string{}, "pruned_repositories": 0, "cleanup_pending": preview.PendingPruneRepositories > 0}
-	t.Result = result
-	if len(req.PointIDs) > 0 {
-		s.stage(t, "recording_deletions")
-		commitErr := s.commit(ctx, t, pool, nil, req.PointIDs)
-		if commitErr != nil && !degraded(commitErr) {
-			return commitErr
-		}
-		result["deleted_point_ids"] = req.PointIDs
-		result["cleanup_pending"] = len(snapshots) > 0 || preview.PendingPruneRepositories > 0
-		localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		err = s.recordRetentionDeletion(localCtx, selected, snapshots)
-		cancel()
+		defer s.catalogMu.Unlock()
+		preview, err := s.retentionPreview(ctx, req.PlanID)
 		if err != nil {
 			return err
 		}
-		if commitErr != nil {
-			return commitErr
+		if preview.Blocked {
+			return fail("RETENTION_PAUSED", strings.Join(preview.Reasons, "；"))
 		}
+		raws, err := s.rt.Store.All(ctx, "recovery_points")
+		if err != nil {
+			return err
+		}
+		if len(req.PointIDs) == 0 && preview.PendingPruneRepositories == 0 {
+			completedCleanup := false
+			for _, raw := range raws {
+				var p Point
+				if err = json.Unmarshal(raw, &p); err != nil {
+					return err
+				}
+				if p.PlanID == req.PlanID && p.DeletedAt != "" {
+					completedCleanup = true
+				}
+			}
+			if !completedCleanup {
+				return fail("EMPTY_RETENTION_SELECTION", "请从预览选择需要删除的恢复点")
+			}
+		}
+		allowed := map[string]bool{}
+		for _, id := range preview.DeleteIDs {
+			allowed[id] = true
+		}
+		selected := map[string]bool{}
+		for _, id := range req.PointIDs {
+			if !allowed[id] {
+				return fail("RETENTION_REFERENCE_PROTECTED", "选择包含受保护或保留策略需要的恢复点")
+			}
+			selected[id] = true
+		}
+		snapshots, err := retentionSnapshots(raws, selected)
+		if err != nil {
+			return err
+		}
+		var plan Plan
+		if err = s.rt.Store.Get(ctx, "backup_plans", req.PlanID, &plan); err != nil {
+			return err
+		}
+		var pool Pool
+		if err = s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
+			return err
+		}
+		if err = s.validateRetentionAccounts(ctx, snapshots); err != nil {
+			return err
+		}
+		if req.PointIDs == nil {
+			req.PointIDs = []string{}
+		}
+		result = map[string]any{"deleted_point_ids": []string{}, "pruned_repositories": 0, "cleanup_pending": preview.PendingPruneRepositories > 0}
+		t.Result = result
+		if len(req.PointIDs) > 0 {
+			s.stage(t, "recording_deletions")
+			commitErr := s.commit(ctx, t, pool, nil, req.PointIDs)
+			if commitErr != nil && !degraded(commitErr) {
+				return commitErr
+			}
+			result["deleted_point_ids"] = req.PointIDs
+			result["cleanup_pending"] = len(snapshots) > 0 || preview.PendingPruneRepositories > 0
+			localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			err = s.recordRetentionDeletion(localCtx, selected, snapshots)
+			cancel()
+			if err != nil {
+				return err
+			}
+			if commitErr != nil {
+				return commitErr
+			}
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
 	}
+	if err = s.recoveryIndex.RLockContext(ctx); err != nil {
+		return err
+	}
+	defer s.recoveryIndex.RUnlock()
 	pruned, cleanupErr := s.prunePending(ctx, t, req.PlanID)
 	result["pruned_repositories"] = pruned
 	if cleanupErr == nil && len(t.prunedSnapshots) > 0 {
-		cleanupErr = s.commit(ctx, t, pool, nil, nil)
-		if cleanupErr == nil || degraded(cleanupErr) {
-			localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			for id, ids := range t.prunedSnapshots {
-				if clearErr := s.updatePendingForget(localCtx, id, nil, ids); clearErr != nil {
-					cleanupErr = clearErr
-					break
-				}
+		cleanupErr = func() error {
+			if err := s.catalogMu.LockContext(ctx); err != nil {
+				return err
 			}
-			cancel()
-		}
+			defer s.catalogMu.Unlock()
+			pool, err := readMaintenancePool(ctx, s.rt.Store.DB, req.PlanID)
+			if err != nil {
+				return err
+			}
+			commitErr := s.commit(ctx, t, pool, nil, nil)
+			if commitErr != nil && !degraded(commitErr) {
+				return commitErr
+			}
+			localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			if err := s.removePendingForget(localCtx, t.prunedSnapshots); err != nil {
+				return err
+			}
+			return commitErr
+		}()
 	}
-	pending, err := s.pendingPruneRepositories(context.WithoutCancel(ctx), req.PlanID)
+	localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	pending, err := s.pendingPruneRepositories(localCtx, req.PlanID)
+	cancel()
 	result["cleanup_pending"] = err != nil || len(pending) > 0
 	if cleanupErr != nil {
 		return cleanupErr
