@@ -75,6 +75,13 @@ func (s *Service) Start(ctx context.Context) {
 	}
 	s.started = true
 	s.mu.Unlock()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		if err := s.cleanupOrphanEntries(s.ctx); err != nil && s.ctx.Err() == nil {
+			_ = s.rt.Store.Audit(s.ctx, "entries.cleanup.failed", err.Error())
+		}
+	}()
 	s.replayPending()
 	s.reloadSchedules()
 	s.scheduler.Start()
@@ -280,6 +287,7 @@ func (s *Service) execute(id string) {
 			args = append(args, status)
 		}
 		_, _ = s.rt.Store.DB.ExecContext(ctx, "UPDATE backup_runs SET data=json_set(data,'$.id',?,'$.status',?,'$.stage',?,'$.code',?,'$.error',?,'$.finished_at',?,'$.version',version+1),version=version+1,updated_at=? WHERE id=? AND coalesce(json_extract(data,'$.status'),'') NOT IN ("+strings.TrimSuffix(strings.Repeat("?,", len(terminalStatuses)), ",")+")", args...)
+		s.cleanupTaskEntries(&Task{ID: id, Status: "failed"})
 		return
 	}
 	ctx, cancel := context.WithCancel(s.ctx)
@@ -386,6 +394,7 @@ func (s *Service) execute(id string) {
 	}
 	t.FinishedAt = now()
 	s.save(&t)
+	s.cleanupTaskEntries(&t)
 	if t.Kind == "backup" {
 		if notifyErr := s.rt.NotifyBackup(t.ID); notifyErr != nil {
 			s.log(&t, "Telegram 通知入队失败，请检查通知设置与数据库状态")

@@ -486,6 +486,9 @@ func (s *Service) retain(ctx context.Context, t *Task) error {
 	if !req.Confirm {
 		return fail("CONFIRM_REQUIRED", "删除历史数据必须显式 confirm")
 	}
+	// Run after the plan/catalog defers release their locks; discover locks the
+	// recovery index before the catalog and must not see the reverse order here.
+	defer s.cleanupDeletedPointEntries(t, req.PlanID)
 	releasePlan := s.lock("plan:" + req.PlanID)
 	defer releasePlan()
 	s.catalogMu.Lock()
