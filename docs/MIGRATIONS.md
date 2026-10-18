@@ -2,6 +2,8 @@
 
 首次启动创建 SQLite schema version 1，启用 WAL、foreign_keys 和 busy_timeout。实体独立表保存单资源 JSON 文档与乐观版本，文件清单、稳定归属、容量预留、日志、幂等请求使用独立索引表。它不是单个 JSON 状态文件。
 
+连接参数通过 DSN 对每次新建连接设置：`busy_timeout=10000`、`foreign_keys=1`、`journal_mode=WAL`、`synchronous=NORMAL`。NORMAL 保持数据库一致性，系统崩溃或断电时最近事务仍可能丢失，不能替代云端提交记录与状态备份。审计 ID 保留时间前缀并增加随机后缀，客户端应将其视为不透明字符串；审计列表仍按更新时间排序。
+
 `schema_migrations` 记录已应用的版本。当前为 v3；新增版本必须使用显式事务迁移，并在迁移前备份状态目录。应用索引可由认证云端控制目录重建，SQLite 并不是异机恢复的唯一依据。
 
 v2 为 Telegram 通知增加 `notification_outbox` 和 `notification_incidents`，建表、索引与版本记录在同一事务中完成，原有账号和备份数据保留。通知默认关闭，配置与待发送消息使用原节点密钥加密，独立于云端控制目录。升级前停机备份完整 state 目录；保留 `node-key`，否则原有 OAuth 与 Telegram 凭据无法解密。
