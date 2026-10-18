@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -631,19 +633,17 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if err := s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
 		return err
 	}
-	releasePlan, err := s.lock(ctx, "plan:"+repo.PlanID)
+	planID := repo.PlanID
+	releasePlan, err := s.lock(ctx, "plan:"+planID)
 	if err != nil {
 		return err
 	}
 	defer releasePlan()
-	if err := s.catalogMu.LockContext(ctx); err != nil {
+	if err = s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
 		return err
 	}
-	defer s.catalogMu.Unlock()
-
-	repo = Repository{}
-	if err := s.rt.Store.Get(ctx, "repositories", req.RepositoryID, &repo); err != nil {
-		return err
+	if repo.PlanID != planID {
+		return store.ErrConflict
 	}
 	if repo.Status == "retired" {
 		return fail("REPOSITORY_RETIRED", "仓库已清空退役，不能迁移或清理旧副本")
@@ -651,96 +651,160 @@ func (s *Service) migrate(ctx context.Context, t *Task) error {
 	if req.CleanupOld {
 		return s.cleanupOld(ctx, t, repo, req)
 	}
-	old := repo
-	var source, target Account
-	if err := s.rt.Store.Get(ctx, "accounts", repo.AccountID, &source); err != nil {
+	accounts, err := readMaintenanceAccounts(ctx, s.rt.Store.DB, repo.AccountID, req.TargetAccountID)
+	if err != nil {
 		return err
 	}
-	if err := s.rt.Store.Get(ctx, "accounts", req.TargetAccountID, &target); err != nil {
-		return err
-	}
+	source, target := accounts[repo.AccountID], accounts[req.TargetAccountID]
 	if source.ID == target.ID || !target.Verified || !target.Enabled {
 		return fail("INVALID_MIGRATION_TARGET", "目标必须是其他已验证启用账号")
 	}
-	var plan Plan
-	if err := s.rt.Store.Get(ctx, "backup_plans", repo.PlanID, &plan); err != nil {
-		return err
-	}
-	var pool Pool
-	if err := s.rt.Store.Get(ctx, "storage_pools", plan.PoolID, &pool); err != nil {
+	pool, err := readMaintenancePool(ctx, s.rt.Store.DB, repo.PlanID)
+	if err != nil {
 		return err
 	}
 	if !slices.Contains(pool.AccountIDs, target.ID) {
 		return fail("MIGRATION_TARGET_OUTSIDE_POOL", "目标账号必须属于该仓库所在计划的存储池；如需使用新账号，请先将其加入存储池")
 	}
-	if err := s.refreshAccount(ctx, &target); err != nil {
-		return err
-	}
-	out, err := s.rcloneOutput(ctx, []Account{source}, "size", s.remoteFile(source, repo.Path), "--json")
-	if err != nil {
-		return err
-	}
-	var usage struct {
-		Bytes int64 `json:"bytes"`
-	}
-	if err = json.Unmarshal(out, &usage); err != nil {
-		return err
-	}
-	tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	var reserved int64
-	if err = tx.QueryRowContext(ctx, "SELECT coalesce(sum(bytes),0) FROM capacity_reservations WHERE account_id=?", target.ID).Scan(&reserved); err != nil {
-		tx.Rollback()
-		return err
-	}
-	estimate := usage.Bytes*113/100 + 8<<20
-	if capacity(target, reserved) < estimate {
-		tx.Rollback()
-		return fail("CAPACITY_EXHAUSTED", "迁移目标容量不足")
-	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO capacity_reservations(run_id,account_id,bytes) VALUES(?,?,?)", t.ID, target.ID, estimate); err != nil {
-		tx.Rollback()
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
+	reserved := false
 	defer func() {
+		if !reserved {
+			return
+		}
+		var latest Account
+		if err := s.rt.Store.Get(context.Background(), "accounts", target.ID, &latest); err != nil || !sameAccountStorage(latest, target) {
+			s.log(t, "迁移账号物理身份已变化，保留容量预留，未覆盖新账号配额")
+			return
+		}
 		if s.refreshAccountAfterTask(t, &target) == nil {
 			_, _ = s.rt.Store.DB.Exec("DELETE FROM capacity_reservations WHERE run_id=?", t.ID)
 		}
 	}()
-	releaseResources, err := s.lockResources(ctx, []string{source.ID, target.ID}, req.RepositoryID)
-	if err != nil {
-		return err
-	}
-	defer releaseResources()
-	s.stage(t, "copying_repository")
+	var estimate int64
 	destination := repo.Path + "-migration-" + t.ID
-	if _, err = s.rcloneRun(ctx, []Account{source, target}, func(line string) { s.log(t, line) }, "copy", s.remoteFile(source, repo.Path), s.remoteFile(target, destination), "--checksum"); err != nil {
-		return fail("MIGRATION_COPY_FAILED", "整仓复制未完成，旧位置保持有效")
-	}
-	repo.AccountID = target.ID
-	repo.Path = destination
-	s.stage(t, "verifying_repository")
-	if _, err = s.restic(ctx, t, repo, target, []string{"check", "--read-data"}, func(line string) { s.log(t, line) }); err != nil {
-		return fail("MIGRATION_CHECK_FAILED", "目标仓库全量读取检查失败；旧位置保持有效")
-	}
-	repo.Locations = append(repo.Locations, Location{AccountID: target.ID, DriveID: target.DriveID, Region: target.Region, TenantID: target.TenantID, Path: destination, Verified: true, At: now()})
-	_, err = s.rt.Store.Save(ctx, "repositories", repo.ID, -1, repo)
+	copied := repo
+	copied.AccountID, copied.Path = target.ID, destination
+	err = func() error {
+		release, err := s.lockResources(ctx, []string{source.ID, target.ID}, repo.ID)
+		if err != nil {
+			return err
+		}
+		defer release()
+		var current Repository
+		if err = s.rt.Store.Get(ctx, "repositories", repo.ID, &current); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(current, repo) {
+			return store.ErrConflict
+		}
+		if err = validateMaintenanceAccounts(ctx, s.rt.Store.DB, source, target); err != nil {
+			return err
+		}
+		if err = s.refreshAccount(ctx, &target); err != nil {
+			return err
+		}
+		out, err := s.rcloneOutput(ctx, []Account{source}, "size", s.remoteFile(source, repo.Path), "--json")
+		if err != nil {
+			return err
+		}
+		var usage struct {
+			Bytes int64 `json:"bytes"`
+		}
+		if err = json.Unmarshal(out, &usage); err != nil {
+			return err
+		}
+		if usage.Bytes < 0 || usage.Bytes > (math.MaxInt64-(8<<20))/113 {
+			return fail("CAPACITY_EXHAUSTED", "迁移目标容量估算超出范围")
+		}
+		estimate = usage.Bytes*113/100 + 8<<20
+		err = func() error {
+			tx, err := s.rt.Store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				return err
+			}
+			defer tx.Rollback()
+			current, err := readMaintenanceAccounts(ctx, tx, source.ID, target.ID)
+			if err != nil {
+				return err
+			}
+			if !sameAccountStorage(source, current[source.ID]) || !sameAccountStorage(target, current[target.ID]) {
+				return fail("VERSION_CONFLICT", "迁移账号物理身份已变化，请重新运行")
+			}
+			target = current[target.ID]
+			if !target.Verified || !target.Enabled {
+				return fail("INVALID_MIGRATION_TARGET", "目标必须是其他已验证启用账号")
+			}
+			var occupied int64
+			if err = tx.QueryRowContext(ctx, "SELECT coalesce(sum(bytes),0) FROM capacity_reservations WHERE account_id=?", target.ID).Scan(&occupied); err != nil {
+				return err
+			}
+			if capacity(target, occupied) < estimate {
+				return fail("CAPACITY_EXHAUSTED", "迁移目标容量不足")
+			}
+			if _, err = tx.ExecContext(ctx, "INSERT INTO capacity_reservations(run_id,account_id,bytes) VALUES(?,?,?)", t.ID, target.ID, estimate); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}()
+		if err != nil {
+			return err
+		}
+		reserved = true
+		s.stage(t, "copying_repository")
+		if _, err = s.rcloneRun(ctx, []Account{source, target}, func(line string) { s.log(t, line) }, "copy", s.remoteFile(source, repo.Path), s.remoteFile(target, destination), "--checksum"); err != nil {
+			return fail("MIGRATION_COPY_FAILED", "整仓复制未完成，旧位置保持有效")
+		}
+		s.stage(t, "verifying_repository")
+		if _, err = s.restic(ctx, t, copied, target, []string{"check", "--read-data"}, func(line string) { s.log(t, line) }); err != nil {
+			return fail("MIGRATION_CHECK_FAILED", "目标仓库全量读取检查失败；旧位置保持有效")
+		}
+		return nil
+	}()
 	if err != nil {
 		return err
 	}
-
+	copied.Locations = append(append([]Location(nil), repo.Locations...), Location{AccountID: target.ID, DriveID: target.DriveID, Region: target.Region, TenantID: target.TenantID, Path: destination, Verified: true, At: now()})
 	s.stage(t, "committing_location")
+	release, err := s.lockMaintenancePublication(ctx, []string{source.ID, target.ID}, repo.ID, false)
+	if err != nil {
+		return err
+	}
+	defer release()
+	saved, err := s.saveRepositoryCAS(ctx, repo, copied, func(db maintenanceReader) error {
+		current, err := readMaintenanceAccounts(ctx, db, source.ID, target.ID)
+		if err != nil {
+			return err
+		}
+		if !sameAccountStorage(source, current[source.ID]) || !sameAccountStorage(target, current[target.ID]) {
+			return fail("VERSION_CONFLICT", "迁移账号物理身份已变化，请重新运行")
+		}
+		if !current[target.ID].Verified || !current[target.ID].Enabled {
+			return fail("INVALID_MIGRATION_TARGET", "目标必须是其他已验证启用账号")
+		}
+		pool, err = readMaintenancePool(ctx, db, repo.PlanID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(pool.AccountIDs, target.ID) {
+			return fail("MIGRATION_TARGET_OUTSIDE_POOL", "迁移目标已不在计划当前存储池中")
+		}
+		var held int64
+		if err = db.QueryRowContext(ctx, "SELECT bytes FROM capacity_reservations WHERE run_id=? AND account_id=?", t.ID, target.ID).Scan(&held); err != nil {
+			return fail("CAPACITY_EXHAUSTED", "迁移容量预留已失效，请重新运行")
+		}
+		if held < estimate {
+			return fail("CAPACITY_EXHAUSTED", "迁移容量预留不足，请重新运行")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 	commitErr := s.commit(ctx, t, pool, nil, nil)
 	if commitErr != nil && !degraded(commitErr) {
-		_, _ = s.rt.Store.Save(context.Background(), "repositories", old.ID, -1, old)
-		return commitErr
+		return s.rollbackRepository(ctx, t, saved, repo, commitErr)
 	}
-	t.Result = map[string]any{"repository_id": repo.ID, "new_account_id": target.ID, "old_copy_preserved": true, "old_location": old.Path, "location_count": len(repo.Locations)}
+	t.Result = map[string]any{"repository_id": repo.ID, "new_account_id": target.ID, "old_copy_preserved": true, "old_location": repo.Path, "location_count": len(saved.Locations)}
 	if commitErr != nil {
 		return commitErr
 	}
@@ -766,7 +830,8 @@ func (s *Service) locationAccount(ctx context.Context, loc Location) (Account, e
 	return account, fail("ACCOUNT_MISSING", "旧副本所在账号未接入")
 }
 
-// Called under the plan and catalog mutexes. The current location remains verified throughout deletion.
+// The caller holds the plan lock. Each phase releases resource locks before
+// obtaining catalog/index/configuration locks for the next phase.
 func (s *Service) cleanupOld(ctx context.Context, t *Task, repo Repository, req MigrateRequest) error {
 	if req.OldLocationIndex < 0 || req.OldLocationIndex >= len(repo.Locations) {
 		return fail("INVALID_OLD_LOCATION", "旧位置索引无效")
@@ -792,85 +857,163 @@ func (s *Service) cleanupOld(ctx context.Context, t *Task, repo Repository, req 
 	if err != nil {
 		return err
 	}
-	ids := []string{current.ID}
-	if oldAccount.ID != current.ID {
-		ids = append(ids, oldAccount.ID)
+	sameDrive := current.DriveID != "" && current.DriveID == oldAccount.DriveID && current.Region == oldAccount.Region && current.TenantID == oldAccount.TenantID
+	if location.Path == repo.Path && (oldAccount.ID == current.ID || sameDrive) {
+		return fail("CURRENT_LOCATION_PROTECTED", "不能清理当前仓库位置")
 	}
-	releaseResources, err := s.lockResources(ctx, ids, repo.ID)
-	if err != nil {
-		return err
-	}
-	defer releaseResources()
-	verifiedCurrent := false
-	for _, loc := range repo.Locations {
-		if loc.AccountID == current.ID && loc.Path == repo.Path && loc.Verified {
-			verifiedCurrent = true
+	accountIDs := []string{current.ID, oldAccount.ID}
+	var references []string
+	err = func() error {
+		if err := s.recoveryIndex.RLockContext(ctx); err != nil {
+			return err
 		}
-	}
-	if !verifiedCurrent {
-		return fail("CURRENT_LOCATION_UNVERIFIED", "当前仓库位置尚未验证，不能删除旧副本")
-	}
-	s.stage(t, "verifying_current_location")
-	if _, err = s.restic(ctx, t, repo, current, []string{"check", "--read-data"}, func(line string) { s.log(t, line) }); err != nil {
-		return fail("MIGRATION_CHECK_FAILED", "当前仓库全量读取校验失败，旧副本保留")
-	}
-	raws, err := s.rt.Store.All(ctx, "recovery_points")
-	if err != nil {
-		return err
-	}
-	references := map[string]bool{}
-	for _, raw := range raws {
-		var point Point
-		_ = json.Unmarshal(raw, &point)
-		if point.DeletedAt != "" {
-			continue
+		defer s.recoveryIndex.RUnlock()
+		release, err := s.lockResources(ctx, accountIDs, repo.ID)
+		if err != nil {
+			return err
 		}
-		for _, snap := range point.Snapshots {
-			if snap.RepositoryID == repo.ID && !snap.Empty {
-				references[snap.SnapshotID] = true
+		defer release()
+		var latest Repository
+		if err = s.rt.Store.Get(ctx, "repositories", repo.ID, &latest); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(latest, repo) {
+			return store.ErrConflict
+		}
+		if err = validateMaintenanceAccounts(ctx, s.rt.Store.DB, current, oldAccount); err != nil {
+			return err
+		}
+		verified := false
+		for _, loc := range repo.Locations {
+			if loc.AccountID == current.ID && loc.Path == repo.Path && loc.Verified {
+				verified = true
 			}
 		}
-	}
-	for id := range references {
-		if len(id) != 64 {
-			return fail("SNAPSHOT_REFERENCE_INVALID", "有效恢复点使用的快照引用无效")
+		if !verified {
+			return fail("CURRENT_LOCATION_UNVERIFIED", "当前仓库位置尚未验证，不能删除旧副本")
 		}
-		if _, err = s.restic(ctx, t, repo, current, []string{"cat", "snapshot", id}, nil); err != nil {
-			return fail("SNAPSHOT_REFERENCE_MISSING", "当前位置缺少有效恢复点引用的快照，旧副本保留")
+		s.stage(t, "verifying_current_location")
+		if _, err = s.restic(ctx, t, repo, current, []string{"check", "--read-data"}, func(line string) { s.log(t, line) }); err != nil {
+			return fail("MIGRATION_CHECK_FAILED", "当前仓库全量读取校验失败，旧副本保留")
 		}
-	}
-	original := repo
-	original.Locations = append([]Location(nil), repo.Locations...)
-	repo.Locations[req.OldLocationIndex].Verified = false
-	repo.Locations[req.OldLocationIndex].Status = "cleanup_pending"
-	if _, err = s.rt.Store.Save(ctx, "repositories", repo.ID, -1, repo); err != nil {
-		return err
-	}
-	pool, err := s.catalogPool(ctx, repo.PlanID)
+		references, err = repositoryReferences(ctx, s.rt.Store.DB, repo.ID)
+		if err != nil {
+			return err
+		}
+		for _, id := range references {
+			if len(id) != 64 {
+				return fail("SNAPSHOT_REFERENCE_INVALID", "有效恢复点使用的快照引用无效")
+			}
+			if _, err = s.restic(ctx, t, repo, current, []string{"cat", "snapshot", id}, nil); err != nil {
+				return fail("SNAPSHOT_REFERENCE_MISSING", "当前位置缺少有效恢复点引用的快照，旧副本保留")
+			}
+		}
+		return nil
+	}()
 	if err != nil {
-		_, _ = s.rt.Store.Save(ctx, "repositories", original.ID, -1, original)
 		return err
 	}
+	retired := repo
+	retired.Locations = append([]Location(nil), repo.Locations...)
+	retired.Locations[req.OldLocationIndex].Verified = false
+	retired.Locations[req.OldLocationIndex].Status = "cleanup_pending"
+	var pool Pool
 	s.stage(t, "committing_old_copy_retirement")
-	if err = s.commit(ctx, t, pool, nil, nil); err != nil {
-		if !degraded(err) {
-			_, _ = s.rt.Store.Save(context.Background(), "repositories", original.ID, -1, original)
+	err = func() error {
+		release, err := s.lockMaintenancePublication(ctx, accountIDs, repo.ID, true)
+		if err != nil {
+			return err
 		}
+		defer release()
+		retired, err = s.saveRepositoryCAS(ctx, repo, retired, func(db maintenanceReader) error {
+			if err := validateCleanupState(ctx, db, current, oldAccount, repo.ID, references); err != nil {
+				return err
+			}
+			pool, err = readMaintenancePool(ctx, db, repo.PlanID)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if err = s.commit(ctx, t, pool, nil, nil); err != nil {
+			if !degraded(err) {
+				return s.rollbackRepository(ctx, t, retired, repo, err)
+			}
+			return err
+		}
+		return nil
+	}()
+	if err != nil {
 		return err
 	}
-	s.stage(t, "deleting_old_copy")
-	_, err = s.rcloneRun(ctx, []Account{oldAccount}, func(line string) { s.log(t, line) }, "purge", s.remoteFile(oldAccount, location.Path))
-	if err != nil && process.ExitCode(err) != 3 {
-		return fail("OLD_COPY_DELETE_FAILED", "当前位置已确认有效，旧副本清理失败可重试")
-	}
-	repo.Locations[req.OldLocationIndex].Status = "deleted"
-	if _, err = s.rt.Store.Save(ctx, "repositories", repo.ID, -1, repo); err != nil {
+	err = func() error {
+		if err := s.configurationMu.RLockContext(ctx); err != nil {
+			return err
+		}
+		defer s.configurationMu.RUnlock()
+		releaseAccounts, err := s.rt.LockAccountConfigurationContext(ctx)
+		if err != nil {
+			return err
+		}
+		defer releaseAccounts()
+		if err = s.recoveryIndex.RLockContext(ctx); err != nil {
+			return err
+		}
+		defer s.recoveryIndex.RUnlock()
+		releaseResources, err := s.lockResources(ctx, accountIDs, repo.ID)
+		if err != nil {
+			return err
+		}
+		defer releaseResources()
+		var latest Repository
+		if err = s.rt.Store.Get(ctx, "repositories", repo.ID, &latest); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(latest, retired) {
+			return store.ErrConflict
+		}
+		if err = validateCleanupState(ctx, s.rt.Store.DB, current, oldAccount, repo.ID, references); err != nil {
+			return err
+		}
+		s.stage(t, "deleting_old_copy")
+		_, err = s.rcloneRun(ctx, []Account{oldAccount}, func(line string) { s.log(t, line) }, "purge", s.remoteFile(oldAccount, location.Path))
+		if err != nil && process.ExitCode(err) != 3 {
+			return fail("OLD_COPY_DELETE_FAILED", "当前位置已确认有效，旧副本清理失败可重试")
+		}
+		return s.refreshAccount(ctx, &oldAccount)
+	}()
+	if err != nil {
 		return err
 	}
-	if err = s.commit(ctx, t, pool, nil, nil); err != nil {
-		return err
-	}
-	if err = s.refreshAccount(ctx, &oldAccount); err != nil {
+	s.stage(t, "committing_old_copy_cleanup")
+	err = func() error {
+		release, err := s.lockMaintenancePublication(ctx, accountIDs, repo.ID, false)
+		if err != nil {
+			return err
+		}
+		defer release()
+		completed := retired
+		completed.Locations = append([]Location(nil), retired.Locations...)
+		completed.Locations[req.OldLocationIndex].Status = "deleted"
+		completed, err = s.saveRepositoryCAS(ctx, retired, completed, func(db maintenanceReader) error {
+			if err := validateCleanupState(ctx, db, current, oldAccount, repo.ID, references); err != nil {
+				return err
+			}
+			pool, err = readMaintenancePool(ctx, db, repo.PlanID)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if err = s.commit(ctx, t, pool, nil, nil); err != nil {
+			if !degraded(err) {
+				return s.rollbackRepository(ctx, t, completed, retired, err)
+			}
+			return err
+		}
+		return nil
+	}()
+	if err != nil {
 		return err
 	}
 	t.Result = map[string]any{"repository_id": repo.ID, "cleanup_old": true, "old_location": location, "old_copy_deleted": true, "new_location_verified": true, "snapshot_references_checked": len(references)}
