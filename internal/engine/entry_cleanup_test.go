@@ -247,7 +247,7 @@ func TestSnapshotVerificationCleansUpOnEarlyReturn(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- s.verifySnapshot(ctx, &Task{ID: "verify"}, Repository{ID: "repo", Password: base64.StdEncoding.EncodeToString(password)}, Account{Backend: "local"}, "snapshot", root)
+				done <- s.verifySnapshot(ctx, &Task{ID: "verify"}, Repository{ID: "repo", Password: base64.StdEncoding.EncodeToString(password)}, Account{Backend: "local"}, "snapshot", root, nil)
 			}()
 			if cancelled {
 				deadline := time.Now().Add(5 * time.Second)

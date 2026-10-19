@@ -112,6 +112,7 @@ type Point struct {
 type Task struct {
 	prunedSnapshots  map[string][]string
 	partialRestore   bool
+	vanished         int64
 	ProcessedBytes   int64 `json:"processed_bytes"`
 	progressBase     float64
 	progressWeight   float64

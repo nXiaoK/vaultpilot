@@ -95,9 +95,8 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 			return nil, fail("SOURCE_BOUNDARY", err.Error())
 		}
 		src.Path = canonical
-		identity, err := platform.MountIdentity(src.Path)
-		if err != nil || identity != src.MountIdentity {
-			return nil, fail("SOURCE_MOUNT_CHANGED", "源目录挂载身份变化："+src.Name)
+		if err = sourceStillMounted(src); err != nil {
+			return nil, err
 		}
 		sources[id] = src
 		rootInfo, err := os.Lstat(src.Path)
@@ -109,11 +108,17 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 			rootDev = uint64(st.Dev)
 		}
 		patterns := append(append([]string{}, src.Excludes...), p.Excludes...)
+		// Applications such as 1Panel rotate their own files while a large tree
+		// is walked. Entries deleted before they are read are simply absent.
+		vanished := int64(0)
 		err = filepath.WalkDir(src.Path, func(path string, d fs.DirEntry, walkErr error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			if walkErr != nil {
+				if path != src.Path && errors.Is(walkErr, fs.ErrNotExist) {
+					return nil
+				}
 				return fail("SOURCE_READ_FAILED", "读取源失败："+path+"："+walkErr.Error())
 			}
 			rel, err := filepath.Rel(src.Path, path)
@@ -134,6 +139,10 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 				return nil
 			}
 			info, err := d.Info()
+			if errors.Is(err, fs.ErrNotExist) {
+				vanished++
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -150,6 +159,10 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 					return nil
 				}
 				f, err := os.Open(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					vanished++
+					return nil
+				}
 				if err != nil {
 					return fail("SOURCE_READ_FAILED", "文件不可读："+path)
 				}
@@ -162,6 +175,10 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 				e.Kind = "symlink"
 				e.Size = 0
 				e.LinkTarget, err = os.Readlink(path)
+				if errors.Is(err, fs.ErrNotExist) {
+					vanished++
+					return nil
+				}
 				if err != nil {
 					return err
 				}
@@ -180,8 +197,25 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 		if err != nil {
 			return nil, err
 		}
+		if vanished > 0 {
+			if err = sourceStillMounted(src); err != nil {
+				return nil, err
+			}
+			t.vanished += vanished
+			s.log(t, fmt.Sprintf("备份源 %s 扫描期间有 %d 个条目被删除，已跳过", src.Name, vanished))
+		}
 	}
 	return sources, flush()
+}
+
+// A missing entry counts as deleted only while the source root is still the
+// scanned mount; an unmounted volume must not publish an emptied point.
+func sourceStillMounted(src Source) error {
+	identity, err := platform.MountIdentity(src.Path)
+	if err != nil || identity != src.MountIdentity {
+		return fail("SOURCE_MOUNT_CHANGED", "源目录挂载身份变化："+src.Name)
+	}
+	return nil
 }
 func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, error) {
 	out := map[string]Account{}
@@ -618,6 +652,7 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 	if pool.CatalogReplicas < 1 {
 		pool.CatalogReplicas = 2
 	}
+	t.vanished = 0
 	s.stage(t, "scanning")
 	sources, err := s.scan(ctx, t, p)
 	if err != nil {
@@ -714,6 +749,13 @@ func (s *Service) backup(ctx context.Context, t *Task) error {
 		if !used[id] {
 			point.Snapshots = append(point.Snapshots, Snapshot{RepositoryID: id, Empty: true})
 		}
+	}
+	if t.vanished > 0 {
+		// Catalog discovery checks these totals against the published manifest.
+		if err = s.rt.Store.DB.QueryRowContext(ctx, "SELECT count(*),coalesce(sum(size),0) FROM file_entries WHERE run_id=?", t.ID).Scan(&point.FileCount, &point.LogicalBytes); err != nil {
+			return err
+		}
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d 个条目在本次备份期间被删除，未纳入此恢复点；路径见任务日志。", t.vanished))
 	}
 	if err = s.rt.CheckCacheBudget(); err != nil {
 		return fail("CACHE_LIMIT_EXCEEDED", err.Error())
@@ -817,9 +859,10 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if err = os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
+	mounted := map[string]bool{}
 	err = s.eachEntry(ctx, "run_id=? AND repo_id=?", []any{t.ID, repo.ID}, 512, func(entries []Entry) error {
-		for i := range entries {
-			e := &entries[i]
+		kept, vanished := entries[:0], []Entry{}
+		for _, e := range entries {
 			path := filepath.Join(sources[e.SourceID].Path, filepath.FromSlash(e.Path))
 			if e.Kind == "dir" {
 				path = filepath.Join(root, e.SourceID, filepath.FromSlash(e.Path))
@@ -828,7 +871,22 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 				}
 			} else {
 				info, err := os.Lstat(path)
-				if err != nil || e.Kind == "file" && !info.Mode().IsRegular() || e.Kind == "symlink" && info.Mode()&os.ModeSymlink == 0 {
+				if errors.Is(err, fs.ErrNotExist) {
+					// Earlier shards can upload for hours; the owner may have
+					// rotated this file away since the scan.
+					if !mounted[e.SourceID] {
+						if err = sourceStillMounted(sources[e.SourceID]); err != nil {
+							return err
+						}
+						mounted[e.SourceID] = true
+					}
+					vanished = append(vanished, e)
+					continue
+				}
+				if err != nil {
+					return fail("SOURCE_READ_FAILED", "扫描后源条目无法读取："+path+"："+err.Error())
+				}
+				if e.Kind == "file" && !info.Mode().IsRegular() || e.Kind == "symlink" && info.Mode()&os.ModeSymlink == 0 {
 					return fail("SOURCE_CHANGED", "扫描后源类型变化："+path)
 				}
 				if _, err = list.Write(append([]byte(path), 0)); err != nil {
@@ -836,8 +894,12 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 				}
 			}
 			e.SnapshotPath = filepath.ToSlash(path)
+			kept = append(kept, e)
 		}
-		return s.writeEntryPage(ctx, "UPDATE file_entries SET snapshot_path=? WHERE run_id=? AND source_id=? AND path=?", entries, func(e Entry) []any {
+		if err := s.dropVanished(ctx, t, sources, vanished); err != nil {
+			return err
+		}
+		return s.writeEntryPage(ctx, "UPDATE file_entries SET snapshot_path=? WHERE run_id=? AND source_id=? AND path=?", kept, func(e Entry) []any {
 			return []any{e.SnapshotPath, t.ID, e.SourceID, e.Path}
 		})
 	})
@@ -874,6 +936,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	}
 	snapshot := ""
 	lastSave := time.Time{}
+	unread, unreadTruncated := []string{}, false
 	_, err = s.restic(ctx, t, repo, a, args, func(line string) {
 		var message struct {
 			Type            string  `json:"message_type"`
@@ -882,6 +945,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 			DataAddedPacked int64   `json:"data_added_packed"`
 			Percent         float64 `json:"percent_done"`
 			BytesDone       int64   `json:"bytes_done"`
+			Item            string  `json:"item"`
 		}
 		if json.Unmarshal([]byte(line), &message) == nil {
 			if message.SnapshotID != "" {
@@ -909,11 +973,22 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 			}
 			if message.Type == "error" {
 				s.log(t, line)
+				if len(unread) < 4096 {
+					unread = append(unread, message.Item)
+				} else {
+					unreadTruncated = true
+				}
 			}
 		} else {
 			s.log(t, line)
 		}
 	})
+	if process.ExitCode(err) == 3 && len(snapshot) == 64 && !unreadTruncated && onlyVanished(unread, sources) {
+		// Every unreadable item has since been deleted. Verification drops
+		// those entries and still proves each remaining planned path.
+		s.log(t, "Restic 未能读取的文件均已在备份期间被删除，继续校验其余条目")
+		err = nil
+	}
 	status := map[string]any{"id": uid(), "run_id": t.ID, "repository_id": repo.ID, "snapshot_id": snapshot, "status": "failed"}
 	if err == nil {
 		status["status"] = "completed"
@@ -928,12 +1003,95 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	if len(snapshot) != 64 {
 		return "", fail("SNAPSHOT_MISSING", "Restic 未返回完整快照 ID")
 	}
-	if err = s.verifySnapshot(ctx, t, repo, a, snapshot, root); err != nil {
+	if err = s.verifySnapshot(ctx, t, repo, a, snapshot, root, sources); err != nil {
 		return "", err
 	}
 	return snapshot, nil
 }
-func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, a Account, snapshot, stageRoot string) error {
+
+// onlyVanished reports whether every path Restic could not read lies inside a
+// source and no longer exists.
+func onlyVanished(items []string, sources map[string]Source) bool {
+	if len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		inside := false
+		for _, src := range sources {
+			if item != src.Path && within(src.Path, item) {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return false
+		}
+		if _, err := os.Lstat(item); !errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
+}
+
+// dropVanished leaves files deleted after the scan out of this point. The
+// normal directory backup is best-effort over the run interval, and a deleted
+// file is no longer part of its source.
+func (s *Service) dropVanished(ctx context.Context, t *Task, sources map[string]Source, entries []Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := s.writeEntryPage(ctx, "DELETE FROM file_entries WHERE run_id=? AND source_id=? AND path=?", entries, func(e Entry) []any {
+		return []any{t.ID, e.SourceID, e.Path}
+	}); err != nil {
+		return err
+	}
+	paths := []string{}
+	for _, e := range entries {
+		if len(paths) == 20 {
+			break
+		}
+		paths = append(paths, filepath.Join(sources[e.SourceID].Path, filepath.FromSlash(e.Path)))
+	}
+	message := fmt.Sprintf("扫描后有 %d 个文件已被删除，不纳入本恢复点：%s", len(entries), strings.Join(paths, "、"))
+	if len(entries) > len(paths) {
+		message += " 等"
+	}
+	s.log(t, message)
+	t.vanished += int64(len(entries))
+	return nil
+}
+
+// dropVanishedFromSnapshot handles files deleted between the shard precheck
+// and Restic reading them. Only entries absent from both the snapshot and the
+// source are dropped; changed or still present files keep failing coverage.
+func (s *Service) dropVanishedFromSnapshot(ctx context.Context, t *Task, repo Repository, sources map[string]Source) error {
+	mounted := map[string]bool{}
+	for {
+		entries, err := s.queryEntries(ctx, "SELECT f.source_id,f.path,f.kind,f.size,f.mtime_ns,f.mode,f.link_target,f.repo_id,f.snapshot_path FROM file_entries f LEFT JOIN engine_snapshot_entries_v2 e ON e.task_id=f.run_id AND e.repo_id=f.repo_id AND e.path=f.snapshot_path WHERE f.run_id=? AND f.repo_id=? AND f.kind<>'dir' AND e.path IS NULL ORDER BY f.source_id,f.path LIMIT 512", []any{t.ID, repo.ID})
+		if err != nil || len(entries) == 0 {
+			return err
+		}
+		for _, e := range entries {
+			src, ok := sources[e.SourceID]
+			if !ok {
+				return fail("SNAPSHOT_COVERAGE_MISSING", "快照缺少计划文件或目录")
+			}
+			if _, err := os.Lstat(filepath.Join(src.Path, filepath.FromSlash(e.Path))); !errors.Is(err, fs.ErrNotExist) {
+				return fail("SNAPSHOT_COVERAGE_MISSING", "快照缺少计划文件或目录")
+			}
+			if !mounted[e.SourceID] {
+				if err := sourceStillMounted(src); err != nil {
+					return err
+				}
+				mounted[e.SourceID] = true
+			}
+		}
+		if err = s.dropVanished(ctx, t, sources, entries); err != nil {
+			return err
+		}
+	}
+}
+func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, a Account, snapshot, stageRoot string, sources map[string]Source) error {
 	// Stream engine output into an isolated SQL index, then prove each planned path is present.
 	_, err := s.rt.Store.DB.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS engine_snapshot_entries_v2(task_id TEXT,repo_id TEXT,path TEXT,kind TEXT,size INTEGER,mtime_ns INTEGER,link_target TEXT,PRIMARY KEY(task_id,repo_id,path))")
 	if err != nil {
@@ -990,9 +1148,18 @@ func (s *Service) verifySnapshot(ctx context.Context, t *Task, repo Repository, 
 	if err = flush(); err != nil {
 		return err
 	}
+	const missingQuery = "SELECT count(*) FROM file_entries f LEFT JOIN engine_snapshot_entries_v2 e ON e.task_id=f.run_id AND e.repo_id=f.repo_id AND e.path=f.snapshot_path WHERE f.run_id=? AND f.repo_id=? AND (e.path IS NULL OR e.kind<>CASE f.kind WHEN \x27symlink\x27 THEN \x27symlink\x27 ELSE f.kind END OR (f.kind=\x27file\x27 AND (e.size<>f.size OR e.mtime_ns<>f.mtime_ns)))"
 	var missing int
-	if err = s.rt.Store.DB.QueryRowContext(ctx, "SELECT count(*) FROM file_entries f LEFT JOIN engine_snapshot_entries_v2 e ON e.task_id=f.run_id AND e.repo_id=f.repo_id AND e.path=f.snapshot_path WHERE f.run_id=? AND f.repo_id=? AND (e.path IS NULL OR e.kind<>CASE f.kind WHEN \x27symlink\x27 THEN \x27symlink\x27 ELSE f.kind END OR (f.kind=\x27file\x27 AND (e.size<>f.size OR e.mtime_ns<>f.mtime_ns)))", t.ID, repo.ID).Scan(&missing); err != nil {
+	if err = s.rt.Store.DB.QueryRowContext(ctx, missingQuery, t.ID, repo.ID).Scan(&missing); err != nil {
 		return err
+	}
+	if missing > 0 {
+		if err = s.dropVanishedFromSnapshot(ctx, t, repo, sources); err != nil {
+			return err
+		}
+		if err = s.rt.Store.DB.QueryRowContext(ctx, missingQuery, t.ID, repo.ID).Scan(&missing); err != nil {
+			return err
+		}
 	}
 	if missing > 0 {
 		return fail("SNAPSHOT_COVERAGE_MISSING", "快照缺少计划文件或目录")
