@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"vaultpilot/internal/platform"
@@ -126,5 +127,30 @@ func TestGoogleDriveClearPreviewMarksPermanentDelete(t *testing.T) {
 		if item.PermanentDelete != (item.ID == "gdrive") {
 			t.Fatalf("incorrect deletion mode: %+v", item)
 		}
+	}
+}
+
+func TestAccountsRejectSharedStorageBeforeCloudAccess(t *testing.T) {
+	for _, groups := range [][]string{{"family", "family"}, {"family", "other"}, {"", ""}, {" family ", "family"}} {
+		t.Run(strings.Join(groups, "-"), func(t *testing.T) {
+			s := catalogRefreshNode(t)
+			pool := Pool{}
+			for i, id := range []string{"one", "two"} {
+				a := Account{ID: id, Backend: "gdrive", StorageGroup: groups[i]}
+				if _, err := s.rt.Store.Save(t.Context(), "accounts", id, 0, a); err != nil {
+					t.Fatal(err)
+				}
+				pool.AccountIDs = append(pool.AccountIDs, id)
+			}
+			_, err := s.accounts(t.Context(), pool)
+			var failure *failure
+			if !errors.As(err, &failure) {
+				t.Fatalf("expected failure, got %v", err)
+			}
+			duplicate := strings.TrimSpace(groups[0]) != "" && strings.TrimSpace(groups[0]) == strings.TrimSpace(groups[1])
+			if (failure.Code == "DUPLICATE_STORAGE_GROUP") != duplicate {
+				t.Fatalf("groups %v: %v", groups, err)
+			}
+		})
 	}
 }

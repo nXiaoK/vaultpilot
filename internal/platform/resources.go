@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"vaultpilot/internal/store"
 )
@@ -129,6 +130,15 @@ func (r *Runtime) createAccount(w http.ResponseWriter, req *http.Request) {
 		fail(w, 403, "local_disabled", "本地联调未启用")
 		return
 	}
+	if a.Backend == backendGoogleDrive {
+		a.StorageGroup = strings.TrimSpace(a.StorageGroup)
+		if utf8.RuneCountInString(a.StorageGroup) > 64 {
+			fail(w, 400, "invalid_storage_group", "共享存储组不能超过 64 字符")
+			return
+		}
+	} else {
+		a.StorageGroup = ""
+	}
 	if a.BudgetBytes == 0 && cloudBackend(a.Backend) {
 		a.BudgetBytes = 1 << 40
 	}
@@ -182,12 +192,13 @@ func (r *Runtime) updateAccount(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	var input struct {
-		Name                    string `json:"name"`
-		Version                 int    `json:"version"`
-		Enabled                 *bool  `json:"enabled"`
-		BudgetBytes             int64  `json:"budget_bytes"`
-		CloudReserveBytes       int64  `json:"cloud_reserve_bytes"`
-		MaintenanceReserveBytes int64  `json:"maintenance_reserve_bytes"`
+		Name                    string  `json:"name"`
+		Version                 int     `json:"version"`
+		Enabled                 *bool   `json:"enabled"`
+		BudgetBytes             int64   `json:"budget_bytes"`
+		CloudReserveBytes       int64   `json:"cloud_reserve_bytes"`
+		MaintenanceReserveBytes int64   `json:"maintenance_reserve_bytes"`
+		StorageGroup            *string `json:"storage_group"`
 	}
 	if !decode(w, req, &input) {
 		return
@@ -210,6 +221,54 @@ func (r *Runtime) updateAccount(w http.ResponseWriter, req *http.Request) {
 	}
 	if input.Enabled != nil {
 		old.Enabled = *input.Enabled
+	}
+	if old.Backend == backendGoogleDrive {
+		if input.StorageGroup != nil {
+			old.StorageGroup = *input.StorageGroup
+		}
+		old.StorageGroup = strings.TrimSpace(old.StorageGroup)
+		if utf8.RuneCountInString(old.StorageGroup) > 64 {
+			fail(w, 400, "invalid_storage_group", "共享存储组不能超过 64 字符")
+			return
+		}
+		if old.StorageGroup != "" {
+			rows, err := r.Store.DB.QueryContext(req.Context(), `SELECT a.data FROM storage_pools p
+				JOIN json_each(p.data, '$.account_ids') member
+				JOIN accounts a ON a.id = member.value
+				WHERE a.id <> ? AND EXISTS (
+					SELECT 1 FROM json_each(p.data, '$.account_ids') own WHERE own.value = ?
+				)`, old.ID, old.ID)
+			if err != nil {
+				fail(w, 500, "database_error", "无法检查共享存储组")
+				return
+			}
+			conflict := false
+			for rows.Next() {
+				var raw []byte
+				var other Account
+				if err = rows.Scan(&raw); err != nil {
+					break
+				}
+				if err = json.Unmarshal(raw, &other); err != nil {
+					break
+				}
+				if other.Backend == backendGoogleDrive && strings.TrimSpace(other.StorageGroup) == old.StorageGroup {
+					conflict = true
+				}
+			}
+			rowErr := rows.Err()
+			_ = rows.Close()
+			if err != nil || rowErr != nil {
+				fail(w, 500, "database_error", "无法检查共享存储组")
+				return
+			}
+			if conflict {
+				fail(w, 409, "shared_storage_group", "同一共享存储组的 Google Drive 账号不能加入同一存储池")
+				return
+			}
+		}
+	} else {
+		old.StorageGroup = ""
 	}
 	v, e := r.Store.Save(req.Context(), "accounts", old.ID, input.Version, old)
 	old.Version = v
@@ -369,6 +428,8 @@ func (r *Runtime) localQuota(a *Account) error {
 	return nil
 }
 func (r *Runtime) savePool(w http.ResponseWriter, req *http.Request) {
+	r.accountMu.Lock()
+	defer r.accountMu.Unlock()
 	var p Pool
 	if !decode(w, req, &p) {
 		return
@@ -393,6 +454,7 @@ func (r *Runtime) savePool(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	seen := map[string]bool{}
+	storageGroups := map[string]bool{}
 	for _, id := range p.AccountIDs {
 		var a Account
 		if e := r.Store.Get(req.Context(), "accounts", id, &a); e != nil || !a.Verified || !a.Enabled || a.Status != "ready" {
@@ -409,6 +471,13 @@ func (r *Runtime) savePool(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		seen[domain] = true
+		if group := strings.TrimSpace(a.StorageGroup); a.Backend == backendGoogleDrive && group != "" {
+			if storageGroups[group] {
+				fail(w, 409, "shared_storage_group", "同一共享存储组的 Google Drive 账号不能加入同一存储池")
+				return
+			}
+			storageGroups[group] = true
+		}
 	}
 	if p.CatalogReplicas > len(seen) {
 		fail(w, 400, "replicas_unavailable", "不同 Drive 数量不足以满足控制目录副本要求；默认要求两个")

@@ -223,6 +223,8 @@ func sourceStillMounted(src Source) error {
 func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, error) {
 	out := map[string]Account{}
 	domains := map[string]bool{}
+	groups := map[string]bool{}
+	accounts := make([]Account, 0, len(pool.AccountIDs))
 	for _, id := range pool.AccountIDs {
 		var a Account
 		if err := s.rt.Store.Get(ctx, "accounts", id, &a); err != nil {
@@ -232,6 +234,16 @@ func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, 
 			return nil, fail("DUPLICATE_QUOTA_DOMAIN", "存储池重复使用同一配额域")
 		}
 		domains[a.QuotaDomain] = true
+		if a.Backend == "gdrive" && strings.TrimSpace(a.StorageGroup) != "" {
+			group := strings.TrimSpace(a.StorageGroup)
+			if groups[group] {
+				return nil, fail("DUPLICATE_STORAGE_GROUP", "存储池重复使用同一 Google One 共享存储组")
+			}
+			groups[group] = true
+		}
+		accounts = append(accounts, a)
+	}
+	for _, a := range accounts {
 		if !a.Verified || !a.Enabled {
 			continue
 		}
