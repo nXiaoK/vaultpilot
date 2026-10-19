@@ -119,7 +119,7 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 				if path != src.Path && errors.Is(walkErr, fs.ErrNotExist) {
 					return nil
 				}
-				return fail("SOURCE_READ_FAILED", "读取源失败："+path+"："+walkErr.Error())
+				return fail("SOURCE_READ_FAILED", "读取源失败："+path+"："+walkErr.Error()+platform.SourceAccessHint(walkErr))
 			}
 			rel, err := filepath.Rel(src.Path, path)
 			if err != nil {
@@ -143,6 +143,9 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 				vanished++
 				return nil
 			}
+			if errors.Is(err, fs.ErrPermission) {
+				return fail("SOURCE_READ_FAILED", "读取源失败："+path+"："+err.Error()+platform.SourceAccessHint(err))
+			}
 			if err != nil {
 				return err
 			}
@@ -164,7 +167,7 @@ func (s *Service) scan(ctx context.Context, t *Task, p Plan) (map[string]Source,
 					return nil
 				}
 				if err != nil {
-					return fail("SOURCE_READ_FAILED", "文件不可读："+path)
+					return fail("SOURCE_READ_FAILED", "文件不可读："+path+platform.SourceAccessHint(err))
 				}
 				f.Close()
 				t.ScannedBytes += e.Size
@@ -884,7 +887,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 					continue
 				}
 				if err != nil {
-					return fail("SOURCE_READ_FAILED", "扫描后源条目无法读取："+path+"："+err.Error())
+					return fail("SOURCE_READ_FAILED", "扫描后源条目无法读取："+path+"："+err.Error()+platform.SourceAccessHint(err))
 				}
 				if e.Kind == "file" && !info.Mode().IsRegular() || e.Kind == "symlink" && info.Mode()&os.ModeSymlink == 0 {
 					return fail("SOURCE_CHANGED", "扫描后源类型变化："+path)

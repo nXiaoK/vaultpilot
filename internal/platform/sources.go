@@ -2,6 +2,7 @@ package platform
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,16 @@ func directoryIdentity(actual string, info os.FileInfo) (string, error) {
 		return "", fmt.Errorf("无法获取目录设备身份")
 	}
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d", actual, stat.Dev, stat.Ino)))), nil
+}
+
+// SourceAccessHint explains a permission error on a backup source. Sources
+// belong to other applications such as panels and databases; changing their
+// owner or mode for this service can break them, so ask for read access only.
+func SourceAccessHint(e error) string {
+	if !errors.Is(e, os.ErrPermission) {
+		return ""
+	}
+	return fmt.Sprintf("。当前进程 UID=%d、GID=%d 没有读取权限；请在宿主机只为该用户或组增加只读权限（如只读 ACL），不要用 chown/chmod 修改源目录原有属主或权限，以免影响 1Panel、数据库等原应用", os.Geteuid(), os.Getegid())
 }
 func (r *Runtime) ValidateSourcePath(path string) (string, error) {
 	actual, e := canonicalDir(path)
@@ -95,11 +106,11 @@ func (r *Runtime) ValidateSourcePath(path string) (string, error) {
 	}
 	f, e := os.Open(actual)
 	if e != nil {
-		return "", fmt.Errorf("目录无法读取")
+		return "", errors.New("目录无法读取" + SourceAccessHint(e))
 	}
 	defer f.Close()
 	if _, e = f.Readdirnames(1); e != nil && e != io.EOF {
-		return "", fmt.Errorf("目录无法读取")
+		return "", errors.New("目录无法读取" + SourceAccessHint(e))
 	}
 	return actual, nil
 }

@@ -3,11 +3,37 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRealResticUnreadableSourceExplainsReadOnlyGrant(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	s, plan, _, _ := realFixture(t)
+	var source Source
+	if err := s.rt.Store.Get(context.Background(), "sources", plan.SourceIDs[0], &source); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(source.Path, "file.txt")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0600) })
+	_, err := s.scan(context.Background(), &Task{ID: uid(), Kind: "backup", PlanID: plan.ID, StartedAt: now()}, plan)
+	var f *failure
+	if !errors.As(err, &f) || f.Code != "SOURCE_READ_FAILED" || !strings.Contains(f.Message, "UID=") || !strings.Contains(f.Message, "不要用 chown/chmod") {
+		t.Fatalf("unreadable source lacks read-only guidance: %v", err)
+	}
+	if info, err := os.Stat(locked); err != nil || info.Mode().Perm() != 0 {
+		t.Fatalf("scan changed source permissions: %v %v", info, err)
+	}
+}
 
 func TestRealResticManifestDirectoriesKeepPrivatePermissions(t *testing.T) {
 	s, plan, pool, account := realFixture(t)

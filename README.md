@@ -14,7 +14,7 @@ cd vaultpilot
 cp .env.example .env
 # 编辑 .env：真实源目录、恢复目录、运行 UID/GID；Rclone 标准授权可保留 OAuth 配置为空。
 mkdir -p state cache example-data/source example-data/restore
-# 让 .env 中指定的 UID/GID 能写入 state/cache/恢复目标，能读取备份源。
+# 让 .env 中指定的 UID/GID 能写入 state/cache/恢复目标。备份源只需可读，不要对源目录 chown/chmod，见「备份源读取权限」。
 sudo chown -R 1000:1000 state cache example-data/restore
 chmod 700 state cache
 docker compose build
@@ -26,6 +26,26 @@ docker compose up -d
 在 VPS 部署时，可以在自己的电脑运行 `ssh -L 8080:127.0.0.1:8080 <用户>@<VPS地址>`，再从浏览器访问 `http://localhost:8080`。Rclone 标准授权遇到 localhost 回调打不开时，在网页中粘贴完整回调地址即可。使用域名访问时请配置 HTTPS 反向代理，并设置 `VP_PUBLIC_URL`。在反向代理之后部署时，配置 `VP_TRUSTED_PROXIES`（实际代理 CIDR），否则所有客户端共用同一个限流计数器。通过局域网 IP 访问时，将实际地址（含端口）配置为 `VP_PUBLIC_URL` 或加入逗号分隔的 `VP_ALLOWED_HOSTS`，否则 Host 校验会返回 421。
 
 生产环境替换 `.env` 的 `VP_SOURCE_HOST` 与 `VP_RESTORE_HOST`。源以只读方式挂载到 `/sources`；恢复目标独立挂载到 `/restore`。新增宿主机目录需要更新 compose 的只读挂载和 `VP_SOURCE_ROOTS`，重建容器后才会出现在网页选择器中。
+
+### 备份源读取权限
+
+VaultPilot 只读取备份源：Compose 以 `:ro` 挂载 `/sources`，添加、浏览、预览和备份都不会修改源目录的属主、权限或内容。添加源时提示「目录无法读取 … 没有读取权限」或备份报告「文件不可读」时，只需为运行用户增加读取权限。不要对 1Panel、数据库等应用目录执行 `chown -R` 或 `chmod -R`，原应用可能因此无法运行。
+
+只读 ACL 不改变属主，只为运行用户增加读取和目录进入权限（Debian 需安装 `acl`，替换为实际目录与 `VP_UID`）。`ls -l` 显示的组权限位会变为 ACL 掩码，严格检查权限位的文件（如 SSH 私钥）不要这样授权：
+
+```sh
+sudo setfacl -R -m u:1000:rX /opt/1panel/backup
+```
+
+`setfacl -R` 只作用于已有条目，原应用之后新建且对其他用户不可读的文件仍需授权。默认 ACL（`setfacl -d`）会改变新文件的权限计算方式，可能影响原应用，使用前需确认。也可以在 Compose 中用 `group_add` 让容器加入能读取源目录的组。
+
+发现宿主机源目录的属主或权限变化时：
+
+1. 核对 `VP_SOURCE_HOST` 和新增挂载的路径拼写。挂载的宿主机目录不存在时，Docker 会以 root 自动创建。
+2. 检查是否为让 VaultPilot 读取而执行过 `chown`/`chmod`，例如查看 shell 历史。
+3. 执行 `docker inspect vaultpilot-vaultpilot-1 --format '{{json .Mounts}}'`（按实际容器名），确认源挂载为 `"RW":false`。
+
+恢复时以原应用要求的属主和权限为准，可对照未改动的同类目录。
 
 自定义 `VP_RESTORE_HOST` 后，需要为那个真实宿主机目录设置 `VP_UID`/`VP_GID` 的写入权限，上面的示例目录授权不会自动应用到它。出现 `mkdirat …: permission denied` 时，查看 [恢复目录权限排查](docs/RECOVERY.md#恢复目录权限错误)。
 
