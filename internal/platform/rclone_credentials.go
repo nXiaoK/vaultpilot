@@ -227,6 +227,17 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 			return c.Token, ctx.Err()
 		}
 		if exit, ok := e.(*exec.ExitError); ok {
+			if credentialProvider(c) == backendGoogleDrive {
+				output := strings.ToLower(string(exit.Stderr))
+				for _, reason := range []string{"userRateLimitExceeded", "rateLimitExceeded", "dailyLimitExceeded", "storageQuotaExceeded"} {
+					if strings.Contains(output, strings.ToLower(reason)) {
+						return c.Token, cloudError{Status: 403, Provider: backendGoogleDrive, Reason: reason}
+					}
+				}
+				if strings.Contains(output, "upload limit") {
+					return c.Token, cloudError{Status: 403, Provider: backendGoogleDrive, Reason: "userRateLimitExceeded"}
+				}
+			}
 			r.ObserveRcloneFailure(id, exit.Stderr, e)
 			if credentialProvider(c) == backendGoogleDrive && strings.Contains(strings.ToLower(string(exit.Stderr)), "invalid_grant") {
 				return c.Token, authorizationIssue{"authorization_required", "Google Drive 授权已失效，请重新授权"}

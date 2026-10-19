@@ -42,6 +42,7 @@ type Account struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	Backend            string `json:"backend"`
+	StorageGroup       string `json:"storage_group,omitempty"`
 	Remote             string `json:"remote"`
 	DriveID            string `json:"drive_id"`
 	Region             string `json:"region"`
