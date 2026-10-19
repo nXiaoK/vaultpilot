@@ -245,12 +245,12 @@ printf '%s\n' '{"State":"driveid_final","Error":""}'
 }
 func TestRcloneCallbackValidationAndSessionBinding(t *testing.T) {
 	good := "http://localhost:53682/?code=code&state=expected"
-	if _, e := validateRcloneCallback(good, "expected"); e != nil {
+	if _, e := validateRcloneCallback(good, "expected", backendOneDrive); e != nil {
 		t.Fatal(e)
 	}
 	invalid := []string{"https://evil.example/?code=x&state=expected", "http://169.254.169.254:53682/?code=x&state=expected", "http://localhost:53682/auth?code=x&state=expected", "http://localhost:53682/?code=x&state=wrong", good + "&state=expected", good + "#fragment", good + "&error=denied", "http://user@localhost:53682/?code=x&state=expected"}
 	for _, s := range invalid {
-		if _, e := validateRcloneCallback(s, "expected"); e == nil {
+		if _, e := validateRcloneCallback(s, "expected", backendOneDrive); e == nil {
 			t.Fatal("unsafe callback accepted")
 		}
 	}
