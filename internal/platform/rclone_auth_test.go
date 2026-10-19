@@ -52,7 +52,7 @@ func TestRcloneImportFormatsAndUnsafeOptions(t *testing.T) {
 	dump, _ := json.Marshal(map[string]any{"personal": simple, "local": map[string]string{"type": "local"}})
 	formats := []string{token, string(dump), string(blob), base64.RawURLEncoding.EncodeToString(blob), "Paste the following into your remote machine --->\n" + token + "\n<---End paste", "\ufeff[personal]\ntype = onedrive\ntoken = " + token + "\n"}
 	for _, input := range formats {
-		entries, e := parseRcloneImport(input)
+		entries, e := parseRcloneImport(input, backendOneDrive)
 		if e != nil || len(entries) != 1 || entries[0].Credential.Mode != "rclone" {
 			t.Fatalf("format failed: %v", e)
 		}
@@ -70,12 +70,12 @@ func TestRcloneImportFormatsAndUnsafeOptions(t *testing.T) {
 		"RCLONE_ENCRYPT_V0:\nabc", strings.Repeat("a", maxRcloneImport+1),
 	}
 	for i, input := range cases {
-		if _, e := parseRcloneImport(input); e == nil {
+		if _, e := parseRcloneImport(input, backendOneDrive); e == nil {
 			t.Fatalf("unsafe case %d accepted", i)
 		}
 	}
 	// Unknown options cannot become engine flags or a config file directive.
-	entries, e := parseRcloneImport("[x]\ntype=onedrive\ntoken=" + token + "\nproxy=http://evil.example\nencoding=Slash\n")
+	entries, e := parseRcloneImport("[x]\ntype=onedrive\ntoken="+token+"\nproxy=http://evil.example\nencoding=Slash\n", backendOneDrive)
 	if e != nil {
 		t.Fatal(e)
 	}

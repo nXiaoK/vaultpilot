@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,7 +27,13 @@ type rcloneImportEntry struct {
 	Credential   accountCredential `json:"-"`
 }
 
-func parseRcloneImport(input string) ([]rcloneImportEntry, error) {
+func parseRcloneImport(input, backend string) ([]rcloneImportEntry, error) {
+	if backend == "" {
+		backend = backendOneDrive
+	}
+	if !cloudBackend(backend) {
+		return nil, errors.New("不支持的云盘授权类型")
+	}
 	bad := errors.New("无法解析配置：请导入未加密的 rclone.conf、config dump JSON 或 authorize 结果")
 	if len(input) > maxRcloneImport {
 		return nil, errors.New("配置文件不能超过 1 MiB")
@@ -57,14 +64,14 @@ func parseRcloneImport(input string) ([]rcloneImportEntry, error) {
 			return nil, bad
 		}
 		if _, ok := obj["access_token"]; ok {
-			configs["授权结果"] = map[string]string{"type": "onedrive", "token": input}
+			configs["授权结果"] = map[string]string{"type": rcloneType(backend), "token": input}
 		} else if _, ok := obj["token"]; ok {
 			var v map[string]string
 			if json.Unmarshal([]byte(input), &v) != nil {
 				return nil, bad
 			}
 			if v["type"] == "" {
-				v["type"] = "onedrive"
+				v["type"] = rcloneType(backend)
 			}
 			configs["授权结果"] = v
 		} else {
@@ -109,20 +116,26 @@ func parseRcloneImport(input string) ([]rcloneImportEntry, error) {
 	}
 	entries := []rcloneImportEntry{}
 	for name, config := range configs {
-		if config["type"] != "onedrive" {
+		if config["type"] != rcloneType(backend) {
 			continue
 		}
-		entry, e := validateRcloneEntry(name, config)
+		var entry rcloneImportEntry
+		var e error
+		if backend == backendGoogleDrive {
+			entry, e = validateGoogleDriveEntry(name, config)
+		} else {
+			entry, e = validateRcloneEntry(name, config)
+		}
 		if e != nil {
 			return nil, e
 		}
 		entries = append(entries, entry)
 	}
 	if len(entries) == 0 {
-		return nil, errors.New("配置中没有可导入的 OneDrive 授权")
+		return nil, errors.New("配置中没有可导入的 " + backendLabel(backend) + " 授权")
 	}
 	if len(entries) > 100 {
-		return nil, errors.New("每次最多导入包含 100 个 OneDrive remote 的配置")
+		return nil, errors.New("每次最多导入包含 100 个 " + backendLabel(backend) + " remote 的配置")
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 	return entries, nil
@@ -183,7 +196,56 @@ func validateRcloneEntry(name string, v map[string]string) (rcloneImportEntry, e
 	return rcloneImportEntry{Name: name, DriveID: v["drive_id"], DriveType: v["drive_type"], CustomClient: c.ClientID != "", Credential: c}, nil
 }
 
+func validateGoogleDriveEntry(name string, v map[string]string) (rcloneImportEntry, error) {
+	bad := errors.New("Google Drive 配置无效或不受支持：仅支持个人我的云端硬盘、标准 Google 端点和委托授权")
+	for k, value := range v {
+		if len(value) > 65536 || strings.ContainsAny(k+value, "\r\n\x00") {
+			return rcloneImportEntry{}, bad
+		}
+	}
+	if len(name) > 200 || strings.ContainsAny(name, "\r\n\x00") {
+		return rcloneImportEntry{}, bad
+	}
+	if v["scope"] != "" && v["scope"] != "drive" {
+		return rcloneImportEntry{}, errors.New("Google Drive 的 scope 必须为 drive；其他权限无法保证换应用重新授权后仍可访问已有备份")
+	}
+	for _, key := range []string{"team_drive", "service_account_file", "service_account_credentials", "impersonate", "resource_key"} {
+		if v[key] != "" {
+			return rcloneImportEntry{}, bad
+		}
+	}
+	for _, key := range []string{"env_auth", "shared_with_me"} {
+		if v[key] != "" {
+			value, err := strconv.ParseBool(v[key])
+			if err != nil || value {
+				return rcloneImportEntry{}, bad
+			}
+		}
+	}
+	if v["auth_url"] != "" && v["auth_url"] != "https://accounts.google.com/o/oauth2/auth" || v["token_url"] != "" && v["token_url"] != "https://oauth2.googleapis.com/token" {
+		return rcloneImportEntry{}, bad
+	}
+	c := accountCredential{Provider: backendGoogleDrive, Mode: "rclone", ClientID: v["client_id"], ClientSecret: v["client_secret"], Scopes: "drive"}
+	if c.ClientSecret != "" && (c.ClientID == "" || len(c.ClientSecret) < 22) {
+		return rcloneImportEntry{}, errors.New("自定义应用密钥须使用 rclone.conf 中的 obscure 格式并提供 client_id")
+	}
+	if c.ClientSecret != "" {
+		secret, e := base64.RawURLEncoding.DecodeString(c.ClientSecret)
+		if e != nil || len(secret) <= 16 {
+			return rcloneImportEntry{}, errors.New("客户端密钥不是有效的 Rclone obscure 编码")
+		}
+	}
+	if json.Unmarshal([]byte(v["token"]), &c.Token) != nil || c.Token.AccessToken == "" || c.Token.RefreshToken == "" || c.Token.Expiry.IsZero() || !strings.EqualFold(c.Token.TokenType, "Bearer") {
+		return rcloneImportEntry{}, errors.New("授权结果缺少有效 token、refresh_token、Bearer 类型或 expiry；请重新使用 Rclone 授权")
+	}
+	if strings.ContainsAny(c.Token.AccessToken+c.Token.RefreshToken, "\r\n\x00") {
+		return rcloneImportEntry{}, bad
+	}
+	return rcloneImportEntry{Name: name, DriveID: v["root_folder_id"], CustomClient: c.ClientID != "", Credential: c}, nil
+}
+
 type rcloneImportRequest struct {
+	Backend string `json:"backend"`
 	Config  string `json:"config"`
 	Remote  string `json:"remote"`
 	Version int    `json:"version"`
@@ -194,7 +256,7 @@ func (r *Runtime) previewRcloneImport(w http.ResponseWriter, req *http.Request) 
 	if !decode(w, req, &v) {
 		return
 	}
-	entries, e := parseRcloneImport(v.Config)
+	entries, e := parseRcloneImport(v.Config, v.Backend)
 	if e != nil {
 		fail(w, 400, "invalid_rclone_config", e.Error())
 		return
@@ -206,7 +268,12 @@ func (r *Runtime) importRcloneAccount(w http.ResponseWriter, req *http.Request) 
 	if !decode(w, req, &v) {
 		return
 	}
-	entries, e := parseRcloneImport(v.Config)
+	var account Account
+	if r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &account) != nil {
+		fail(w, 404, "account_not_found", "账号不存在")
+		return
+	}
+	entries, e := parseRcloneImport(v.Config, account.Backend)
 	if e != nil {
 		fail(w, 400, "invalid_rclone_config", e.Error())
 		return
@@ -251,6 +318,9 @@ func (r *Runtime) installCredential(ctx context.Context, id string, version int,
 	}
 	if !cloudBackend(a.Backend) {
 		return a, errors.New("此账号不是 OneDrive")
+	}
+	if credentialProvider(c) != a.Backend {
+		return a, errors.New("授权类型与账号不匹配")
 	}
 	if a.Version != version {
 		return a, errors.New("账号配置已变更，请重新加载后授权或导入")

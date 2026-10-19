@@ -184,7 +184,7 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 		f.Message = "Rclone 授权未完成，请检查端口、网络或微软授权结果后重试"
 		return
 	}
-	entries, e := parseRcloneImport(out.String())
+	entries, e := parseRcloneImport(out.String(), backendOneDrive)
 	if e != nil || len(entries) != 1 {
 		f.Status = "failed"
 		f.Message = "Rclone 未返回有效授权凭据"

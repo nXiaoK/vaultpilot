@@ -17,6 +17,7 @@ import (
 // These settings are encrypted with the token. Rclone-mode credentials keep
 // Rclone's defaults unless the imported remote explicitly used its own app.
 type accountCredential struct {
+	Provider     string     `json:"provider,omitempty"`
 	Token        OAuthToken `json:"token"`
 	Mode         string     `json:"mode"`
 	GrantID      string     `json:"grant_id,omitempty"`
@@ -24,6 +25,13 @@ type accountCredential struct {
 	ClientSecret string     `json:"client_secret,omitempty"`
 	Tenant       string     `json:"tenant,omitempty"`
 	Scopes       string     `json:"scopes,omitempty"`
+}
+
+func credentialProvider(c accountCredential) string {
+	if c.Provider == "" {
+		return backendOneDrive
+	}
+	return c.Provider
 }
 
 func credentialTokenEndpoint(tenant string) string {
@@ -82,13 +90,16 @@ func (r *Runtime) loadCredential(id string) (accountCredential, error) {
 	}
 	// Backward-compatible upgrade of the original token-only format.
 	if c.Mode == "" {
+		if c.Provider != "" {
+			return c, errors.New("账号凭据格式损坏")
+		}
 		var t OAuthToken
 		if json.Unmarshal(plain, &t) != nil {
 			return c, errors.New("账号凭据格式损坏")
 		}
 		c = r.customCredential(t)
 	}
-	if c.Token.AccessToken == "" || (c.Mode != "custom" && c.Mode != "rclone") {
+	if c.Token.AccessToken == "" || !cloudBackend(credentialProvider(c)) || (c.Mode != "custom" && c.Mode != "rclone") || credentialProvider(c) == backendGoogleDrive && c.Mode != "rclone" {
 		return c, errors.New("账号凭据格式损坏")
 	}
 	return c, nil
@@ -113,17 +124,27 @@ func (r *Runtime) credentialConfig(ctx context.Context, name string, c accountCr
 	if e != nil {
 		return "", e
 	}
+	provider := credentialProvider(c)
+	if !cloudBackend(provider) || provider == backendGoogleDrive && c.Mode != "rclone" {
+		return "", errors.New("账号凭据类型无效")
+	}
 	var b strings.Builder
-	b.WriteString("[" + name + "]\ntype = onedrive\nregion = global\ntoken = " + string(token) + "\n")
+	if provider == backendGoogleDrive {
+		b.WriteString("[" + name + "]\ntype = drive\nscope = drive\ntoken = " + string(token) + "\n")
+	} else {
+		b.WriteString("[" + name + "]\ntype = onedrive\nregion = global\ntoken = " + string(token) + "\n")
+	}
 	if c.GrantID != "" {
 		b.WriteString("vp_credential_id = " + c.GrantID + "\n")
 	}
-	if c.Scopes != "" {
-		b.WriteString("access_scopes = " + c.Scopes + "\n")
+	if provider == backendOneDrive {
+		if c.Scopes != "" {
+			b.WriteString("access_scopes = " + c.Scopes + "\n")
+		}
+		// Rclone's noninteractive continuation uses its base OAuth config; supply
+		// the standard common endpoint explicitly as well as imported overrides.
+		b.WriteString("token_url = " + credentialTokenEndpoint(c.Tenant) + "\n")
 	}
-	// Rclone's noninteractive continuation uses its base OAuth config; supply
-	// the standard common endpoint explicitly as well as imported overrides.
-	b.WriteString("token_url = " + credentialTokenEndpoint(c.Tenant) + "\n")
 	if c.ClientID != "" {
 		b.WriteString("client_id = " + c.ClientID + "\n")
 	}
@@ -144,7 +165,12 @@ func (r *Runtime) credentialConfig(ctx context.Context, name string, c accountCr
 		}
 		b.WriteString("client_secret = " + secret + "\n")
 	}
-	if driveID != "" {
+	if provider == backendGoogleDrive {
+		if driveID != "" {
+			b.WriteString("root_folder_id = " + driveID + "\n")
+		}
+		b.WriteString("stop_on_upload_limit = true\nuse_trash = false\n")
+	} else if driveID != "" {
 		b.WriteString("drive_id = " + driveID + "\ndrive_type = " + driveType + "\n")
 	}
 	return b.String() + "\n", nil
@@ -176,7 +202,11 @@ func (r *Runtime) credentialFile(prefix, content string) (string, error) {
 func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCredential) (OAuthToken, error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	content, e := r.credentialConfig(ctx, "vp_refresh", c, "", "")
+	refreshCredential := c
+	if credentialProvider(c) == backendGoogleDrive {
+		refreshCredential.Token.Expiry = time.Now().Add(-time.Hour)
+	}
+	content, e := r.credentialConfig(ctx, "vp_refresh", refreshCredential, "", "")
 	if e != nil {
 		return c.Token, e
 	}
@@ -185,7 +215,11 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 		return c.Token, errors.New("无法创建凭据刷新配置")
 	}
 	defer os.Remove(path)
-	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "config", "update", "vp_refresh", "--non-interactive", "--continue", "--state", "onedrive", "--result", "", "--config", path, "--log-level", "ERROR")
+	args := []string{"config", "update", "vp_refresh", "--non-interactive", "--continue", "--state", "onedrive", "--result", "", "--config", path, "--log-level", "ERROR"}
+	if credentialProvider(c) == backendGoogleDrive {
+		args = []string{"about", "vp_refresh:", "--json", "--config", path, "--log-level", "ERROR"}
+	}
+	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, args...)
 	cmd.Env = rcloneEnvironment()
 	output, e := cmd.Output()
 	if e != nil {
@@ -194,11 +228,14 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 		}
 		if exit, ok := e.(*exec.ExitError); ok {
 			r.ObserveRcloneFailure(id, exit.Stderr, e)
+			if credentialProvider(c) == backendGoogleDrive && strings.Contains(strings.ToLower(string(exit.Stderr)), "invalid_grant") {
+				return c.Token, authorizationIssue{"authorization_required", "Google Drive 授权已失效，请重新授权"}
+			}
 		}
 		return c.Token, authorizationIssue{"refresh_failed", "Rclone 刷新授权失败，请检查网络或重新授权"}
 	}
 	var result struct{ Error string }
-	if json.Unmarshal(output, &result) != nil || result.Error != "" {
+	if credentialProvider(c) == backendOneDrive && (json.Unmarshal(output, &result) != nil || result.Error != "") {
 		r.ObserveRcloneFailure(id, []byte(result.Error), errors.New("refresh failed"))
 		return c.Token, authorizationIssue{"refresh_failed", "Rclone 无法刷新授权或读取 Drive，请重新授权"}
 	}
@@ -206,7 +243,7 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 	if e != nil {
 		return c.Token, errors.New("无法读取刷新凭据")
 	}
-	entries, e := parseRcloneImport(string(raw))
+	entries, e := parseRcloneImport(string(raw), credentialProvider(c))
 	if e != nil || len(entries) != 1 {
 		return c.Token, errors.New("刷新凭据格式无效")
 	}
