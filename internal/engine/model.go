@@ -42,6 +42,7 @@ type Account struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	Backend            string `json:"backend"`
+	StorageGroup       string `json:"storage_group,omitempty"`
 	Remote             string `json:"remote"`
 	DriveID            string `json:"drive_id"`
 	Region             string `json:"region"`
@@ -187,4 +188,8 @@ func terminal(s string) bool {
 func degraded(err error) bool {
 	var f *failure
 	return errors.As(err, &f) && f.Code == "PROTECTION_DEGRADED"
+}
+
+func cloudBackend(backend string) bool {
+	return backend == "onedrive" || backend == "gdrive"
 }

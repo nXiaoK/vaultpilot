@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
   title: VaultPilot API
   version: 1.0.0
-  description: 实现参考。所有Bytes为整数，列表分页；管理会话Cookie + X-CSRF-Token。OneDrive Personal实际云端联调状态见测试报告，企业版/SharePoint不宣称兼容。资源修改用version，后台任务用Idempotency-Key。
+  description: 实现参考。所有Bytes为整数，列表分页；管理会话Cookie + X-CSRF-Token。OneDrive Personal与个人Google Drive实际云端联调状态见测试报告，企业版/SharePoint/Google Workspace/共享云端硬盘不宣称兼容。资源修改用version，后台任务用Idempotency-Key。
 servers:
 - url: "/api"
 security:
@@ -91,7 +91,7 @@ paths:
         '409': {"$ref": "#/components/responses/APIError"}
   "/notifications/telegram/check-accounts":
     post:
-      summary: 后台只读检查启用且已验证的 OneDrive 账号，授权异常去重通知
+      summary: 后台只读检查启用且已验证的云盘账号，授权异常去重通知
       operationId: check_telegram_account_authorizations
       tags: [通知]
       security: [{SessionAuth: [], CSRFToken: []}]
@@ -430,7 +430,7 @@ paths:
       - "$ref": "#/components/parameters/Limit"
       - "$ref": "#/components/parameters/Offset"
     post:
-      summary: 创建OneDrive配置或显式启用的本地联调入口
+      summary: 创建OneDrive、Google Drive配置或显式启用的本地联调入口
       operationId: post_accounts
       tags:
       - 账号
@@ -441,7 +441,7 @@ paths:
         '421':
           "$ref": "#/components/responses/HostInvalid"
         '201':
-          description: 创建OneDrive配置或显式启用的本地联调入口
+          description: 创建OneDrive、Google Drive配置或显式启用的本地联调入口
           content:
             application/json:
               schema:
@@ -533,7 +533,7 @@ paths:
           "$ref": "#/components/responses/APIError"
   "/accounts/export":
     post:
-      summary: 导出密码加密的已验证 OneDrive 账号包
+      summary: 导出密码加密的已验证云盘账号包
       operationId: export_accounts
       tags: [账号]
       security:
@@ -550,7 +550,7 @@ paths:
         '421':
           "$ref": "#/components/responses/HostInvalid"
         '200':
-          description: 导出密码加密的已验证 OneDrive 账号包
+          description: 导出密码加密的已验证云盘账号包
           content:
             application/json:
               schema:
@@ -782,7 +782,7 @@ paths:
           "$ref": "#/components/responses/APIError"
         '502':
           "$ref": "#/components/responses/APIError"
-      description: 要求配置公开OAuth地址及应用ID。公网回调必须HTTPS；本地主机开发可用HTTP。
+      description: 仅用于OneDrive，要求配置公开OAuth地址及微软应用ID；Google Drive返回400并要求使用Rclone标准授权或导入。公网回调必须HTTPS；本地主机开发可用HTTP。
       parameters:
       - "$ref": "#/components/parameters/ResourceID"
       requestBody:
@@ -795,7 +795,7 @@ paths:
     parameters:
     - "$ref": "#/components/parameters/ResourceID"
     post:
-      summary: 启动 Rclone 标准授权（无需自定义微软应用）
+      summary: 启动云盘 Rclone 标准授权（无需注册应用）
       operationId: start_rclone_authorize
       tags: [账号]
       security:
@@ -882,7 +882,7 @@ paths:
         '409': {"$ref": "#/components/responses/APIError"}
   "/rclone/import/preview":
     post:
-      summary: 解析配置并返回不含凭据的 OneDrive remote 预览
+      summary: 解析配置并返回不含凭据的云盘 remote 预览
       operationId: preview_rclone_import
       tags: [账号]
       security:
@@ -896,6 +896,7 @@ paths:
               type: object
               required: [config]
               properties:
+                backend: {type: string, enum: [onedrive, gdrive], default: onedrive, description: 选择解析的云盘类型；账号导入始终以已保存账号的backend为准}
                 config: {type: string, maxLength: 1048576, description: 未加密 INI、dump JSON 或 authorize 结果；不原样保存}
       responses:
         '421':
@@ -2601,7 +2602,7 @@ components:
           schema:
             "$ref": "#/components/schemas/Error"
     APIError:
-      description: 稳定错误码、中文说明及是否可重试
+      description: 稳定错误码、中文说明及是否可重试。Google新增shared_storage_group（409）、duplicate_cloud_folder（409）、cloud_storage_full（409）；任务可能返回CLOUD_DAILY_UPLOAD_LIMIT（不可重试）和DUPLICATE_STORAGE_GROUP。
       content:
         application/json:
           schema:
@@ -2892,6 +2893,10 @@ components:
     AccountCreate:
       type: object
       properties:
+        storage_group:
+          type: string
+          maxLength: 64
+          description: 仅gdrive；去除首尾空白，同一非空共享存储组不能加入同一池。更新省略时保留，空串清除。
         name:
           type: string
           minLength: 1
@@ -2900,6 +2905,7 @@ components:
           type: string
           enum:
           - onedrive
+          - gdrive
           - local
           default: onedrive
         budget_bytes:
@@ -2922,7 +2928,7 @@ components:
         local_path:
           type: string
           description: local账号必须提供已存在的真实目录；仅VP_ALLOW_LOCAL=true可用
-      description: OneDrive未指定预算时默认1TiB；创建后仍需授权与显式Drive验证。本地账号需预算和目录，并执行真实读写及磁盘容量查询。
+      description: 云盘未指定预算时默认1TiB；创建后仍需授权与显式Drive验证。本地账号需预算和目录，并执行真实读写及磁盘容量查询。
       allOf:
       - if:
           properties:
@@ -2939,6 +2945,10 @@ components:
     AccountUpdate:
       type: object
       properties:
+        storage_group:
+          type: string
+          maxLength: 64
+          description: 仅gdrive；去除首尾空白，同一非空共享存储组不能加入同一池。更新省略时保留，空串清除。
         name:
           type: string
           minLength: 1
@@ -3027,11 +3037,17 @@ components:
       type: object
       description: 仅含名称、身份、Drive 和预算，不含本地 ID、配额、验证状态或凭据。
       properties:
+        storage_group:
+          type: string
+          maxLength: 64
+          description: 仅gdrive；去除首尾空白，同一非空共享存储组不能加入同一池。更新省略时保留，空串清除。
         name: {type: string}
-        backend: {type: string, const: onedrive}
+        backend: {type: string, enum: [onedrive, gdrive]}
         drive_id: {type: string}
         drive_name: {type: string}
-        drive_type: {type: string, const: personal}
+        drive_type: {type: string, enum: [personal, my_drive]}
+        region: {type: string, enum: [global, google]}
+        tenant_id: {type: string}
         account_email: {type: string}
         account_display_name: {type: string}
         enabled: {type: boolean}
@@ -3054,6 +3070,10 @@ components:
     Account:
       type: object
       properties:
+        storage_group:
+          type: string
+          maxLength: 64
+          description: 仅gdrive；去除首尾空白，同一非空共享存储组不能加入同一池。更新省略时保留，空串清除。
         id:
           type: string
           readOnly: true
@@ -3067,7 +3087,7 @@ components:
         account_email:
           type: string
           readOnly: true
-          description: 微软返回的邮箱；未提供时为空
+          description: 云盘返回的邮箱；未提供时为空
         account_display_name:
           type: string
           readOnly: true
@@ -3075,6 +3095,7 @@ components:
           type: string
           enum:
           - onedrive
+          - gdrive
           - local
         remote:
           type: string
@@ -3170,6 +3191,9 @@ components:
     Drive:
       type: object
       properties:
+        unsupported_reason:
+          type: string
+          description: 不支持的原因；例如Google未返回容量上限
         id:
           type: string
         name:
@@ -3226,7 +3250,7 @@ components:
           minimum: 1
         drive_id:
           type: string
-          description: OneDrive必须显式指定本次授权可见Drive；不会默认选择第一项
+          description: 云盘必须显式指定本次授权可见Drive；不会默认选择第一项
         budget_bytes:
           type: integer
           format: int64
@@ -3244,7 +3268,7 @@ components:
           minimum: 0
           default: 0
           description: 项目维护预留Bytes，必须小于budget_bytes
-      description: 对OneDrive必填drive_id。重新授权必须选择原Drive；其他Drive需新建账号。预算字段省略时保留当前值。验证根访问及专用项目目录随机文件写入/读回/删除，并核对真实配额。
+      description: 对OneDrive和Google Drive必填drive_id。重新授权必须选择原Drive；其他Drive需新建账号。预算字段省略时保留当前值。验证根访问及专用项目目录随机文件写入/读回/删除，并核对真实配额。
       required:
       - version
     PoolCreate:
@@ -4525,6 +4549,7 @@ components:
               email: {type: string}
               drive_id: {type: string}
               estimated_bytes: {type: integer, description: 上次查询的项目占用，不是实时测量或保证释放空间}
+              permanent_delete: {type: boolean, description: gdrive为true，备份永久删除、不进入回收站、无法找回}
         repository_ids: {type: array, items: {type: string}}
         point_ids: {type: array, items: {type: string}}
         protected_point_ids: {type: array, items: {type: string}}

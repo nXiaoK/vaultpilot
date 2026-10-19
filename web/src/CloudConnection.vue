@@ -149,9 +149,9 @@ onUnmounted(() => { stopped = true; if (timer) clearTimeout(timer); for (const c
     </div>
     <div class="cloud-body">
       <div class="cloud-flow" aria-label="A 节点备份到云端，B 节点发现并恢复">
-        <span><strong>A · 备份节点</strong><small>写入加密备份</small></span><span class="flow-arrow">→</span><span><Cloud :size="21"/><strong>OneDrive</strong></span><span class="flow-arrow">→</span><span><strong>B · 恢复节点</strong><small>发现恢复点 · 按需恢复</small></span>
+        <span><strong>A · 备份节点</strong><small>写入加密备份</small></span><span class="flow-arrow">→</span><span><Cloud :size="21"/><strong>云端存储</strong></span><span class="flow-arrow">→</span><span><strong>B · 恢复节点</strong><small>发现恢复点 · 按需恢复</small></span>
       </div>
-      <p class="cloud-description">{{pending?'先授权 A 节点使用的 OneDrive 账号，再查找备份库并输入 A 的备份密码。无需传递恢复包。':recovery?'此节点只读取与恢复。自动发现会更新恢复点列表，文件恢复仍由你选择范围与本地目标后执行。':'启用后，其他节点可授权相同 OneDrive 账号，并使用此库的备份密码连接。一个备份节点可配合多个恢复节点。'}}</p>
+      <p class="cloud-description">{{pending?'先授权 A 节点使用的云盘账号，再查找备份库并输入 A 的备份密码。无需传递恢复包。':recovery?'此节点只读取与恢复。自动发现会更新恢复点列表，文件恢复仍由你选择范围与本地目标后执行。':'启用后，其他节点可授权相同云盘账号，并使用此库的备份密码连接。一个备份节点可配合多个恢复节点。'}}</p>
 
       <div v-if="error||statusError" class="alert danger" role="alert">{{error||statusError}}</div>
       <div v-if="message" class="alert" role="status">{{message}}</div>

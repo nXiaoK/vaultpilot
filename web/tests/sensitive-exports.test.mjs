@@ -54,3 +54,13 @@ for (const failed of [false, true]) {
     if (!failed) assert.match(context.message.value, /加密账号包已下载/)
   })
 }
+
+test('account export offers verified Google Drive and OneDrive accounts',()=>{
+  const source=readFileSync(new URL('../src/AccountTransfer.vue',import.meta.url),'utf8').split('<script setup lang="ts">')[1].split('</script>')[0]
+  const ast=ts.createSourceFile('transfer.ts',source,ts.ScriptTarget.ES2022,true)
+  const declaration=ast.statements.find(node=>ts.isVariableStatement(node)&&node.declarationList.declarations.some(item=>item.name.getText(ast)==='available'))
+  const {outputText}=ts.transpileModule(declaration.getText(ast)+'\nglobalThis.availableAccounts=available',{compilerOptions:{target:ts.ScriptTarget.ES2022}})
+  const context=vm.createContext({computed:fn=>({get value(){return fn()}}),props:{accounts:[{id:'one',backend:'onedrive',verified:true},{id:'google',backend:'gdrive',verified:true},{id:'pending',backend:'gdrive',verified:false},{id:'local',backend:'local',verified:true}]}})
+  vm.runInContext(outputText,context)
+  assert.deepEqual(Array.from(context.availableAccounts.value,item=>item.id),['one','google'])
+})

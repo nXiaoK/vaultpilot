@@ -355,10 +355,10 @@ func (r *Runtime) ObserveAccountAccess(id string, err error) {
 	if errors.As(err, &issue) {
 		category = issue.category
 	} else if errors.As(err, &cloud) {
-		if cloud.Status == 401 {
+		if cloud.authorizationFailure() && cloud.Status == 401 {
 			category = "authorization_required"
 		}
-		if cloud.Status == 403 {
+		if cloud.authorizationFailure() && cloud.Status == 403 {
 			category = "access_denied"
 		}
 	}
@@ -373,14 +373,14 @@ func (r *Runtime) AccountAuthorizationFailed(id, category string) {
 	if err != nil || !c.Enabled || !c.AccountError {
 		return
 	}
-	labels := map[string]string{"authorization_required": "授权失效或凭据不可用，请重新授权。", "access_denied": "OneDrive 拒绝访问，请检查权限并重新授权。", "refresh_failed": "凭据刷新失败，请检查网络或重新授权。", "authorization_failed": "微软授权未完成，请检查授权结果后重试。"}
+	labels := map[string]string{"authorization_required": "授权失效或凭据不可用，请重新授权。", "access_denied": "云盘拒绝访问，请检查权限并重新授权。", "refresh_failed": "凭据刷新失败，请检查网络或重新授权。", "authorization_failed": "授权未完成，请检查授权结果后重试。"}
 	label, ok := labels[category]
 	if !ok {
 		return
 	}
 	var a Account
 	ctx := context.Background()
-	if r.Store.Get(ctx, "accounts", id, &a) != nil || a.Backend != "onedrive" {
+	if r.Store.Get(ctx, "accounts", id, &a) != nil || !cloudBackend(a.Backend) {
 		return
 	}
 	var episode string
@@ -430,15 +430,20 @@ func (r *Runtime) ObserveRcloneFailure(id string, output []byte, err error) {
 		return
 	}
 	text := strings.ToLower(string(output))
+	for _, marker := range []string{"ratelimitexceeded", "userratelimitexceeded", "dailylimitexceeded", "storagequotaexceeded", "quotaexceeded", "upload limit"} {
+		if strings.Contains(text, marker) {
+			return
+		}
+	}
 	category := ""
-	for _, marker := range []string{"invalid_grant", "invalidauthenticationtoken", "unauthenticated", "token has expired", "token is expired", "401 unauthorized", "401 unauthorised", "status code: 401"} {
+	for _, marker := range []string{"invalid_grant", "invalidauthenticationtoken", "unauthenticated", "token has expired", "token is expired", "401 unauthorized", "401 unauthorised", "status code: 401", "autherror", "invalid credentials"} {
 		if strings.Contains(text, marker) {
 			category = "authorization_required"
 			break
 		}
 	}
 	if category == "" {
-		for _, marker := range []string{"accessdenied", "access_denied", "403 forbidden", "status code: 403"} {
+		for _, marker := range []string{"accessdenied", "access_denied", "403 forbidden", "status code: 403", "insufficientpermissions", "insufficient authentication scopes"} {
 			if strings.Contains(text, marker) {
 				category = "access_denied"
 				break
@@ -533,11 +538,15 @@ func (r *Runtime) checkAccountAuthorizations(ctx context.Context) {
 			return
 		}
 		var a Account
-		if json.Unmarshal(raw, &a) != nil || a.Backend != "onedrive" || !a.Enabled || !a.Verified || a.DriveID == "" {
+		if json.Unmarshal(raw, &a) != nil || !cloudBackend(a.Backend) || !a.Enabled || !a.Verified || a.DriveID == "" {
 			continue
 		}
 		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		_, err = r.graph(checkCtx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+"?$select=id", nil, "")
+		if a.Backend == backendGoogleDrive {
+			err = r.googleCheckAccess(checkCtx, a)
+		} else {
+			_, err = r.graph(checkCtx, a.ID, "GET", "/drives/"+url.PathEscape(a.DriveID)+"?$select=id", nil, "")
+		}
 		cancel()
 		if err == nil {
 			r.AccountAuthorizationHealthy(a.ID, false)

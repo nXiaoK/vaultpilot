@@ -16,11 +16,11 @@ import (
 )
 
 type rcloneAuthFlow struct {
-	ID, AccountID, SessionID, State, Status, Message, AuthorizationURL string
-	Version                                                            int
-	Expires                                                            time.Time
-	Account                                                            *Account
-	cancel                                                             context.CancelFunc
+	ID, AccountID, Backend, SessionID, State, Status, Message, AuthorizationURL string
+	Version                                                                     int
+	Expires                                                                     time.Time
+	Account                                                                     *Account
+	cancel                                                                      context.CancelFunc
 }
 
 func (f *rcloneAuthFlow) active() bool {
@@ -54,8 +54,8 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 		fail(w, 404, "account_not_found", "账号不存在")
 		return
 	}
-	if a.Backend != "onedrive" || a.Version != v.Version {
-		fail(w, 409, "account_changed", "请重新加载 OneDrive 账号配置")
+	if !cloudBackend(a.Backend) || a.Version != v.Version {
+		fail(w, 409, "account_changed", "请重新加载 "+backendLabel(a.Backend)+" 账号配置")
 		return
 	}
 	if !engineAvailable(r.Config.RcloneBin) {
@@ -94,8 +94,8 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	f := &rcloneAuthFlow{ID: newID(), AccountID: a.ID, Version: a.Version, SessionID: sid, Status: "starting", Expires: time.Now().Add(10 * time.Minute), cancel: cancel}
-	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "authorize", "onedrive", "--auth-no-open-browser", "--config", path, "--log-level", "NOTICE")
+	f := &rcloneAuthFlow{ID: newID(), AccountID: a.ID, Backend: a.Backend, Version: a.Version, SessionID: sid, Status: "starting", Expires: time.Now().Add(10 * time.Minute), cancel: cancel}
+	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "authorize", rcloneType(a.Backend), "--auth-no-open-browser", "--config", path, "--log-level", "NOTICE")
 	cmd.Env = rcloneEnvironment()
 	out := &privateOutput{}
 	cmd.Stdout = out
@@ -139,14 +139,11 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 		location := res.Header.Get("Location")
 		res.Body.Close()
 		client.CloseIdleConnections()
-		auth, e := url.Parse(location)
-		if e != nil || res.StatusCode != http.StatusTemporaryRedirect || auth.Scheme != "https" || auth.Host != "login.microsoftonline.com" || auth.Path != "/common/oauth2/v2.0/authorize" || auth.User != nil || auth.Query().Get("state") != state || auth.Query().Get("redirect_uri") != "http://localhost:53682/" {
+		auth, e := validatedRcloneAuthURL(location, state, f.Backend)
+		if e != nil || res.StatusCode != http.StatusTemporaryRedirect {
 			f.cancel()
 			continue
 		}
-		q := auth.Query()
-		q.Set("prompt", "select_account")
-		auth.RawQuery = q.Encode()
 		r.rcloneAuthMu.Lock()
 		if f.Status == "starting" {
 			f.State = state
@@ -181,10 +178,14 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 	}
 	if e != nil {
 		f.Status = "failed"
-		f.Message = "Rclone 授权未完成，请检查端口、网络或微软授权结果后重试"
+		provider := "微软"
+		if f.Backend == backendGoogleDrive {
+			provider = "Google"
+		}
+		f.Message = "Rclone 授权未完成，请检查端口、网络或" + provider + "授权结果后重试"
 		return
 	}
-	entries, e := parseRcloneImport(out.String())
+	entries, e := parseRcloneImport(out.String(), f.Backend)
 	if e != nil || len(entries) != 1 {
 		f.Status = "failed"
 		f.Message = "Rclone 未返回有效授权凭据"
@@ -200,6 +201,43 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 	f.Account = &a
 	f.Message = "授权凭据已加密保存，请选择 Drive 并验证访问"
 }
+
+// Validate the provider destination before exposing a URL from the local
+// Rclone process. Callback relaying is restricted separately to loopback.
+func validatedRcloneAuthURL(location, state, backend string) (*url.URL, error) {
+	bad := errors.New("Rclone 返回了不受支持的授权地址")
+	auth, err := url.Parse(location)
+	if err != nil || auth.Scheme != "https" || auth.User != nil || auth.Query().Get("state") != state {
+		return nil, bad
+	}
+	q := auth.Query()
+	if backend == backendGoogleDrive {
+		if auth.Host != "accounts.google.com" || auth.Path != "/o/oauth2/auth" || auth.Fragment != "" {
+			return nil, bad
+		}
+		q, err = url.ParseQuery(auth.RawQuery)
+		if err != nil {
+			return nil, bad
+		}
+		for key, value := range map[string]string{"state": state, "redirect_uri": "http://127.0.0.1:53682/", "response_type": "code", "access_type": "offline", "scope": "https://www.googleapis.com/auth/drive"} {
+			if len(q[key]) != 1 || q.Get(key) != value {
+				return nil, bad
+			}
+		}
+		if len(q["client_id"]) != 1 || !strings.HasSuffix(q.Get("client_id"), ".apps.googleusercontent.com") {
+			return nil, bad
+		}
+		q.Set("prompt", "consent select_account")
+	} else {
+		if auth.Host != "login.microsoftonline.com" || auth.Path != "/common/oauth2/v2.0/authorize" || q.Get("redirect_uri") != "http://localhost:53682/" {
+			return nil, bad
+		}
+		q.Set("prompt", "select_account")
+	}
+	auth.RawQuery = q.Encode()
+	return auth, nil
+}
+
 func (r *Runtime) ownedRcloneFlow(req *http.Request) (*rcloneAuthFlow, bool) {
 	_, sid, ok := r.session(req)
 	f := r.rcloneAuth[req.URL.Query().Get("flow_id")]
@@ -230,8 +268,12 @@ func (r *Runtime) cancelRcloneAuth(w http.ResponseWriter, req *http.Request) {
 	}
 	writeJSON(w, 200, f.view())
 }
-func validateRcloneCallback(raw, state string) (url.Values, error) {
-	bad := errors.New("请粘贴本次微软授权返回的完整 http://localhost:53682/ 地址（含 code 与 state）")
+func validateRcloneCallback(raw, state, backend string) (url.Values, error) {
+	message := "请粘贴本次微软授权返回的完整 http://localhost:53682/ 地址（含 code 与 state）"
+	if backend == backendGoogleDrive {
+		message = "请粘贴本次 Google 授权返回的完整 http://127.0.0.1:53682/ 地址（含 code 与 state）"
+	}
+	bad := errors.New(message)
 	if len(raw) > 65536 {
 		return nil, bad
 	}
@@ -273,7 +315,7 @@ func (r *Runtime) relayRcloneCallback(w http.ResponseWriter, req *http.Request) 
 		fail(w, 409, "authorization_not_waiting", "授权已结束或正在交换凭据，请查看状态")
 		return
 	}
-	q, e := validateRcloneCallback(v.URL, f.State)
+	q, e := validateRcloneCallback(v.URL, f.State, f.Backend)
 	if e != nil {
 		r.rcloneAuthMu.Unlock()
 		fail(w, 400, "invalid_callback_url", e.Error())

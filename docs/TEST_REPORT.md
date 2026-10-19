@@ -1,5 +1,21 @@
 # 实现验证报告
 
+## 2026-10-19 Google Drive（Google One）接入
+
+新增个人 Google Drive 后端 `gdrive`，复用 Rclone `drive` 数据面，网页支持 Google 标准授权/配置导入、原根目录选择和验证、共享存储组，以及清空时的永久删除警告。Google 的配额/读写验证使用 Drive REST v3；Google One 家庭组同池防重，上传上限失败不在当天持续重试。账号字段存于现有 JSON，包格式继续为 v1；含 gdrive 的包无法由旧版导入/打开，需使用支持本功能的版本。
+
+本轮前端 `npm test` **56 项通过**（原 44 项，新增 12 项），`npm run build`（vue-tsc + Vite）通过；`git diff --check` 通过。新增测试执行实际向导和授权逻辑，覆盖 Google 创建/验证的账号版本、共享组修改与清空、相同容量提示不阻断、Google/微软文案与各自 loopback 回调、导入预览携带 backend、错误后加载状态恢复、云盘账号导出筛选，以及所选账号/预览标记触发的永久删除警告渲染。未执行本轮浏览器视觉验收，没有将既有截图或证据 JSON 当作 Google 成功证据。
+
+**真实 Google 账号验收全部未执行**：标准授权、重复授权 refresh_token、过期刷新及重启持久化、目录并发、Google One 家庭配额口径、混合 OneDrive/Google 首备及空白节点 SHA-256 恢复、永久删除与配额释放、每日上传上限、真实多节点与通知均未验证。逐项清单见 [G01–G09](ACCEPTANCE.md#google-drivegoogle-one真实账号验收)。模拟 HTTP、伪 Rclone 和本地目录后端只能证明其测试范围；不证明 Google 云端吞吐、多 TB、生产并发或实际耗时。
+
+Google 自建 client 仅支持 Rclone 配置导入，未实现 Google client 环境变量/自建 client 网页标准授权。历史测试与证据继续按各自日期理解。
+
+后端验证使用 Go 1.27.1；Go 缓存设在 `/private/tmp/vaultpilot-go-cache`，避免系统缓存目录的写权限限制。已运行 `go vet ./...`、`go test -race ./...`，以及 Google 凭据、标准授权、Drive API、共享组、账号包、恢复包、通知与引擎的定向 race 测试。测试覆盖配置白名单和强制刷新读回、授权 URL/state/scope/client 校验、后端不匹配、只读恢复验证、目录重复与并发创建后的空目录清理、8 MiB 响应限制、取消和分页、403 限流/空间/授权分类、已有池修改组名的冲突、初始化及备份阶段每日上限、超额时负剩余空间归零、未知容量拒绝、账号包原有 OneDrive 类型限制。
+
+另以 Restic 0.18.1 和 Rclone 1.70.3 执行 `VP_TEST_RESTIC=<restic> VP_TEST_RCLONE=<rclone> go test -race ./internal/engine -run TestRealResticRcloneTransport -count=1`：OneDrive / gdrive 两个引擎分支各覆盖普通及含空格、引号、反斜杠和换行的缓存路径，真实完成仓库初始化、备份、快照读取与 `check --read-data`，并检查临时配置释放。传输使用 Rclone `:local`，不是 Google 远端；其他要求显式配置真实引擎的集成用例未在本轮全量启用。普通 `go build ./...` 遇到仓库 Git 与父目录 SVN 的版本标记冲突，改用 `go build -buildvcs=false ./...` 后通过。OpenAPI YAML 及内部 `$ref` 解析校验通过。
+
+公共复用范围是凭据导入/安装、`credentialConfig` / `RcloneConfigFor`、云错误分类、通知和引擎账号入口，覆盖备份、恢复、目录发布与发现、迁移、清空和刷新。新增行为仅在 `backend = gdrive` / Google provider 下启用；空 provider 继续解释为既有 OneDrive，微软配置和错误文案有回归断言。导入不保存任意运行设置，Google 每个临时 remote 固定永久删除与上传上限停止；provider 不匹配、重复目录和未知容量明确失败。重新授权使用账号版本检查，旧任务同步通过 grant ID 防止覆盖新凭据；列表并发读、过期缓存、失败分类和取消均有对应模拟测试。后端独立暂存树与最终完整快照均执行了检查，最终快照与工作区全部 100 个 Go 源码及模块文件逐文件一致。以上证明测试所覆盖路径的回归结果，不代表真实 OneDrive/Google、跨进程并发、数据库大批量或生产耗时已经验收。
+
 ## 2026-10-18 项目修复整合验收
 
 验收源码：`d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8`。完整范围、独立提交、67 个计划子项及真实新增测试声明见 [修复与验证报告](REPAIR_REPORT.md) 和 [逐项证据](evidence/fix-plan-validation.json)。没有自动推送。

@@ -41,7 +41,7 @@ func (r *Runtime) RcloneConfigFor(ctx context.Context, accountIDs ...string) (st
 		if a.Backend == "local" {
 			continue
 		}
-		if a.Backend != "onedrive" || !a.Verified {
+		if !cloudBackend(a.Backend) || !a.Verified {
 			return "", fmt.Errorf("账号「%s」：账号未验证或不支持 Rclone", a.Name)
 		}
 		if _, e := r.accessToken(ctx, a.ID); e != nil {

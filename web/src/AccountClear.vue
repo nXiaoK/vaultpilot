@@ -9,6 +9,7 @@ const selected = ref<string[]>([...(props.initialIds ?? [])])
 const working = ref(false)
 const failure = ref('')
 const preview = ref<any>(null)
+const permanentDelete = computed(() => props.accounts.some(account => account.backend === 'gdrive' && selected.value.includes(account.id)) || Boolean(preview.value?.items?.some((item: any) => item.permanent_delete)))
 const confirmation = ref('')
 const agreed = ref(false)
 const expectedConfirmation = '清空所选备份'
@@ -41,7 +42,7 @@ function selectAll() { selected.value = selected.value.length === available.valu
     <div class="alert warning"><ShieldCheck :size="20"/><div><strong>删除无法撤销</strong><p>仅清理当前库的仓库文件和旧索引。网盘其他目录、本地备份源、账号授权与节点连接信息会保留。跨盘恢复点可能随所选仓库一起失效。</p></div></div>
     <div v-if="failure" class="alert danger" role="alert">{{failure}}</div>
     <details class="clear-selection" :open="!preview"><summary>选择要清空的账号 · 已选 {{selected.length}} 个</summary><div class="panel-head"><h3>已验证的存储账号</h3><button class="text-button" :disabled="working||!available.length" @click="selectAll">{{selected.length===available.length&&available.length?'取消全选':'全选已验证账号'}}</button></div>
-    <div class="checkbox-list"><label v-for="account in available" :key="account.id" class="check-label"><input v-model="selected" type="checkbox" :value="account.id" :disabled="working"/><Cloud v-if="account.backend==='onedrive'" :size="18"/><HardDrive v-else :size="18"/><span>{{account.name}}<small>{{account.account_email||account.account_display_name||account.drive_id}}</small><small>上次查询的项目占用：{{account.quota_at?bytes(account.project_used_bytes):'未查询'}}</small></span></label><p v-if="!available.length" class="text-secondary">请先完成存储账号访问验证。</p></div></details>
+    <div class="checkbox-list"><label v-for="account in available" :key="account.id" class="check-label"><input v-model="selected" type="checkbox" :value="account.id" :disabled="working"/><Cloud v-if="['onedrive','gdrive'].includes(account.backend)" :size="18"/><HardDrive v-else :size="18"/><span>{{account.name}}<small>{{account.account_email||account.account_display_name||account.drive_id}}</small><small>上次查询的项目占用：{{account.quota_at?bytes(account.project_used_bytes):'未查询'}}</small></span></label><p v-if="!available.length" class="text-secondary">请先完成存储账号访问验证。</p></div></details>
     <button class="button secondary" :disabled="working||!selected.length" @click="inspect"><LoaderCircle v-if="working" class="spin" :size="16"/><Search v-else :size="16"/>预览清空范围</button>
     <template v-if="preview">
       <div class="clear-preview" aria-live="polite">
@@ -50,6 +51,7 @@ function selectAll() { selected.value = selected.value.length === available.valu
         <div v-if="preview.resume" class="alert warning">这是上次未完成的清理。请保留同一组账号重新执行；已完成的删除不会恢复。</div>
         <div class="detail-stats"><div><span>选择的网盘</span><strong>{{preview.items.length}}</strong></div><div><span>失效的恢复点</span><strong>{{preview.point_ids.length}}</strong></div><div><span>暂停的计划</span><strong>{{preview.pause_plan_ids.length}}</strong></div></div>
         <p>将退役 {{preview.repository_ids.length}} 个失去可用副本的仓库；已有其他已验证副本的仓库继续保留恢复能力。</p>
+        <div v-if="permanentDelete" class="alert danger" role="alert">Google Drive 中的备份将被永久删除，不进入回收站，无法找回</div>
         <div v-if="preview.blocked" class="alert danger" role="alert"><div><strong>当前无法清空</strong><p v-for="reason in preview.reasons" :key="reason">{{reason}}</p><small v-if="preview.protected_point_ids.length">受保护恢复点：{{preview.protected_point_ids.join('、')}}</small></div></div>
         <template v-else>
           <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认删除所选网盘的当前库备份，并暂停受影响的定时计划。</label>

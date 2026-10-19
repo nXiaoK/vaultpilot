@@ -223,6 +223,8 @@ func sourceStillMounted(src Source) error {
 func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, error) {
 	out := map[string]Account{}
 	domains := map[string]bool{}
+	groups := map[string]bool{}
+	accounts := make([]Account, 0, len(pool.AccountIDs))
 	for _, id := range pool.AccountIDs {
 		var a Account
 		if err := s.rt.Store.Get(ctx, "accounts", id, &a); err != nil {
@@ -232,6 +234,16 @@ func (s *Service) accounts(ctx context.Context, pool Pool) (map[string]Account, 
 			return nil, fail("DUPLICATE_QUOTA_DOMAIN", "存储池重复使用同一配额域")
 		}
 		domains[a.QuotaDomain] = true
+		if a.Backend == "gdrive" && strings.TrimSpace(a.StorageGroup) != "" {
+			group := strings.TrimSpace(a.StorageGroup)
+			if groups[group] {
+				return nil, fail("DUPLICATE_STORAGE_GROUP", "存储池重复使用同一 Google One 共享存储组")
+			}
+			groups[group] = true
+		}
+		accounts = append(accounts, a)
+	}
+	for _, a := range accounts {
 		if !a.Verified || !a.Enabled {
 			continue
 		}
@@ -293,11 +305,23 @@ func (s *Service) refreshAccount(ctx context.Context, a *Account) error {
 			Total *int64 `json:"total"`
 			Used  *int64 `json:"used"`
 		}
-		if json.Unmarshal(out, &quota) != nil || quota.Free == nil || quota.Total == nil || quota.Used == nil {
+		if json.Unmarshal(out, &quota) != nil || quota.Free == nil || quota.Total == nil || a.Backend != "gdrive" && quota.Used == nil {
 			return fail("QUOTA_UNKNOWN", "账号未返回完整容量："+a.Name)
 		}
-		free, total, used = *quota.Free, *quota.Total, *quota.Used
-		out, err = s.rcloneOutput(ctx, []Account{*a}, "size", a.Remote+":VaultPilot/"+s.rt.VaultID(), "--json")
+		free, total = *quota.Free, *quota.Total
+		if quota.Used != nil {
+			used = *quota.Used
+		}
+		sizeArgs := []string{"size", a.Remote + ":VaultPilot/" + s.rt.VaultID(), "--json"}
+		if a.Backend == "gdrive" {
+			if total < 0 {
+				return fail("QUOTA_UNKNOWN", "Google Drive 未返回有效容量："+a.Name)
+			}
+			free = max(int64(0), min(free, total))
+			used = total - free
+			sizeArgs = append(sizeArgs, "--fast-list")
+		}
+		out, err = s.rcloneOutput(ctx, []Account{*a}, sizeArgs...)
 		_ = s.rt.SyncRcloneCredentials()
 		if err != nil {
 			return fail("PROJECT_SIZE_UNKNOWN", "无法核对项目占用："+a.Name+"："+err.Error())
@@ -845,13 +869,29 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 	return output, err
 }
 func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Repository, a Account, sources map[string]Source, stage string) (string, error) {
+	dailyUploadLimit := false
+	observeUploadLimit := func(line string) {
+		if a.Backend == "gdrive" {
+			text := strings.ToLower(line)
+			if strings.Contains(text, "userratelimitexceeded") || strings.Contains(text, "upload limit") {
+				dailyUploadLimit = true
+			}
+		}
+	}
 	if repo.Status == "new" {
-		if _, err := s.restic(ctx, t, repo, a, []string{"init"}, func(line string) { s.log(t, line) }); err != nil {
+		if _, err := s.restic(ctx, t, repo, a, []string{"init"}, func(line string) {
+			observeUploadLimit(line)
+			s.log(t, line)
+		}); err != nil {
 			if _, checkErr := s.restic(ctx, t, repo, a, []string{"cat", "config"}, nil); checkErr != nil {
+				if dailyUploadLimit && ctx.Err() == nil {
+					return "", fail("CLOUD_DAILY_UPLOAD_LIMIT", "Google Drive 每日上传上限已触发，请等待下一次计划继续备份")
+				}
 				return "", fail("REPOSITORY_INIT_FAILED", "仓库初始化或已有仓库密码验证失败："+err.Error())
 			}
 		}
 	}
+	dailyUploadLimit = false
 	list, err := os.CreateTemp(s.rt.Config.CacheDir, "file-list-")
 	if err != nil {
 		return "", err
@@ -941,6 +981,7 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	lastSave := time.Time{}
 	unread, unreadTruncated := []string{}, false
 	_, err = s.restic(ctx, t, repo, a, args, func(line string) {
+		observeUploadLimit(line)
 		var message struct {
 			Type            string  `json:"message_type"`
 			SnapshotID      string  `json:"snapshot_id"`
@@ -998,6 +1039,9 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	}
 	_, _ = s.rt.Store.Save(context.Background(), "shard_runs", status["id"].(string), 0, status)
 	if err != nil {
+		if dailyUploadLimit && ctx.Err() == nil {
+			return "", fail("CLOUD_DAILY_UPLOAD_LIMIT", "Google Drive 每日上传上限已触发，请等待下一次计划继续备份")
+		}
 		if process.ExitCode(err) == 3 {
 			return "", fail("SOURCE_READ_FAILED", "Restic报告源文件读取失败，不发布完整恢复点")
 		}
@@ -1262,7 +1306,7 @@ func (s *Service) observeRcloneAccounts(accounts []Account, output []byte, err e
 	matched := []Account{}
 	seen := map[string]bool{}
 	for _, a := range accounts {
-		if a.Backend == "onedrive" && !seen[a.ID] {
+		if cloudBackend(a.Backend) && !seen[a.ID] {
 			seen[a.ID] = true
 			matched = append(matched, a)
 		}

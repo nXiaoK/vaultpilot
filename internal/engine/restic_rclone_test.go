@@ -23,10 +23,15 @@ func TestRealResticRcloneTransport(t *testing.T) {
 	}
 	shellQuote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 	program := filepath.Join(t.TempDir(), "rclone")
-	for _, name := range []string{"ordinary-cache", "cache with spaces, \"quotes\", 'apostrophe', \\backslash\nand-newline"} {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct{ backend, name string }{
+		{"onedrive", "ordinary-cache"},
+		{"onedrive", "cache with spaces, \"quotes\", 'apostrophe', \\backslash\nand-newline"},
+		{"gdrive", "ordinary-cache"},
+		{"gdrive", "cache with spaces, \"quotes\", 'apostrophe', \\backslash\nand-newline"},
+	} {
+		t.Run(tc.backend+"/"+tc.name, func(t *testing.T) {
 			s, plan, _, account := realFixture(t)
-			cache := filepath.Join(t.TempDir(), name)
+			cache := filepath.Join(t.TempDir(), tc.name)
 			if err := os.Mkdir(cache, 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +52,7 @@ func TestRealResticRcloneTransport(t *testing.T) {
 			}
 			repo := Repository{ID: uid(), Path: filepath.Join(account.LocalPath, "transport-repo"), Password: base64.StdEncoding.EncodeToString(sealed)}
 			// :local is an on-the-fly Rclone remote, rather than the direct Restic local backend.
-			account.Backend, account.Remote = "onedrive", ":local"
+			account.Backend, account.Remote = tc.backend, ":local"
 			task := Task{ID: uid()}
 			ctx := context.Background()
 			if output, err := s.restic(ctx, &task, repo, account, []string{"init"}, nil); err != nil {

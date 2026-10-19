@@ -222,7 +222,7 @@ func openRecovery(kit RecoveryKit, password string) (RecoveryPayload, error) {
 		master[i] = 0
 	}
 	for _, entry := range p.Entries {
-		if entry.Backend != "local" && entry.Backend != "onedrive" || entry.Path != "VaultPilot/"+p.VaultID+"/catalog/" {
+		if entry.Backend != "local" && !cloudBackend(entry.Backend) || entry.Path != "VaultPilot/"+p.VaultID+"/catalog/" {
 			return p, errors.New("恢复发现入口格式错误")
 		}
 	}

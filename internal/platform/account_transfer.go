@@ -33,12 +33,24 @@ type transferRequest struct {
 // Only portable settings cross nodes. Status, IDs, paths and measured capacity
 // are reconstructed locally rather than trusted from the exporting node.
 func portableAccount(a Account) Account {
-	return Account{Name: a.Name, Backend: "onedrive", DriveID: a.DriveID, DriveName: a.DriveName, DriveType: "personal", Region: "global", TenantID: "consumers", AccountEmail: a.AccountEmail, AccountDisplayName: a.AccountDisplayName, Enabled: a.Enabled, BudgetBytes: a.BudgetBytes, CloudReserveBytes: a.CloudReserveBytes, MaintenanceReserveBytes: a.MaintenanceReserveBytes}
+	portable := Account{Name: a.Name, Backend: a.Backend, DriveID: a.DriveID, DriveName: a.DriveName, DriveType: "personal", Region: "global", TenantID: "consumers", AccountEmail: a.AccountEmail, AccountDisplayName: a.AccountDisplayName, Enabled: a.Enabled, BudgetBytes: a.BudgetBytes, CloudReserveBytes: a.CloudReserveBytes, MaintenanceReserveBytes: a.MaintenanceReserveBytes}
+	if a.Backend == backendGoogleDrive {
+		portable.DriveType, portable.Region, portable.TenantID = "my_drive", "google", "personal"
+		portable.StorageGroup = a.StorageGroup
+	}
+	return portable
 }
 func validTransferEntry(entry transferEntry) error {
 	a, c := entry.Account, entry.Credential
-	if a.Backend != "onedrive" || a.DriveType != "personal" || a.Region != "global" || !transferDrivePattern.MatchString(a.DriveID) || strings.TrimSpace(a.Name) == "" || len(a.Name) > 200 || len(a.AccountEmail) > 320 || len(a.AccountDisplayName) > 512 || len(a.DriveName) > 512 {
+	validDrive := a.Backend == backendOneDrive && a.DriveType == "personal" && a.Region == "global" || a.Backend == backendGoogleDrive && a.DriveType == "my_drive" && a.Region == "google" && a.TenantID == "personal"
+	if !validDrive || !transferDrivePattern.MatchString(a.DriveID) || strings.TrimSpace(a.Name) == "" || len(a.Name) > 200 || len(a.AccountEmail) > 320 || len(a.AccountDisplayName) > 512 || len(a.DriveName) > 512 {
 		return errors.New("账号包包含不支持的账号或 Drive")
+	}
+	if credentialProvider(c) != a.Backend {
+		return errors.New("授权类型与账号不匹配")
+	}
+	if a.Backend == backendGoogleDrive && (c.Mode != "rclone" || strings.TrimSpace(a.StorageGroup) != a.StorageGroup || len([]rune(a.StorageGroup)) > 64) {
+		return errors.New("Google Drive 账号设置无效")
 	}
 	if err := validBudget(a); err != nil {
 		return err
@@ -58,6 +70,14 @@ func validTransferEntry(entry transferEntry) error {
 	values := map[string]string{"type": "onedrive", "region": "global", "token": string(token), "client_id": c.ClientID, "tenant": c.Tenant, "access_scopes": c.Scopes}
 	if c.Mode == "rclone" {
 		values["client_secret"] = c.ClientSecret
+	}
+	if a.Backend == backendGoogleDrive {
+		values["type"], values["scope"] = "drive", c.Scopes
+		if c.Tenant != "" {
+			return errors.New("Google Drive 不支持租户设置")
+		}
+		_, err := validateGoogleDriveEntry(a.Name, values)
+		return err
 	}
 	_, err := validateRcloneEntry(a.Name, values)
 	return err
@@ -141,7 +161,7 @@ func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if len(v.AccountIDs) < 1 || len(v.AccountIDs) > 50 {
-		fail(w, 400, "account_selection_required", "请选择 1 至 50 个已验证的 OneDrive 账号")
+		fail(w, 400, "account_selection_required", "请选择 1 至 50 个已验证的云盘账号")
 		return
 	}
 	r.accountTransferMu.Lock()
@@ -158,8 +178,11 @@ func (r *Runtime) exportAccounts(w http.ResponseWriter, req *http.Request) {
 				return errors.New("请勿重复选择账号")
 			}
 			seen[id] = true
-			if r.Store.Get(req.Context(), "accounts", id, &a) != nil || a.Backend != "onedrive" || a.DriveType != "personal" || a.Region != "global" || !a.Verified {
-				return errors.New("仅可导出已验证的 OneDrive 账号")
+			if r.Store.Get(req.Context(), "accounts", id, &a) != nil || !cloudBackend(a.Backend) || !a.Verified {
+				return errors.New("仅可导出已验证的云盘账号")
+			}
+			if a.Backend == backendOneDrive && (a.DriveType != "personal" || a.Region != "global") || a.Backend == backendGoogleDrive && (a.DriveType != "my_drive" || a.Region != "google" || a.TenantID != "personal") {
+				return errors.New("账号包包含不支持的账号或 Drive")
 			}
 			c, err := r.loadCredential(id)
 			if err != nil {
@@ -197,7 +220,7 @@ func (r *Runtime) transferExisting(req *http.Request) (map[string]bool, error) {
 	seen := map[string]bool{}
 	for _, raw := range all {
 		var a Account
-		if json.Unmarshal(raw, &a) == nil && a.Backend == "onedrive" && a.DriveID != "" {
+		if json.Unmarshal(raw, &a) == nil && cloudBackend(a.Backend) && a.DriveID != "" {
 			seen[a.DriveID] = true
 		}
 	}

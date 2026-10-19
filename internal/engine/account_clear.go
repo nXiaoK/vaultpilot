@@ -25,11 +25,12 @@ type AccountClearRequest struct {
 	Confirmation string   `json:"confirmation"`
 }
 type clearAccountItem struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Email          string `json:"email"`
-	DriveID        string `json:"drive_id"`
-	EstimatedBytes int64  `json:"estimated_bytes"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Email           string `json:"email"`
+	DriveID         string `json:"drive_id"`
+	EstimatedBytes  int64  `json:"estimated_bytes"`
+	PermanentDelete bool   `json:"permanent_delete"`
 }
 type AccountClearPreview struct {
 	VaultID             string             `json:"vault_id"`
@@ -160,7 +161,7 @@ func (s *Service) buildClearPreview(ctx context.Context, ids []string, exceptTas
 		}
 		json.Unmarshal(raw, &identity)
 		if selected[a.ID] {
-			if !a.Verified || a.DriveID == "" || (a.Backend != "onedrive" && a.Backend != "local") {
+			if !a.Verified || a.DriveID == "" || (!cloudBackend(a.Backend) && a.Backend != "local") {
 				return p, fail("ACCOUNT_UNVERIFIED", "所选账号必须先完成访问验证")
 			}
 			key := domain(a.Region, a.TenantID, a.DriveID)
@@ -168,7 +169,7 @@ func (s *Service) buildClearPreview(ctx context.Context, ids []string, exceptTas
 				return p, fail("DUPLICATE_DRIVE", "同一网盘不能重复选择")
 			}
 			driveSelected[key] = true
-			p.Items = append(p.Items, clearAccountItem{a.ID, a.Name, identity.Email, a.DriveID, a.ProjectUsed})
+			p.Items = append(p.Items, clearAccountItem{ID: a.ID, Name: a.Name, Email: identity.Email, DriveID: a.DriveID, EstimatedBytes: a.ProjectUsed, PermanentDelete: a.Backend == "gdrive"})
 		}
 		if a.Verified && a.DriveID != "" {
 			key := domain(a.Region, a.TenantID, a.DriveID)
