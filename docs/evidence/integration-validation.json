@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-19",
+  "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+  "previous_main": "097b199795060cf03f54eb613a363509e8e8f5e6",
+  "status": "available_checks_passed",
+  "environment": {
+    "go": "1.26.9",
+    "node": "22.23.3",
+    "restic": "0.18.1",
+    "rclone": "1.70.3",
+    "GOFLAGS": "-buildvcs=false"
+  },
+  "integrity": {
+    "baseline": "4029295dd8c1642b3f76de29b9737520f9fee18e",
+    "reviewed_source": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+    "feature_commits": 41,
+    "test_declarations": 107,
+    "plan_items": 67,
+    "errors": []
+  },
+  "plan_status_counts": {
+    "implemented": 62,
+    "already_conforming": 1,
+    "deferred": 1,
+    "optional_not_enabled": 1,
+    "evidence_refreshed": 1,
+    "external_validation_limits_recorded": 1
+  },
+  "verified_plan_commits": [
+    "3a4dfb952c188e260c73e4335f103451279d8a26",
+    "46a40377b1e85b37222510ec4b1d6e806c31c870",
+    "a673666ab8e9b5d4acc59a9b1640e33355a23c1b",
+    "d92fba0e16eb1ab15f99ad9686ae4ccabf2d50ee",
+    "4e83484e57d600ec42b1fe4e1391df02026628c8",
+    "26255c9e722eb1077867fe45a9d3a74bd3553aaf",
+    "c46880e0208b67482e7a1f7d0de217ff8a1dfd3b",
+    "910014f48d054a1ae26e15ab8da2ffc4990de8e2",
+    "a6b665201d4cc6dc3b56814ede1c300cbcef1ba8",
+    "61c74603cd0a4ffac6f88817013c7aaf1f089ca5",
+    "39fde3b96787e2002e73ef5e45884455397f7be4",
+    "41bb938ff368f543972dfdbc1bda6f08a5b1b4db",
+    "198b02acc6b2bfe803c02c0c706a9d1060b7c629",
+    "84a997d95e95c83df7e2d26c73953e9958604645",
+    "73dd4df541cb31a4111a84da951a7cb7f2c347a4",
+    "273d5d83fa6ca56706448c01a7b9e85fac068e25",
+    "a79b13810a03adb6fda4963c7c3af3af4a85ea16",
+    "eedccacbce248843d3a13cd51708ff69427f0a07",
+    "434539508a845819d38f47ba75220b4c01b0e641",
+    "16a06431c86437556eebe44a19b57e982ddd2696",
+    "e1ed8c79e176d4f46d7aaaac114ef145b652ca0d",
+    "ace95995f4867763c9fa5271828ba6c08c8b240c",
+    "1e955e106209003e8197a048fa36b7596196e5ad",
+    "07487a23e0786583cc8ea7c6194b8dd63928f81c",
+    "442acc42d6b13bfce40e55aedcc905ab9b1b0fad",
+    "92f3a31f8ea85eefc41e5b97786ce2709e3cb586",
+    "958960b08644f4e078cb78c4aa9260169513c820",
+    "d9f975e2eff5d82a254612b1d09383ce5b15a4d7",
+    "564f43d65bf47173ccd73efcedde9fd6076b8a2f",
+    "8d93f61955067d021adba15524283b06133eb171",
+    "b34e4147498b0bf8ee7466d7deb6b5a919d234b2",
+    "332c339a1dbe7574cd9c4410be8ceeaf45c421a9",
+    "d31a72092414e40901fa04be943d619fa28ef6b9",
+    "1dc863273ab53a6d318bee68427d738603c581d3",
+    "eadace5994461a9bab38f455e714204fa2693271",
+    "238936f6a5fd218ff28a8887ecfc44f16db09dfd",
+    "ad9de2c31c5052be423bcb147de723f951cc820e",
+    "df15de9b3dc9105acca63c5f5f62cd9d6fe765eb",
+    "a182de81c3464917cdd8fdea93df71600325a807",
+    "5e4cfa95cb1416983d510f982909310ef97008a9",
+    "42f8547d6cfdd0f84613e7ef46bba26a928f2867"
+  ],
+  "checks": [
+    {
+      "name": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--prefix",
+        "web"
+      ],
+      "exit_code": 0,
+      "seconds": 2.14,
+      "status": "passed"
+    },
+    {
+      "name": "frontend-build",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "--prefix",
+        "web"
+      ],
+      "exit_code": 0,
+      "seconds": 4.703,
+      "status": "passed"
+    },
+    {
+      "name": "frontend-tests",
+      "command": [
+        "npm",
+        "test",
+        "--prefix",
+        "web"
+      ],
+      "exit_code": 0,
+      "seconds": 0.756,
+      "status": "passed"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 1.542,
+      "status": "passed"
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/bin/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 0.653,
+      "status": "passed"
+    },
+    {
+      "name": "staticcheck",
+      "command": [
+        "go",
+        "run",
+        "honnef.co/go/tools/cmd/staticcheck@latest",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 1.804,
+      "status": "passed"
+    },
+    {
+      "name": "race",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-count=1",
+        "-timeout=15m",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 180.697,
+      "status": "passed"
+    },
+    {
+      "name": "local-e2e",
+      "command": [
+        "python3",
+        "scripts/e2e_local.py",
+        "--extended",
+        "--restic",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic",
+        "--rclone",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/rclone-v1.70.3-osx-arm64/rclone"
+      ],
+      "exit_code": 0,
+      "seconds": 46.855,
+      "status": "passed"
+    },
+    {
+      "name": "offline-rescue",
+      "command": [
+        "python3",
+        "scripts/e2e_rescue.py",
+        "<isolated-e2e-artifacts>",
+        "--restic",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/restic"
+      ],
+      "exit_code": 0,
+      "seconds": 3.777,
+      "status": "passed"
+    },
+    {
+      "name": "govulncheck",
+      "command": [
+        "go",
+        "run",
+        "golang.org/x/vuln/cmd/govulncheck@latest",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 3.033,
+      "status": "passed"
+    },
+    {
+      "name": "compose-config",
+      "command": [
+        "docker",
+        "compose",
+        "--env-file",
+        ".env.example",
+        "config",
+        "--quiet"
+      ],
+      "exit_code": 0,
+      "seconds": 0.241,
+      "status": "passed"
+    },
+    {
+      "name": "docker-daemon",
+      "command": [
+        "docker",
+        "info",
+        "--format",
+        "{{.ServerVersion}}"
+      ],
+      "exit_code": 1,
+      "seconds": 0.076,
+      "status": "unavailable"
+    }
+  ],
+  "go_packages": [
+    {
+      "Package": "vaultpilot/cmd/healthcheck",
+      "Elapsed": 1.422
+    },
+    {
+      "Package": "vaultpilot/internal/ctxlock",
+      "Elapsed": 1.413
+    },
+    {
+      "Package": "vaultpilot/internal/store",
+      "Elapsed": 3.488
+    },
+    {
+      "Package": "vaultpilot/internal/process",
+      "Elapsed": 6.723
+    },
+    {
+      "Package": "vaultpilot/internal/platform",
+      "Elapsed": 146.959
+    },
+    {
+      "Package": "vaultpilot/internal/engine",
+      "Elapsed": 177.979
+    }
+  ],
+  "skipped_scale_tests": [
+    "TestMillionEntryIndex",
+    "TestEntryTraversalScale"
+  ],
+  "scale_evidence": "scale-report.json and fix-plan-validation.json retain the prior d7b6bd6 source-bound scale results; not rerun in this audit",
+  "previous_five_run_race_source": "d7b6bd6f7b1f76079f2f04fe4d1f7c4e18e812e8",
+  "frontend_tests": {
+    "passed": 44,
+    "failed": 0
+  },
+  "additional_backup_regressions": [
+    {
+      "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/before_shard_precheck",
+      "elapsed": 6.36
+    },
+    {
+      "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/before_engine_reads",
+      "elapsed": 6.39
+    },
+    {
+      "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/while_engine_reads",
+      "elapsed": 6.36
+    },
+    {
+      "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan",
+      "elapsed": 19.11
+    },
+    {
+      "test": "TestRealResticUnreadableSourceFileStillFailsBackup",
+      "elapsed": 5.6
+    },
+    {
+      "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges/mount_changed",
+      "elapsed": 4.74
+    },
+    {
+      "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges/type_changed",
+      "elapsed": 4.34
+    },
+    {
+      "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges",
+      "elapsed": 9.08
+    }
+  ],
+  "local_e2e": {
+    "passed": true,
+    "checks": [
+      "first backup, two catalog replicas, idempotency, allocation preview",
+      "incremental unchanged data, protected retention/forget/prune, real whole-repository migration and full data check",
+      "confirmed old-copy cleanup, current/stale-location rejection, corrupted-pack full-check rejection, old location removed and current snapshots remain readable",
+      "historical versions after modify, delete and rename",
+      "fresh state, new account IDs, absent original source, both versions restored with SHA-256",
+      "Chinese, spaces, newline, empty directory and symbolic link preserved",
+      "recovery kit exported before later repository creation discovers new repository key and restores added file",
+      "repeat discovery, single-file restore, conflict preservation, explicit overwrite and partial offline-account restore"
+    ]
+  },
+  "offline_rescue": {
+    "passed": true,
+    "backend": "local actual Restic, independent offline vprescue",
+    "original_state_used": false,
+    "tampered_certificate_rejected": true,
+    "wrong_password_rejected": true,
+    "uncommitted_prepare_rejected": true,
+    "protected_output_permissions": true,
+    "temporary_plaintext_zip_removed": true
+  },
+  "govulncheck": {
+    "reachable_vulnerabilities": 0,
+    "uncalled_required_module_vulnerabilities": 4
+  },
+  "static_checks": [
+    "Full baseline-to-source git diff --check passed",
+    "Python scripts parsed with ast.parse",
+    "Evidence JSON parsed",
+    "OpenAPI and Compose YAML parsed with Ruby Psych; 702 local schema references resolved"
+  ],
+  "limitations": [
+    "Docker daemon unavailable: image build and container PID 1, reaping and SIGTERM not verified.",
+    "No live OneDrive account: real authorization, read/write, refresh and cloud concurrency not verified.",
+    "Million physical files, multi-TB upload and multi-node production concurrency not verified.",
+    "Historical deleted points without pending_forget are not backfilled.",
+    "Scan-time deletion race has no deterministic standalone regression; three post-scan timings were exercised with real Restic.",
+    "Permission-guidance edits concurrently present in the primary worktree were excluded from this reviewed source."
+  ]
+}
