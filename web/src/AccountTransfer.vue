@@ -16,7 +16,7 @@ const filename = ref('')
 const packageData = ref<any>(null)
 const preview = ref<{account: Entity; duplicate: boolean}[]>([])
 const results = ref<{account: Entity; state: string; error: string}[]>([])
-const available = computed(() => props.accounts.filter(a => a.backend === 'onedrive' && a.verified))
+const available = computed(() => props.accounts.filter(a => ['onedrive', 'gdrive'].includes(a.backend) && a.verified))
 watch(password, () => { if (props.mode === 'import') { preview.value = []; selected.value = [] }; failure.value = '' })
 async function run(fn: () => Promise<void>) {
   if (working.value) return
@@ -73,16 +73,16 @@ onBeforeUnmount(() => { password.value = ''; adminPassword.value = ''; repeat.va
 
 <template>
   <div class="account-transfer">
-    <p class="section-description">{{mode === 'export' ? '把已验证的 OneDrive 账号迁移到另一台 VaultPilot 节点。账号名称、容量预算与授权一并保存。' : '上传 A 导出的加密账号包，预览并选择需要添加的账号。导入后自动验证原 Drive 的访问。'}}</p>
-    <div class="small-note"><ShieldCheck :size="18"/><span>账号包包含微软访问与刷新凭据，使用独立密码加密。接收节点会获得原授权范围的访问权限；备份密码仍用于连接和解密云端备份。</span></div>
+    <p class="section-description">{{mode === 'export' ? '把已验证的 云盘账号迁移到另一台 VaultPilot 节点。账号名称、容量预算与授权一并保存。' : '上传 A 导出的加密账号包，预览并选择需要添加的账号。导入后自动验证原 Drive 的访问。'}}</p>
+    <div class="small-note"><ShieldCheck :size="18"/><span>账号包包含云盘访问与刷新凭据，使用独立密码加密。接收节点会获得原授权范围的访问权限；备份密码仍用于连接和解密云端备份。</span></div>
     <div v-if="failure" class="alert danger" role="alert">{{failure}}</div>
     <div v-if="message" class="alert info" role="status">{{message}}</div>
     <form v-if="mode==='export'" @submit.prevent="exportFile">
-      <div class="checkbox-list"><label v-for="account in available" :key="account.id" class="check-label"><input v-model="selected" type="checkbox" :value="account.id" :disabled="working"/><span>{{account.name}}<small>{{account.account_email||account.account_display_name||account.drive_name}} · {{bytes(account.budget_bytes)}} 预算</small></span></label><p v-if="!available.length" class="text-secondary">没有可导出的账号，请先验证 OneDrive 访问。</p></div>
+      <div class="checkbox-list"><label v-for="account in available" :key="account.id" class="check-label"><input v-model="selected" type="checkbox" :value="account.id" :disabled="working"/><span>{{account.name}}<small>{{account.account_email||account.account_display_name||account.drive_name}} · {{bytes(account.budget_bytes)}} 预算</small></span></label><p v-if="!available.length" class="text-secondary">没有可导出的账号，请先验证云盘访问。</p></div>
       <label class="field">当前登录密码<input v-model="adminPassword" type="password" maxlength="1024" autocomplete="current-password" required :disabled="working"/></label>
       <label class="field">账号包保护密码<input v-model="password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required :disabled="working"/><small>至少 12 个字符，请使用独立密码并告知 B 节点部署者。</small></label>
       <label class="field">再次输入保护密码<input v-model="repeat" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required :disabled="working"/></label>
-      <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认将所选微软账号的授权共享给接收节点。</label>
+      <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认将所选云盘账号的授权共享给接收节点。</label>
       <div class="modal-actions"><button class="button primary" :disabled="working||!selected.length||!agreed"><LoaderCircle v-if="working" class="spin" :size="16"/><Download v-else :size="16"/>下载加密账号包</button></div>
     </form>
     <template v-else>
@@ -93,11 +93,11 @@ onBeforeUnmount(() => { password.value = ''; adminPassword.value = ''; repeat.va
       </form>
       <template v-if="preview.length">
         <div class="form-section"><h3>选择要导入的账号</h3><div class="checkbox-list"><label v-for="item in preview" :key="item.account.drive_id" class="check-label"><input v-model="selected" type="checkbox" :value="item.account.drive_id" :disabled="working||item.duplicate"/><span>{{item.account.name}}<small>{{item.account.account_email||item.account.account_display_name||item.account.drive_name}} · {{bytes(item.account.budget_bytes)}} 预算</small><small>{{item.account.drive_id}} · {{item.duplicate?'本节点已存在，将跳过':'新账号'}}</small></span></label></div></div>
-        <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认此节点可以使用所选微软账号的授权。</label>
+        <label class="check-label"><input v-model="agreed" type="checkbox" :disabled="working"/>我确认此节点可以使用所选云盘账号的授权。</label>
         <div class="modal-actions"><button class="button primary" :disabled="working||!selected.length||!agreed" @click="importFile"><LoaderCircle v-if="working" class="spin" :size="16"/><ShieldCheck v-else :size="16"/>导入并验证账号</button></div>
       </template>
       <div v-if="results.length" class="transfer-results"><div v-for="item in results" :key="item.account.id" class="transfer-result"><div><strong>{{item.account.name}}</strong><p>{{item.account.account_email||item.account.account_display_name||item.account.drive_name}}</p><small v-if="item.error">{{item.error}}</small></div><span class="badge" :class="item.state==='已验证'?'success':'neutral'">{{item.state}}</span><button v-if="item.error" class="text-button" :disabled="working" @click="run(()=>validate(item))">重试验证</button></div></div>
-      <p v-if="results.length" class="section-description">恢复节点完成验证后，可前往“安全与维护 → 云端连接”，使用 A 的备份密码连接原备份库。微软授权失效时请在账号卡片中重新授权。</p>
+      <p v-if="results.length" class="section-description">恢复节点完成验证后，可前往“安全与维护 → 云端连接”，使用 A 的备份密码连接原备份库。云盘授权失效时请在账号卡片中重新授权。</p>
     </template>
   </div>
 </template>
