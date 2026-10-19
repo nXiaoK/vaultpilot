@@ -380,7 +380,7 @@ func (r *Runtime) AccountAuthorizationFailed(id, category string) {
 	}
 	var a Account
 	ctx := context.Background()
-	if r.Store.Get(ctx, "accounts", id, &a) != nil || a.Backend != "onedrive" {
+	if r.Store.Get(ctx, "accounts", id, &a) != nil || !cloudBackend(a.Backend) {
 		return
 	}
 	var episode string
@@ -533,7 +533,7 @@ func (r *Runtime) checkAccountAuthorizations(ctx context.Context) {
 			return
 		}
 		var a Account
-		if json.Unmarshal(raw, &a) != nil || a.Backend != "onedrive" || !a.Enabled || !a.Verified || a.DriveID == "" {
+		if json.Unmarshal(raw, &a) != nil || !cloudBackend(a.Backend) || !a.Enabled || !a.Verified || a.DriveID == "" {
 			continue
 		}
 		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)

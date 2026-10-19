@@ -54,7 +54,7 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 		fail(w, 404, "account_not_found", "账号不存在")
 		return
 	}
-	if a.Backend != "onedrive" || a.Version != v.Version {
+	if !cloudBackend(a.Backend) || a.Version != v.Version {
 		fail(w, 409, "account_changed", "请重新加载 OneDrive 账号配置")
 		return
 	}

@@ -27,17 +27,34 @@ type OAuthToken struct {
 type cloudError struct {
 	Status     int
 	RetryAfter string
+	Provider   string
+	Reason     string
 }
 
 func (e cloudError) Error() string {
-	if e.Status == 429 {
-		return "微软接口限流，请稍后重试"
+	provider := "微软"
+	if e.Provider == backendGoogleDrive {
+		provider = "Google Drive"
 	}
-	if e.Status == 401 || e.Status == 403 {
+	if e.throttled() {
+		return provider + "接口限流，请稍后重试"
+	}
+	if e.authorizationFailure() {
 		return "授权已失效或未授予所需权限，请重新授权"
 	}
-	return fmt.Sprintf("微软接口请求失败（HTTP %d）", e.Status)
+	if e.Provider == backendGoogleDrive && e.Reason == "storageQuotaExceeded" {
+		return "Google Drive 存储空间已满"
+	}
+	return fmt.Sprintf("%s接口请求失败（HTTP %d）", provider, e.Status)
 }
+func (e cloudError) throttled() bool {
+	return e.Status == 429 || e.Provider == backendGoogleDrive && e.Status == 403 && (e.Reason == "rateLimitExceeded" || e.Reason == "userRateLimitExceeded" || e.Reason == "dailyLimitExceeded")
+}
+
+func (e cloudError) authorizationFailure() bool {
+	return e.Status == 401 || e.Status == 403 && (e.Provider != backendGoogleDrive || e.Reason == "insufficientPermissions" || e.Reason == "authError")
+}
+
 func (r *Runtime) tokenExchange(ctx context.Context, values url.Values) (OAuthToken, error) {
 	return r.tokenExchangeFor(ctx, r.customCredential(OAuthToken{}), values)
 }
@@ -57,7 +74,7 @@ func (r *Runtime) tokenExchangeFor(ctx context.Context, cred accountCredential, 
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return OAuthToken{}, cloudError{res.StatusCode, res.Header.Get("Retry-After")}
+		return OAuthToken{}, cloudError{Status: res.StatusCode, RetryAfter: res.Header.Get("Retry-After")}
 	}
 	var v struct {
 		AccessToken  string `json:"access_token"`
@@ -129,7 +146,7 @@ func (r *Runtime) graph(ctx context.Context, id, method, path string, body []byt
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		err := cloudError{res.StatusCode, res.Header.Get("Retry-After")}
+		err := cloudError{Status: res.StatusCode, RetryAfter: res.Header.Get("Retry-After")}
 		// Optional /me identity lookup may lack User.Read even when Drive access
 		// works. Only storage access failures create authorization incidents.
 		if strings.HasPrefix(path, "/drives/") || strings.HasPrefix(path, "/me/drives") {
@@ -154,11 +171,15 @@ func cloudFailure(w http.ResponseWriter, e error) {
 		if c.RetryAfter != "" {
 			w.Header().Set("Retry-After", c.RetryAfter)
 		}
-		if c.Status == 429 {
+		if c.throttled() {
 			fail(w, 429, "cloud_throttled", e.Error())
 			return
 		}
-		if c.Status == 401 || c.Status == 403 {
+		if c.Provider == backendGoogleDrive && c.Reason == "storageQuotaExceeded" {
+			fail(w, 409, "cloud_storage_full", e.Error())
+			return
+		}
+		if c.authorizationFailure() {
 			fail(w, 409, "authorization_required", e.Error())
 			return
 		}

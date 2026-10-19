@@ -1262,7 +1262,7 @@ func (s *Service) observeRcloneAccounts(accounts []Account, output []byte, err e
 	matched := []Account{}
 	seen := map[string]bool{}
 	for _, a := range accounts {
-		if a.Backend == "onedrive" && !seen[a.ID] {
+		if cloudBackend(a.Backend) && !seen[a.ID] {
 			seen[a.ID] = true
 			matched = append(matched, a)
 		}

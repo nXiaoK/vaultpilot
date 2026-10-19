@@ -160,7 +160,7 @@ func (s *Service) buildClearPreview(ctx context.Context, ids []string, exceptTas
 		}
 		json.Unmarshal(raw, &identity)
 		if selected[a.ID] {
-			if !a.Verified || a.DriveID == "" || (a.Backend != "onedrive" && a.Backend != "local") {
+			if !a.Verified || a.DriveID == "" || (!cloudBackend(a.Backend) && a.Backend != "local") {
 				return p, fail("ACCOUNT_UNVERIFIED", "所选账号必须先完成访问验证")
 			}
 			key := domain(a.Region, a.TenantID, a.DriveID)

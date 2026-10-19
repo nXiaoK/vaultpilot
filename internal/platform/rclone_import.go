@@ -249,7 +249,7 @@ func (r *Runtime) installCredential(ctx context.Context, id string, version int,
 	if r.Store.Get(ctx, "accounts", id, &a) != nil {
 		return a, errors.New("账号不存在")
 	}
-	if a.Backend != "onedrive" {
+	if !cloudBackend(a.Backend) {
 		return a, errors.New("此账号不是 OneDrive")
 	}
 	if a.Version != version {

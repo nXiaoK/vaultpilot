@@ -188,3 +188,7 @@ func degraded(err error) bool {
 	var f *failure
 	return errors.As(err, &f) && f.Code == "PROTECTION_DEGRADED"
 }
+
+func cloudBackend(backend string) bool {
+	return backend == "onedrive" || backend == "gdrive"
+}
