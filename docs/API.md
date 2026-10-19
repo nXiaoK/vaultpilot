@@ -25,18 +25,18 @@
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET/POST | /accounts | 列表/创建：name, backend=onedrive, budget_bytes, cloud_reserve_bytes, maintenance_reserve_bytes |
-| PUT/PATCH | /accounts/{id} | name, version, enabled, budget_bytes, cloud_reserve_bytes, maintenance_reserve_bytes |
+| GET/POST | /accounts | 列表/创建：name, backend=onedrive/gdrive（或启用后的 local）, storage_group（仅 gdrive，可选）, budget_bytes, cloud_reserve_bytes, maintenance_reserve_bytes |
+| PUT/PATCH | /accounts/{id} | name, version, enabled, budget_bytes, cloud_reserve_bytes, maintenance_reserve_bytes, storage_group（仅 gdrive） |
 | DELETE | /accounts/{id} | 拒绝仍被仓库/位置/池引用的账号；先停用新分配 |
-| POST | /accounts/{id}/authorize | {} → authorization_url；PKCE和会话绑定state |
+| POST | /accounts/{id}/authorize | {} → 微软自定义应用 authorization_url；PKCE和会话绑定state；gdrive 返回400，使用Rclone接口 |
 | GET | /oauth/callback | 微软回调，检验后跳转网页Drive选择阶段 |
-| GET | /accounts/{id}/drives | Drive列表，返回id/name/drive_type/supported/quota；不默认选择 |
+| GET | /accounts/{id}/drives | Drive列表，返回id/name/drive_type/supported/unsupported_reason（可选）/quota；不默认选择 |
 | POST | /accounts/{id}/verify | version, drive_id, 可选预算；根访问及专用目录读写验证 |
 | POST | /accounts/{id}/quota | 刷新容量和项目实际占用 |
 | GET/POST | /pools | name, account_ids, catalog_replicas（默认2）, shard_target_bytes（默认100GiB） |
 | PUT/PATCH/DELETE | /pools/{id} | 修改必须version，删除检查计划依赖 |
 
-Account 输出有 Drive 稳定身份、配额域、verified/status/enabled、整数Bytes和quota_at；没有 Token、节点密钥或完整 Rclone config。`local` backend + local_path 仅在显式启用 VP_ALLOW_LOCAL 时提供，用于真实本地引擎验收。
+Account 输出包含 backend（onedrive/gdrive/local）、storage_group（仅 Google、空值省略）、Drive 稳定身份、配额域、verified/status/enabled、整数Bytes和quota_at；没有 Token、节点密钥或完整 Rclone config。`local` backend + local_path 仅在显式启用 VP_ALLOW_LOCAL 时提供，用于真实本地引擎验收。
 
 ## 目录与计划
 
@@ -93,8 +93,8 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 | POST | /accounts/{id}/rclone/authorize | `{version}`，启动实际 Rclone 授权，202 返回会话 `id` |
 | GET | /accounts/{id}/rclone/authorize?flow_id=… | 查询状态、授权 URL、过期时间；仅原登录会话可读取，完成时返回更新的 Account |
 | DELETE | /accounts/{id}/rclone/authorize?flow_id=… | 取消子进程；等待状态 cancelled 后可重新开始 |
-| POST | /accounts/{id}/rclone/callback?flow_id=… | `{url}`，校验固定 localhost 回调、state、有效期和一次使用状态，202 表示已提交，继续轮询 |
-| POST | /rclone/import/preview | `{config}`，返回 remote 名称、Drive 参考信息及是否自定义应用；不返回任何凭据 |
+| POST | /accounts/{id}/rclone/callback?flow_id=… | `{url}`，校验固定 loopback 回调（OneDrive localhost / Google 127.0.0.1）、state、有效期和一次使用状态，202 表示已提交，继续轮询 |
+| POST | /rclone/import/preview | `{config,backend?}`，backend 为 onedrive（默认）或 gdrive，返回 remote 名称、Drive 参考信息及是否自定义应用；不返回任何凭据 |
 | POST | /accounts/{id}/rclone/import | `{config,remote,version}`，显式选择 remote，加密保存并返回待选择 Drive 的 Account |
 
 标准授权状态：starting → waiting → exchanging（粘贴回调时）→ completed / failed；取消经 cancelling → cancelled。有效期 10 分钟，同一实例仅一个活动授权。重启使未完成会话失效，临时配置在完成、取消和重启时删除。已保存凭据跨重启保留。
@@ -119,10 +119,38 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 
 ## 加密账号迁移
 
-- `POST /api/accounts/export`：`{password, admin_password, account_ids}`，选择 1–50 个已验证 OneDrive Personal 账号，返回加密账号包。
+- `POST /api/accounts/export`：`{password, admin_password, account_ids}`，选择 1–50 个已验证 OneDrive Personal 或 Google Drive 账号，返回加密账号包。
 - `POST /api/accounts/import/preview`：`{password, package}`，返回 `items: [{account, duplicate}]`；无授权凭据，重复 Drive 标记为已存在。
 - `POST /api/accounts/import`：`{password, package, drive_ids}`，显式选择包中的 Drive，原子写入账号与凭据，返回 `items`（新账号）、`skipped`（已有 Drive）和 `total`。新账号待验证，客户端随后调用原 `/accounts/{id}/verify`，使用保留的 `drive_id` 和新账号 `version`。
 
 三个接口都要求管理员会话、CSRF、同源校验，并对密码尝试限速。导出还须重新验证当前登录密码，失败按 reauth 操作计数；成功清零该计数。包保护密码 12–1024 字节；导出请求最多 8 KiB，导入请求最多 2 MiB，加密明文最多 1 MiB，固定 Argon2id 参数先校验再解密。不会导入本地路径、原节点 ID、Verified 状态或备份密钥。
 
 账号列表新增 `account_email`、`account_display_name`；`GET /accounts/{id}/drives` 返回可选身份读取后的 `account`（版本可能更新），客户端需使用该版本验证。相同 Drive ID 的别名合并。
+
+## Google Drive 字段与错误
+
+Google 账号的 `backend = gdrive`，仅支持 Rclone 标准授权和导入。验证后服务维护 `drive_id`（我的云端硬盘根 ID）、`drive_name = 我的云端硬盘`、`drive_type = my_drive`、`region = google`、`tenant_id = personal`、`quota_domain = google:personal:<drive_id>`；客户端不能通过创建、更新或导入参考 ID 直接登记已验证身份。`/drives` 返回一项“我的云端硬盘”；缺少容量上限时 `supported = false` 并提供 `unsupported_reason`。
+
+`storage_group` 为可选字符串，去除首尾空白后最多 64 字符；仅 gdrive 使用，其他后端清空。更新省略该字段时保留，空字符串表示清空。池创建/保存拒绝同组 Google 账号；修改账号组名若与已加入池的其他成员冲突同样拒绝。引擎执行时再次检查，以保护存量配置。两个未分组 Google 账号的已知 `total_bytes` 相等仅由前端提示，不阻断 API。
+
+Google `total_bytes` 来自 `storageQuota.limit`，`free_bytes = max(0, limit - usage)`，`used_bytes = total_bytes - free_bytes`，包含 Gmail、Photos 等共同占用；`project_used_bytes` 仅统计项目目录。无限/未知上限拒绝验证，不以 0 或无限空间通过。
+
+`/rclone/import/preview` 根据可选 `backend` 解析对应 provider；账号导入接口始终以账号自身 backend 为准，不接受请求体覆盖。Google scope 只允许空或 `drive`，保存为 `drive`。运行配置固定 `use_trash = false`、`stop_on_upload_limit = true`，不被导入内容覆盖。账号包携带 Google `storage_group` 和 provider；账号包、恢复包版本仍为 1，但含 gdrive 的包需要兼容本功能的版本，旧版会拒绝。
+
+| 错误码 | HTTP / 行为 |
+|---|---|
+| `invalid_storage_group` | 400，组名长度不合法。 |
+| `shared_storage_group` | 409，池内重复使用同一非空 Google 共享存储组，包括编辑账号导致冲突。 |
+| `duplicate_cloud_folder` | 409，Google 项目目录同名冲突，需人工核对处理。 |
+| `cloud_storage_full` | 409，Google 返回 storageQuotaExceeded，不归类为授权失效。 |
+| `cloud_throttled` | 429，Google rateLimitExceeded / userRateLimitExceeded / dailyLimitExceeded 或 HTTP 429；不产生授权异常告警。 |
+| `CLOUD_DAILY_UPLOAD_LIMIT` | 备份分片任务失败码，retryable=false；每日上传上限触发，等待下一次计划继续。 |
+| `DUPLICATE_STORAGE_GROUP` | 引擎任务失败码；运行时发现存储池共享组重复。 |
+
+Google 401、403 insufficientPermissions / authError 归为授权异常；一般 403 不直接等于凭据失效。Google 自建 OAuth client 目前只支持导入，未增加 status 自定义 client 字段或 Google client 环境变量。
+
+## 账号清空预览
+
+`POST /accounts/clear/preview` 提交 `{account_ids}`，返回所选账号 `items`、项目 `path`、仓库/恢复点/暂停计划 ID、阻塞原因与 `preview_token`。每个 item 包含 `id`、`name`、`email`、`drive_id`、`estimated_bytes` 和 `permanent_delete`；gdrive 的 permanent_delete 为 true，表示不进入回收站、无法找回。
+
+`POST /accounts/clear` 提交 `{account_ids,preview_token,confirmation:"清空所选备份"}`，使用 Idempotency-Key，返回异步任务。清空范围与失败后同组重试约束见 [批量清空指南](ACCOUNT_CLEAR.md)。

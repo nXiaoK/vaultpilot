@@ -1,12 +1,12 @@
 # VaultPilot
 
-中文多账号 OneDrive 加密备份管理平台。技术栈：Go、Vue 3 / TypeScript、SQLite、Restic 0.18.1、Rclone 1.70.3。一个独立 Restic 仓库完整存放在一个 Drive 中，按稳定文件集合分配容量；多账号容量分摊不提供业务数据多副本。
+中文多账号 OneDrive / Google Drive（Google One）加密备份管理平台。技术栈：Go、Vue 3 / TypeScript、SQLite、Restic 0.18.1、Rclone 1.70.3。一个独立 Restic 仓库完整存放在一个 Drive 中，按稳定文件集合分配容量；多账号容量分摊不提供业务数据多副本。
 
-项目按 [需求规格](多账号%20OneDrive%20加密备份平台.md) 开发。实现与验证范围以 [测试报告](docs/TEST_REPORT.md) 和 [已知限制](docs/LIMITATIONS.md) 为准。真实 OneDrive Personal、多 TB 和百万文件的测试需要对应环境；本地引擎测试不能替代云端验收。
+项目按 [需求规格](多账号%20OneDrive%20加密备份平台.md) 开发。实现与验证范围以 [测试报告](docs/TEST_REPORT.md) 和 [已知限制](docs/LIMITATIONS.md) 为准。真实 OneDrive Personal、Google Drive、多 TB 和百万文件的测试需要对应环境；本地引擎测试不能替代云端验收。
 
 ## Debian 12 / Docker Compose
 
-需要 Docker Engine、Compose 插件和至少两个可参与存储池的 OneDrive 账号。默认采用 Rclone 标准授权，无需开通 Azure 或注册微软应用。公开访问请在 HTTPS 反向代理后部署。不要把宿主机根目录或 Docker Socket 挂载给应用。
+需要 Docker Engine、Compose 插件和至少两个可参与存储池的个人 OneDrive 或 Google Drive 账号，可混合使用；共享同一 Google One 家庭容量的账号不能同时加入同一池。默认采用 Rclone 标准授权，无需注册应用。公开访问请在 HTTPS 反向代理后部署。不要把宿主机根目录或 Docker Socket 挂载给应用。
 
 ```sh
 git clone https://github.com/nXiaoK/vaultpilot.git
@@ -67,6 +67,16 @@ Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常�
 
 也可选择「导入 Rclone 配置」，上传未加密的 `rclone.conf`、`rclone config dump` JSON，或粘贴 `rclone authorize onedrive` 的输出。解析预览后显式选择 remote；每次导入一个账号，随后从真实微软响应中选择 Drive 并验证。详细步骤见 [Rclone 授权指南](docs/RCLONE_AUTH.md)。
 
+## Google Drive（Google One）授权
+
+在「存储账号 → 添加账号」选择「Google Drive（Google One）」，填写名称。使用同一 Google One 家庭容量的账号请填写相同的「共享存储组」，例如“张家 Google One”；同组账号不能进入同一存储池，未分组账号容量上限相同时界面会提示核对。该字段用于防止重复计量，不会合并家庭成员的剩余空间。
+
+保持「Rclone 标准授权」，打开 Google 页面，选择个人账号并同意授权。Google 回调为 `http://127.0.0.1:53682/`；远程或 Docker 部署遇到无法访问时，复制包含 `code` 和 `state` 的完整地址，回到向导粘贴并提交，无需映射 53682 端口。平台要求重新确认同意，以取得可长期刷新的令牌。随后显式选择“我的云端硬盘”，按真实容量设置预算并完成访问验证。
+
+也可导入 `type = drive` 的 Rclone 配置、dump JSON 或 `rclone authorize drive` 输出。scope 固定为 `drive`，授权覆盖整个 Google Drive 的读写；不支持 Workspace、共享云端硬盘、服务账号或 `drive.file`。自建 Google 桌面应用仅支持通过已有 Rclone 配置导入，OAuth 同意屏幕须发布为 **In production**，Testing 状态的刷新令牌通常 7 天过期；本版未提供 `VP_GOOGLE_CLIENT_ID` / `VP_GOOGLE_CLIENT_SECRET` 环境配置。
+
+**Google Drive 的历史清理、prune、迁移旧副本清理和账号清空都是永久删除，不进入回收站，无法找回。** VaultPilot 固定使用 `use_trash = false`。Google Drive、Gmail 与 Photos 共用容量；每日上传上限约 750 GB，触发后以 `CLOUD_DAILY_UPLOAD_LIMIT` 结束本次任务，不在当天持续重试，由下一次计划继续。真实账号授权、长期刷新、空间释放与混合池恢复仍未验收，完整边界见 [授权指南](docs/RCLONE_AUTH.md) 和 [已知限制](docs/LIMITATIONS.md)。
+
 ## 可选：自定义微软应用注册
 
 仅当希望使用自己的应用时配置 `VP_OAUTH_CLIENT_ID`、`VP_OAUTH_CLIENT_SECRET`。在 Microsoft Entra 应用注册中选择适合个人账号的账户类型，添加 Web 回调：`<VP_PUBLIC_URL>/api/oauth/callback`，填写 Client ID 和适用的 Client Secret。应用使用授权码、state、PKCE 和离线权限。公开 URL、注册回调与实际访问地址必须一致；开发环境可使用微软允许的 localhost 回调。
@@ -77,11 +87,11 @@ Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常�
 
 ## 多节点恢复（相同备份密码）
 
-A 在「安全与维护 → 多节点密码连接」用原备份密码发布加密连接入口。B/C 首次启动选择「从云端连接」，设置独立管理员、授权原 OneDrive 账号，再选择 A 的备份库并输入相同备份密码，无需导出/导入恢复包。恢复节点默认每分钟发现新恢复点，文件恢复仍由用户选择执行。支持一个备份写入节点和多个恢复节点，详细操作见 [多节点指南](docs/MULTI_NODE.md)。
+A 在「安全与维护 → 多节点密码连接」用原备份密码发布加密连接入口。B/C 首次启动选择「从云端连接」，设置独立管理员、授权原 OneDrive 或 Google Drive 账号，再选择 A 的备份库并输入相同备份密码，无需导出/导入恢复包。恢复节点默认每分钟发现新恢复点，文件恢复仍由用户选择执行。支持一个备份写入节点和多个恢复节点，详细操作见 [多节点指南](docs/MULTI_NODE.md)。
 
 ## 清空测试备份
 
-在写入节点的「存储账号 → 批量清空备份」选择一个或多个账号，预览受影响的恢复点和计划，输入“清空所选备份”确认后提交后台任务。只删除所选网盘中当前库的备份数据，保留个人文件、账号授权与节点连接入口；受影响计划自动暂停，清理失败可重试。详细范围、保护限制和多节点注意事项见 [批量清空指南](docs/ACCOUNT_CLEAR.md)。
+在写入节点的「存储账号 → 批量清空备份」选择一个或多个账号，预览受影响的恢复点和计划，输入“清空所选备份”确认后提交后台任务。只删除所选网盘中当前库的备份数据，保留个人文件、账号授权与节点连接入口；受影响计划自动暂停，清理失败可重试。所选账号包含 Google Drive 时，备份会永久删除，不进入回收站、无法找回。详细范围、保护限制和多节点注意事项见 [批量清空指南](docs/ACCOUNT_CLEAR.md)。
 
 ## Telegram 通知
 
