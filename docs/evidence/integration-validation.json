@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-10-19",
-  "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+  "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb",
   "previous_main": "097b199795060cf03f54eb613a363509e8e8f5e6",
   "status": "available_checks_passed",
   "environment": {
@@ -13,7 +13,7 @@
   },
   "integrity": {
     "baseline": "4029295dd8c1642b3f76de29b9737520f9fee18e",
-    "reviewed_source": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+    "reviewed_source": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb",
     "feature_commits": 41,
     "test_declarations": 107,
     "plan_items": 67,
@@ -81,7 +81,8 @@
       ],
       "exit_code": 0,
       "seconds": 2.14,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "frontend-build",
@@ -94,7 +95,8 @@
       ],
       "exit_code": 0,
       "seconds": 4.703,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "frontend-tests",
@@ -106,58 +108,8 @@
       ],
       "exit_code": 0,
       "seconds": 0.756,
-      "status": "passed"
-    },
-    {
-      "name": "vet",
-      "command": [
-        "go",
-        "vet",
-        "./..."
-      ],
-      "exit_code": 0,
-      "seconds": 1.542,
-      "status": "passed"
-    },
-    {
-      "name": "build",
-      "command": [
-        "go",
-        "build",
-        "-o",
-        "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/bin/",
-        "./cmd/..."
-      ],
-      "exit_code": 0,
-      "seconds": 0.653,
-      "status": "passed"
-    },
-    {
-      "name": "staticcheck",
-      "command": [
-        "go",
-        "run",
-        "honnef.co/go/tools/cmd/staticcheck@latest",
-        "./..."
-      ],
-      "exit_code": 0,
-      "seconds": 1.804,
-      "status": "passed"
-    },
-    {
-      "name": "race",
-      "command": [
-        "go",
-        "test",
-        "-json",
-        "-race",
-        "-count=1",
-        "-timeout=15m",
-        "./..."
-      ],
-      "exit_code": 0,
-      "seconds": 180.697,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "local-e2e",
@@ -172,7 +124,8 @@
       ],
       "exit_code": 0,
       "seconds": 46.855,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "offline-rescue",
@@ -185,7 +138,8 @@
       ],
       "exit_code": 0,
       "seconds": 3.777,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "govulncheck",
@@ -197,7 +151,8 @@
       ],
       "exit_code": 0,
       "seconds": 3.033,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "compose-config",
@@ -211,7 +166,8 @@
       ],
       "exit_code": 0,
       "seconds": 0.241,
-      "status": "passed"
+      "status": "passed",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
     },
     {
       "name": "docker-daemon",
@@ -223,33 +179,89 @@
       ],
       "exit_code": 1,
       "seconds": 0.076,
-      "status": "unavailable"
+      "status": "unavailable",
+      "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 0.769,
+      "status": "passed",
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/final-bin/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 0.447,
+      "status": "passed",
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
+    },
+    {
+      "name": "staticcheck",
+      "command": [
+        "go",
+        "run",
+        "honnef.co/go/tools/cmd/staticcheck@latest",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 1.511,
+      "status": "passed",
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
+    },
+    {
+      "name": "race",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-count=1",
+        "-timeout=15m",
+        "./..."
+      ],
+      "exit_code": 0,
+      "seconds": 182.09,
+      "status": "passed",
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
     }
   ],
   "go_packages": [
     {
       "Package": "vaultpilot/cmd/healthcheck",
-      "Elapsed": 1.422
+      "Elapsed": 1.4969999999999999
     },
     {
       "Package": "vaultpilot/internal/ctxlock",
-      "Elapsed": 1.413
+      "Elapsed": 1.409
     },
     {
       "Package": "vaultpilot/internal/store",
-      "Elapsed": 3.488
+      "Elapsed": 2.979
     },
     {
       "Package": "vaultpilot/internal/process",
-      "Elapsed": 6.723
+      "Elapsed": 6.219
     },
     {
       "Package": "vaultpilot/internal/platform",
-      "Elapsed": 146.959
+      "Elapsed": 146.748
     },
     {
       "Package": "vaultpilot/internal/engine",
-      "Elapsed": 177.979
+      "Elapsed": 179.447
     }
   ],
   "skipped_scale_tests": [
@@ -265,35 +277,35 @@
   "additional_backup_regressions": [
     {
       "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/before_shard_precheck",
-      "elapsed": 6.36
+      "elapsed": 6.25
     },
     {
       "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/before_engine_reads",
-      "elapsed": 6.39
+      "elapsed": 6.28
     },
     {
       "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan/while_engine_reads",
-      "elapsed": 6.36
+      "elapsed": 6.56
     },
     {
       "test": "TestRealResticBackupLeavesOutFilesDeletedAfterScan",
-      "elapsed": 19.11
+      "elapsed": 19.09
     },
     {
       "test": "TestRealResticUnreadableSourceFileStillFailsBackup",
-      "elapsed": 5.6
+      "elapsed": 5.51
     },
     {
       "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges/mount_changed",
-      "elapsed": 4.74
+      "elapsed": 4.35
     },
     {
       "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges/type_changed",
-      "elapsed": 4.34
+      "elapsed": 4.35
     },
     {
       "test": "TestRealResticShardPrecheckRejectsUnsafeSourceChanges",
-      "elapsed": 9.08
+      "elapsed": 8.71
     }
   ],
   "local_e2e": {
@@ -307,7 +319,8 @@
       "Chinese, spaces, newline, empty directory and symbolic link preserved",
       "recovery kit exported before later repository creation discovers new repository key and restores added file",
       "repeat discovery, single-file restore, conflict preservation, explicit overwrite and partial offline-account restore"
-    ]
+    ],
+    "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
   },
   "offline_rescue": {
     "passed": true,
@@ -317,11 +330,13 @@
     "wrong_password_rejected": true,
     "uncommitted_prepare_rejected": true,
     "protected_output_permissions": true,
-    "temporary_plaintext_zip_removed": true
+    "temporary_plaintext_zip_removed": true,
+    "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
   },
   "govulncheck": {
     "reachable_vulnerabilities": 0,
-    "uncalled_required_module_vulnerabilities": 4
+    "uncalled_required_module_vulnerabilities": 4,
+    "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
   },
   "static_checks": [
     "Full baseline-to-source git diff --check passed",
@@ -334,7 +349,112 @@
     "No live OneDrive account: real authorization, read/write, refresh and cloud concurrency not verified.",
     "Million physical files, multi-TB upload and multi-node production concurrency not verified.",
     "Historical deleted points without pending_forget are not backfilled.",
-    "Scan-time deletion race has no deterministic standalone regression; three post-scan timings were exercised with real Restic.",
-    "Permission-guidance edits concurrently present in the primary worktree were excluded from this reviewed source."
+    "Scan-time deletion race has no deterministic standalone regression; three post-scan timings were exercised with real Restic."
+  ],
+  "first_stage_source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+  "previous_backend_validation": {
+    "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62",
+    "checks": [
+      {
+        "name": "vet",
+        "command": [
+          "go",
+          "vet",
+          "./..."
+        ],
+        "exit_code": 0,
+        "seconds": 1.542,
+        "status": "passed",
+        "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
+      },
+      {
+        "name": "build",
+        "command": [
+          "go",
+          "build",
+          "-o",
+          "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/bin/",
+          "./cmd/..."
+        ],
+        "exit_code": 0,
+        "seconds": 0.653,
+        "status": "passed",
+        "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
+      },
+      {
+        "name": "staticcheck",
+        "command": [
+          "go",
+          "run",
+          "honnef.co/go/tools/cmd/staticcheck@latest",
+          "./..."
+        ],
+        "exit_code": 0,
+        "seconds": 1.804,
+        "status": "passed",
+        "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
+      },
+      {
+        "name": "race",
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-race",
+          "-count=1",
+          "-timeout=15m",
+          "./..."
+        ],
+        "exit_code": 0,
+        "seconds": 180.697,
+        "status": "passed",
+        "source_commit": "7469bb592c7c39a6446d78ee2ad8ba42c08bfd62"
+      }
+    ]
+  },
+  "go_packages_source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb",
+  "source_permission_regressions": [
+    {
+      "test": "TestRealResticUnreadableSourceExplainsReadOnlyGrant",
+      "elapsed": 1.37
+    },
+    {
+      "test": "TestUnreadableSourceExplainsReadOnlyGrant",
+      "elapsed": 1.37
+    }
+  ],
+  "linux_cross_compilation": [
+    {
+      "platform": "linux/amd64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/final-linux-amd64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 0.924,
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
+    },
+    {
+      "platform": "linux/arm64",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        "/Users/xiaok/github/vaultpilot/.worktrees/tools/integration-validation/final-linux-arm64/",
+        "./cmd/..."
+      ],
+      "exit_code": 0,
+      "seconds": 0.876,
+      "source_commit": "0fa43232e2a64b0c6a1b5534a2c62b5d1b2c96cb"
+    }
+  ],
+  "scope_notes": [
+    "Permission-guidance work was committed during the review as 0fa4323 and included in final code verification.",
+    "Frontend and local E2E/offline rescue/govulncheck retain their actual 7469bb5 source binding. No frontend, scripts or dependencies changed in 0fa4323; final backend vet/build/staticcheck, real-engine race and Linux cross-builds were rerun."
   ]
 }
