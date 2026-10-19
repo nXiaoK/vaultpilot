@@ -161,6 +161,11 @@ func (r *Runtime) graph(ctx context.Context, id, method, path string, body []byt
 	return b, nil
 }
 func cloudFailure(w http.ResponseWriter, e error) {
+	var duplicate duplicateCloudFolder
+	if errors.As(e, &duplicate) {
+		fail(w, 409, "duplicate_cloud_folder", e.Error())
+		return
+	}
 	var issue authorizationIssue
 	if errors.As(e, &issue) && issue.category == "authorization_required" {
 		fail(w, 409, "authorization_required", e.Error())
@@ -187,6 +192,12 @@ func cloudFailure(w http.ResponseWriter, e error) {
 	fail(w, 502, "cloud_access_failed", e.Error())
 }
 func (r *Runtime) authorize(w http.ResponseWriter, req *http.Request) {
+	var a Account
+	accountErr := r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &a)
+	if accountErr == nil && a.Backend == backendGoogleDrive {
+		fail(w, 400, "invalid_backend", "Google Drive 请使用 Rclone 标准授权或导入配置")
+		return
+	}
 	if r.Config.OAuthClientID == "" || r.Config.PublicURL == "" {
 		fail(w, 409, "oauth_not_configured", "请先注册微软应用并配置 VP_OAUTH_CLIENT_ID 与 VP_PUBLIC_URL；回调为公开地址 /api/oauth/callback")
 		return
@@ -196,8 +207,7 @@ func (r *Runtime) authorize(w http.ResponseWriter, req *http.Request) {
 		fail(w, 409, "https_required", "公网 OAuth 回调必须使用 HTTPS")
 		return
 	}
-	var a Account
-	if e = r.Store.Get(req.Context(), "accounts", req.PathValue("id"), &a); e != nil {
+	if accountErr != nil {
 		fail(w, 404, "account_not_found", "账号不存在")
 		return
 	}
@@ -274,12 +284,13 @@ func applyOwner(a *Account, owner driveOwner) {
 }
 
 type Drive struct {
-	Owner     driveOwner `json:"owner"`
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	DriveType string     `json:"drive_type"`
-	Supported bool       `json:"supported"`
-	Quota     struct {
+	Owner             driveOwner `json:"owner"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	DriveType         string     `json:"drive_type"`
+	Supported         bool       `json:"supported"`
+	UnsupportedReason string     `json:"unsupported_reason,omitempty"`
+	Quota             struct {
 		Total     *int64 `json:"total"`
 		Used      *int64 `json:"used"`
 		Remaining *int64 `json:"remaining"`
@@ -387,6 +398,13 @@ func (r *Runtime) verificationDrives(ctx context.Context, a Account) ([]Drive, e
 		return entry.Items, nil
 	}
 	delete(r.recentDrives, a.ID)
+	if a.Backend == backendGoogleDrive {
+		items, profile, err := r.googleListDrives(ctx, a.ID)
+		if err == nil {
+			r.rememberDrives(a, items, profile)
+		}
+		return items, err
+	}
 	return r.listDrives(ctx, a.ID)
 }
 
@@ -403,7 +421,7 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 		profile = entry.Profile
 	}
 	r.accountMu.Unlock()
-	if a.Backend != "onedrive" {
+	if !cloudBackend(a.Backend) {
 		fail(w, 400, "invalid_backend", "本地联调账号没有 Drive 列表")
 		return
 	}
@@ -413,24 +431,32 @@ func (r *Runtime) drives(w http.ResponseWriter, req *http.Request) {
 		cloudFailure(w, e)
 		return
 	}
-	profileCtx, cancel := context.WithTimeout(req.Context(), profileTimeout)
-	defer cancel()
-	profileResult := make(chan *accountProfile, 1)
-	if a.AccountEmail == "" && profile == nil {
-		go func() {
-			profileResult <- r.readAccountProfile(profileCtx, a.ID)
-		}()
+	var items []Drive
+	var e error
+	if a.Backend == backendGoogleDrive {
+		items, profile, e = r.googleListDrives(req.Context(), a.ID)
 	} else {
-		profileResult <- profile
+		profileCtx, cancel := context.WithTimeout(req.Context(), profileTimeout)
+		defer cancel()
+		profileResult := make(chan *accountProfile, 1)
+		if a.AccountEmail == "" && profile == nil {
+			go func() {
+				profileResult <- r.readAccountProfile(profileCtx, a.ID)
+			}()
+		} else {
+			profileResult <- profile
+		}
+		items, e = r.listDrives(req.Context(), a.ID)
+		if e == nil {
+			select {
+			case profile = <-profileResult:
+			case <-profileCtx.Done():
+			}
+		}
 	}
-	items, e := r.listDrives(req.Context(), a.ID)
 	if e != nil {
 		cloudFailure(w, e)
 		return
-	}
-	select {
-	case profile = <-profileResult:
-	case <-profileCtx.Done():
 	}
 	// Remote reads do not hold the global account lock. Reject results if the
 	// account was edited, deleted or reauthorized while those reads were running.
@@ -661,7 +687,11 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if !selected.Supported {
-			fail(w, 400, "drive_type_unsupported", "当前验证目标为 OneDrive Personal；企业版与 SharePoint 尚未完成兼容验证")
+			message := "当前验证目标为 OneDrive Personal；企业版与 SharePoint 尚未完成兼容验证"
+			if a.Backend == backendGoogleDrive {
+				message = selected.UnsupportedReason
+			}
+			fail(w, 400, "drive_type_unsupported", message)
 			return
 		}
 		a.DriveID = selected.ID
@@ -671,6 +701,10 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 		a.Region = "global"
 		a.TenantID = "consumers"
 		a.QuotaDomain = "global:personal:" + a.DriveID
+		if a.Backend == backendGoogleDrive {
+			a.DriveType, a.Region, a.TenantID = "my_drive", "google", "personal"
+			a.QuotaDomain = "google:personal:" + a.DriveID
+		}
 		all, err := r.Store.All(req.Context(), "accounts")
 		if err != nil {
 			fail(w, 500, "database_error", "无法检查重复 Drive")
@@ -684,7 +718,11 @@ func (r *Runtime) verifyAccount(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 		}
-		e = r.verifyCloud(req.Context(), &a)
+		if a.Backend == backendGoogleDrive {
+			e = r.googleVerifyCloud(req.Context(), &a)
+		} else {
+			e = r.verifyCloud(req.Context(), &a)
+		}
 	}
 	if e != nil {
 		cloudFailure(w, e)
@@ -725,6 +763,8 @@ func (r *Runtime) refreshQuota(w http.ResponseWriter, req *http.Request) {
 	var e error
 	if a.Backend == "local" {
 		e = r.localQuota(&a)
+	} else if a.Backend == backendGoogleDrive {
+		e = r.googleQuota(req.Context(), &a)
 	} else {
 		e = r.cloudQuota(req.Context(), &a)
 	}

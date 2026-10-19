@@ -22,6 +22,7 @@ type Account struct {
 	Version                 int    `json:"version"`
 	Name                    string `json:"name"`
 	Backend                 string `json:"backend"`
+	StorageGroup            string `json:"storage_group,omitempty"`
 	Remote                  string `json:"remote"`
 	DriveID                 string `json:"drive_id"`
 	DriveName               string `json:"drive_name"`
@@ -120,15 +121,15 @@ func (r *Runtime) createAccount(w http.ResponseWriter, req *http.Request) {
 	if a.Backend == "" {
 		a.Backend = "onedrive"
 	}
-	if a.Backend != "onedrive" && a.Backend != "local" {
-		fail(w, 400, "invalid_backend", "仅支持 OneDrive 或显式启用的本地联调")
+	if !cloudBackend(a.Backend) && a.Backend != "local" {
+		fail(w, 400, "invalid_backend", "仅支持 OneDrive、Google Drive 或显式启用的本地联调")
 		return
 	}
 	if a.Backend == "local" && !r.Config.AllowLocal {
 		fail(w, 403, "local_disabled", "本地联调未启用")
 		return
 	}
-	if a.BudgetBytes == 0 && a.Backend == "onedrive" {
+	if a.BudgetBytes == 0 && cloudBackend(a.Backend) {
 		a.BudgetBytes = 1 << 40
 	}
 	if e := validBudget(a); e != nil {
@@ -148,6 +149,9 @@ func (r *Runtime) createAccount(w http.ResponseWriter, req *http.Request) {
 	a.DriveType = ""
 	a.Region = "global"
 	a.TenantID = r.Config.OAuthTenant
+	if a.Backend == backendGoogleDrive {
+		a.TenantID = "personal"
+	}
 	a.QuotaDomain = ""
 	a.TotalBytes = 0
 	a.UsedBytes = 0
