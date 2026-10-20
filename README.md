@@ -25,6 +25,8 @@ docker compose up -d
 
 在 VPS 部署时，可以在自己的电脑运行 `ssh -L 8080:127.0.0.1:8080 <用户>@<VPS地址>`，再从浏览器访问 `http://localhost:8080`。Rclone 标准授权遇到 localhost 回调打不开时，在网页中粘贴完整回调地址即可。使用域名访问时请配置 HTTPS 反向代理，并设置 `VP_PUBLIC_URL`。在反向代理之后部署时，配置 `VP_TRUSTED_PROXIES`（实际代理 CIDR），否则所有客户端共用同一个限流计数器。通过局域网 IP 访问时，将实际地址（含端口）配置为 `VP_PUBLIC_URL` 或加入逗号分隔的 `VP_ALLOWED_HOSTS`，否则 Host 校验会返回 421。
 
+需要直接从外部访问宿主机端口时，在 `.env` 设置 `VP_BIND_IP=0.0.0.0`（监听所有 IPv4 网卡）或实际网卡 IP，并配置上述公开 URL 或 Host 白名单，无需修改 `compose.yaml`。升级步骤及旧端口配置迁移见 [升级指南](docs/CONFIGURATION.md#升级)。
+
 生产环境替换 `.env` 的 `VP_SOURCE_HOST` 与 `VP_RESTORE_HOST`。源以只读方式挂载到 `/sources`；恢复目标独立挂载到 `/restore`。新增宿主机目录需要更新 compose 的只读挂载和 `VP_SOURCE_ROOTS`，重建容器后才会出现在网页选择器中。
 
 ### 备份源读取权限

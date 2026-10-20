@@ -3,6 +3,8 @@
 | 环境变量 | 默认值 | 含义 |
 |---|---|---|
 | VP_ADDR | 127.0.0.1:8080 | 服务监听；compose 中为 0.0.0.0:8080 |
+| VP_BIND_IP | 127.0.0.1 | 仅用于 Compose 的宿主机监听 IP；设为 0.0.0.0 监听所有 IPv4 网卡，或填写实际网卡 IP；未设置或空值保留回环监听 |
+| VP_PORT | 8080 | 仅用于 Compose 的宿主机端口；容器内仍为 8080 |
 | VP_PUBLIC_URL | http://localhost:8080 | 对外 URL，Host 白名单、Cookie 安全与可选自定义应用回调依赖它；Rclone 标准回调不依赖此 URL |
 | VP_ALLOWED_HOSTS | 空 | 额外允许的 Host，逗号分隔，主机名或主机名:端口，与请求 Host 完整匹配（忽略大小写） |
 | VP_TRUSTED_PROXIES | 空 | 逗号分隔的可信代理 CIDR；仅这些代理可通过 X-Forwarded-For 提供客户端 IP，格式错误启动失败 |
@@ -43,7 +45,43 @@ Compose 的 `VP_UID`/`VP_GID` 默认均为 1000，`VP_RESTORE_HOST` 是宿主机
 
 ## 升级
 
-先停止任务并导出最新恢复包，备份 `state`，记录当前镜像版本，然后停止旧容器、构建新镜像、启动。不要在 SQLite 仍有写入时只复制 `.db` 而忽略 WAL；使用停机目录备份或 SQLite 在线备份。恢复包与云端目录提供异机恢复能力，`state` 备份只用于方便升级回退。
+服务器专属配置放在被 Git 忽略的 `.env` 中，升级时保留原文件，不要用新版 `.env.example` 覆盖。端口通过 `VP_BIND_IP` 与 `VP_PORT` 配置，默认仍只监听宿主机回环地址；直接从外部访问时设置 `VP_BIND_IP=0.0.0.0` 或实际网卡 IP，同时核对 `VP_PUBLIC_URL` / `VP_ALLOWED_HOSTS`。应用的容器内监听地址与健康检查不变。
+
+若 `git pull` 报告本地 `compose.yaml` 会被覆盖，先用 `git diff HEAD -- compose.yaml` 核对差异并将原文件备份到仓库外。旧部署若仅将 `127.0.0.1:${VP_PORT:-8080}:8080` 改成 `${VP_PORT:-8080}:8080`，可迁移为 `.env` 中的 `VP_BIND_IP=0.0.0.0`，保留所有 IPv4 网卡的监听；如还需 IPv6 访问，须另外核对发布地址。
+
+迁移前必须确认拉取的目标版本已在 `compose.yaml` 的 `ports` 中引用 `VP_BIND_IP`，旧版本不会读取它。确认备份完成、该文件没有其他定制或暂存改动后，才能还原工作区文件并拉取支持该变量的版本：
+
+```sh
+git restore --source=HEAD --worktree -- compose.yaml
+git pull --ff-only origin main
+docker compose config --quiet
+```
+
+其他挂载、用户或环境变量定制必须逐项保留，不能直接还原；配置校验失败时先修正配置，不要停止旧服务。
+
+日常升级先暂停计划，等待活动任务结束，并导出最新恢复包；确认工作区没有未处理的版本跟踪文件修改后执行：
+
+```sh
+git pull --ff-only origin main
+docker compose config --quiet
+docker compose build
+```
+
+以上每一步成功后再执行下一步。构建成功后记录当前容器的镜像 ID，并给旧镜像另加保留标签以便回退，再停止服务：
+
+```sh
+docker compose stop vaultpilot
+```
+
+停止后，备份完整 `state` 目录以及当前 `.env` 和部署配置到仓库外的受限目录，再启动新容器。不要在 SQLite 仍有写入时只复制 `.db` 而忽略 WAL；使用停机目录备份或 SQLite 在线备份。恢复包与云端目录提供异机恢复能力，`state` 备份只用于方便升级回退。旧版本可能无法读取升级后的凭据格式，回退时需同时恢复对应的状态备份，见 [数据库与迁移](MIGRATIONS.md)。
+
+```sh
+docker compose up -d --no-build vaultpilot
+docker compose ps
+docker compose logs --tail=100 vaultpilot
+```
+
+确认服务健康后在网页解锁（已配置自动解锁则无需此步），核对账号、备份源和恢复点，再恢复计划。
 
 引擎版本固定在 Dockerfile。更改版本后先运行本地闭环，再用两个真实 OneDrive 重新执行云端验收。不要通过 `restic unlock --remove-all` 自动解除其他节点的锁。
 
