@@ -22,7 +22,7 @@ func googleRcloneAccount(t *testing.T, h *testHarness) Account {
 
 func TestGoogleRcloneImportFormatsAndConfigAllowlist(t *testing.T) {
 	token := importToken(t, time.Now().UTC().Add(time.Hour))
-	secret := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdefobscured-secret"))
+	secret := "GOCSPX-literal-client-secret"
 	remote := map[string]string{"type": "drive", "token": token, "scope": "drive", "root_folder_id": "hint-only", "client_id": "imported.apps.googleusercontent.com", "client_secret": secret, "use_trash": "true", "stop_on_upload_limit": "false", "chunk_size": "256Mi", "auth_url": "https://accounts.google.com/o/oauth2/auth", "token_url": "https://oauth2.googleapis.com/token"}
 	blob, _ := json.Marshal(remote)
 	dump, _ := json.Marshal(map[string]any{"google": remote, "microsoft": map[string]string{"type": "onedrive"}})
@@ -57,6 +57,13 @@ func TestGoogleRcloneImportFormatsAndConfigAllowlist(t *testing.T) {
 		if strings.Contains(content, "hint-only") || strings.Contains(content, "use_trash = true") {
 			t.Fatal("imported runtime settings or root hint became trusted")
 		}
+		if i >= 1 && i <= 3 {
+			if !strings.Contains(content, "client_secret = "+secret+"\n") {
+				t.Fatalf("format %d lost literal client secret", i)
+			}
+		} else if strings.Contains(content, "client_secret = ") {
+			t.Fatalf("format %d unexpectedly gained a client secret", i)
+		}
 	}
 	entries, err := parseRcloneImport(string(blob), backendGoogleDrive)
 	if err != nil || entries[0].DriveID != "hint-only" || !entries[0].CustomClient {
@@ -78,7 +85,7 @@ func TestGoogleRcloneImportRejectsUnsupportedSettings(t *testing.T) {
 		{"impersonate", "person@example.com"}, {"resource_key", "resource"}, {"env_auth", "true"}, {"env_auth", "1"}, {"shared_with_me", "TRUE"},
 		{"auth_url", "https://evil.example/auth"}, {"auth_url", "https://accounts.google.com/o/oauth2/auth?evil=1"},
 		{"token_url", "http://oauth2.googleapis.com/token"}, {"token_url", "https://evil.example/token"},
-		{"client_secret", "plaintext-secret"}, {"client_id", "line\nbreak"}, {"scope", strings.Repeat("a", 65537)},
+		{"client_secret", "plaintext-secret"}, {"client_id", "line\nbreak"}, {"client_secret", "line\nbreak"}, {"client_secret", " "}, {"client_id", "client-only.apps.googleusercontent.com"}, {"scope", strings.Repeat("a", 65537)},
 	}
 	for _, test := range invalid {
 		t.Run(test.key+"="+test.value[:min(50, len(test.value))], func(t *testing.T) {
@@ -170,7 +177,7 @@ printf '%s\n' '{"total":100,"free":50,"used":50}'
 		t.Fatal(err)
 	}
 	h.r.Config.RcloneBin = bin
-	c := accountCredential{Provider: backendGoogleDrive, Mode: "rclone", GrantID: "google-grant", ClientID: "imported.apps.googleusercontent.com", Scopes: "drive", Token: OAuthToken{AccessToken: "still-valid", RefreshToken: "old-refresh", TokenType: "Bearer", Expiry: time.Now().UTC().Add(time.Minute)}}
+	c := accountCredential{Provider: backendGoogleDrive, Mode: "rclone", GrantID: "google-grant", ClientID: "imported.apps.googleusercontent.com", ClientSecret: "GOCSPX-imported-secret", Scopes: "drive", Token: OAuthToken{AccessToken: "still-valid", RefreshToken: "old-refresh", TokenType: "Bearer", Expiry: time.Now().UTC().Add(time.Minute)}}
 	if err := h.r.saveCredential("google-refresh", c); err != nil {
 		t.Fatal(err)
 	}

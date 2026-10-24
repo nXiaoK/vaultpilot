@@ -1,5 +1,12 @@
 # 实现验证报告
 
+## 2026-10-24 Google Drive API 限流与自有 OAuth 优化
+
+本轮新增按账号配置 Google 自有 OAuth 桌面客户端的网页授权与安全回归：客户端密钥仅通过授权子进程的显式环境变量传递，不进入命令行参数、API 响应或日志；省略客户端字段时复用该账号已保存客户端，首次未配置时使用 Rclone 共享客户端。Google 配置导入按 rclone 1.70.3 语义保留原始 `client_secret`，不要求 obscure 编码。
+
+新增 Google Drive 请求限流配置 `VP_GDRIVE_TPS_LIMIT`（默认 4，0 关闭）和 `VP_GDRIVE_TPS_LIMIT_BURST`（默认 1）。Drive-only Rclone 进程使用全局 TPS；混合 Drive/OneDrive 操作使用 Google remote 的 backend pacer，不把全局限制施加到 OneDrive。项目/用户 API 限流分类为 `CLOUD_API_RATE_LIMITED`，按有限退避重试；明确上传上限才使用 `CLOUD_DAILY_UPLOAD_LIMIT`。
+
+Go 全量 `go test ./...`、`go test -race ./...`、平台/引擎定向测试及 OAuth race 测试通过；前端 `npm ci`、`npm test` 63 项和 `npm run build` 通过。未执行真实 rclone/restic、Docker 或 Google 云端验收。
 ## 2026-10-19 Google Drive（Google One）接入
 
 新增个人 Google Drive 后端 `gdrive`，复用 Rclone `drive` 数据面，网页支持 Google 标准授权/配置导入、原根目录选择和验证、共享存储组，以及清空时的永久删除警告。Google 的配额/读写验证使用 Drive REST v3；Google One 家庭组同池防重，上传上限失败不在当天持续重试。账号字段存于现有 JSON，包格式继续为 v1；含 gdrive 的包无法由旧版导入/打开，需使用支持本功能的版本。
@@ -8,7 +15,7 @@
 
 **真实 Google 账号验收全部未执行**：标准授权、重复授权 refresh_token、过期刷新及重启持久化、目录并发、Google One 家庭配额口径、混合 OneDrive/Google 首备及空白节点 SHA-256 恢复、永久删除与配额释放、每日上传上限、真实多节点与通知均未验证。逐项清单见 [G01–G09](ACCEPTANCE.md#google-drivegoogle-one真实账号验收)。模拟 HTTP、伪 Rclone 和本地目录后端只能证明其测试范围；不证明 Google 云端吞吐、多 TB、生产并发或实际耗时。
 
-Google 自建 client 仅支持 Rclone 配置导入，未实现 Google client 环境变量/自建 client 网页标准授权。历史测试与证据继续按各自日期理解。
+Google 自建 client 现在支持按账号网页授权或完整 Rclone 配置导入；未执行真实 Google 账号验收。历史测试与证据继续按各自日期理解。
 
 后端验证使用 Go 1.27.1；Go 缓存设在 `/private/tmp/vaultpilot-go-cache`，避免系统缓存目录的写权限限制。已运行 `go vet ./...`、`go test -race ./...`，以及 Google 凭据、标准授权、Drive API、共享组、账号包、恢复包、通知与引擎的定向 race 测试。测试覆盖配置白名单和强制刷新读回、授权 URL/state/scope/client 校验、后端不匹配、只读恢复验证、目录重复与并发创建后的空目录清理、8 MiB 响应限制、取消和分页、403 限流/空间/授权分类、已有池修改组名的冲突、初始化及备份阶段每日上限、超额时负剩余空间归零、未知容量拒绝、账号包原有 OneDrive 类型限制。
 

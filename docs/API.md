@@ -90,14 +90,14 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 
 | 方法 | 路径 | 参数与行为 |
 |---|---|---|
-| POST | /accounts/{id}/rclone/authorize | `{version}`，启动实际 Rclone 授权，202 返回会话 `id` |
+| POST | /accounts/{id}/rclone/authorize | `{version, client_id?, client_secret?}`，启动实际 Rclone 授权，202 返回会话 `id`；Google 两个客户端字段必须成对提供，省略时复用该账号已保存客户端，首次未配置时使用 Rclone 共享应用；网页填写 Google 原始 Client Secret，不是 obscure 值。
 | GET | /accounts/{id}/rclone/authorize?flow_id=… | 查询状态、授权 URL、过期时间；仅原登录会话可读取，完成时返回更新的 Account |
 | DELETE | /accounts/{id}/rclone/authorize?flow_id=… | 取消子进程；等待状态 cancelled 后可重新开始 |
 | POST | /accounts/{id}/rclone/callback?flow_id=… | `{url}`，校验固定 loopback 回调（OneDrive localhost / Google 127.0.0.1）、state、有效期和一次使用状态，202 表示已提交，继续轮询 |
 | POST | /rclone/import/preview | `{config,backend?}`，backend 为 onedrive（默认）或 gdrive，返回 remote 名称、Drive 参考信息及是否自定义应用；不返回任何凭据 |
 | POST | /accounts/{id}/rclone/import | `{config,remote,version}`，显式选择 remote，加密保存并返回待选择 Drive 的 Account |
 
-标准授权状态：starting → waiting → exchanging（粘贴回调时）→ completed / failed；取消经 cancelling → cancelled。有效期 10 分钟，同一实例仅一个活动授权。重启使未完成会话失效，临时配置在完成、取消和重启时删除。已保存凭据跨重启保留。
+标准授权状态：starting → waiting → exchanging（粘贴回调时）→ completed / failed；取消经 cancelling → cancelled。有效期 10 分钟，同一实例仅一个活动授权。POST/GET 授权状态返回非敏感的 `custom_client` 布尔值；不返回 Client Secret、Token 或完整配置。重启使未完成会话失效，临时配置在完成、取消和重启时删除。已保存凭据跨重启保留。
 
 导入和授权不会把 `drive_id` 参考信息直接登记为已验证身份，仍需调用 `/drives` 与 `/verify`。已有账号必须选原 Drive；其他 Drive 应创建新账号。重新授权同时原子保存账号状态与凭据；冲突时不覆盖已有凭据。旧引擎配置仅能同步同一授权版本的刷新结果。
 
@@ -129,7 +129,7 @@ Task 分别提供 scanned_bytes、uploaded_bytes、cloud_growth_bytes；备份�
 
 ## Google Drive 字段与错误
 
-Google 账号的 `backend = gdrive`，仅支持 Rclone 标准授权和导入。验证后服务维护 `drive_id`（我的云端硬盘根 ID）、`drive_name = 我的云端硬盘`、`drive_type = my_drive`、`region = google`、`tenant_id = personal`、`quota_domain = google:personal:<drive_id>`；客户端不能通过创建、更新或导入参考 ID 直接登记已验证身份。`/drives` 返回一项“我的云端硬盘”；缺少容量上限时 `supported = false` 并提供 `unsupported_reason`。
+Google 账号的 `backend = gdrive`，支持 Rclone 标准授权、按账号配置自有 OAuth 客户端的网页授权和配置导入。验证后服务维护 `drive_id`（我的云端硬盘根 ID）、`drive_name = 我的云端硬盘`、`drive_type = my_drive`、`region = google`、`tenant_id = personal`、`quota_domain = google:personal:<drive_id>`；客户端不能通过创建、更新或导入参考 ID 直接登记已验证身份。`/drives` 返回一项“我的云端硬盘”；缺少容量上限时 `supported = false` 并提供 `unsupported_reason`。
 
 `storage_group` 为可选字符串，去除首尾空白后最多 64 字符；仅 gdrive 使用，其他后端清空。更新省略该字段时保留，空字符串表示清空。池创建/保存拒绝同组 Google 账号；修改账号组名若与已加入池的其他成员冲突同样拒绝。引擎执行时再次检查，以保护存量配置。两个未分组 Google 账号的已知 `total_bytes` 相等仅由前端提示，不阻断 API。
 
@@ -143,11 +143,12 @@ Google `total_bytes` 来自 `storageQuota.limit`，`free_bytes = max(0, limit - 
 | `shared_storage_group` | 409，池内重复使用同一非空 Google 共享存储组，包括编辑账号导致冲突。 |
 | `duplicate_cloud_folder` | 409，Google 项目目录同名冲突，需人工核对处理。 |
 | `cloud_storage_full` | 409，Google 返回 storageQuotaExceeded，不归类为授权失效。 |
-| `cloud_throttled` | 429，Google rateLimitExceeded / userRateLimitExceeded / dailyLimitExceeded 或 HTTP 429；不产生授权异常告警。 |
-| `CLOUD_DAILY_UPLOAD_LIMIT` | 备份分片任务失败码，retryable=false；每日上传上限触发，等待下一次计划继续。 |
+| `cloud_throttled` | 429，Google `rateLimitExceeded` / `userRateLimitExceeded` / `dailyLimitExceeded` 或 HTTP 429；不产生授权异常告警。 |
+| `CLOUD_API_RATE_LIMITED` | 备份分片任务失败码，retryable=true；Google API 项目/用户请求限流时按有限退避重试，仍受计划重试次数限制。 |
+| `CLOUD_DAILY_UPLOAD_LIMIT` | 备份分片任务失败码，retryable=false；明确每日上传上限触发，等待下一次计划继续。 |
 | `DUPLICATE_STORAGE_GROUP` | 引擎任务失败码；运行时发现存储池共享组重复。 |
 
-Google 401、403 insufficientPermissions / authError 归为授权异常；一般 403 不直接等于凭据失效。Google 自建 OAuth client 目前只支持导入，未增加 status 自定义 client 字段或 Google client 环境变量。
+Google `401、403 insufficientPermissions / authError` 归为授权异常；一般 `403` 不直接等于凭据失效。Google 自建 OAuth client 可在按账号的 Rclone 授权向导中填写，也可通过完整配置导入；网页输入 Google 原始 Client Secret。`VP_OAUTH_CLIENT_*` 仍仅用于微软自定义授权。
 
 ## 账号清空预览
 

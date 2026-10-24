@@ -42,4 +42,4 @@ Google 标准授权和导入固定 `scope = drive`，即 `https://www.googleapis
 
 Google 凭据仅允许 Rclone 模式。Google 授权 URL 严格绑定官方主机/路径、Drive scope、offline/code、loopback redirect、client ID 和本次 state，标准授权追加 `prompt=consent select_account`。配置拒绝 Shared Drives、服务账号、impersonate、环境认证与非默认授权端点等可能改变身份或访问边界的设置。
 
-所有生成的 Google remote 固定 `use_trash = false`：prune、历史清理、迁移后旧副本清理与清空为永久删除，不进入回收站，无法从 Google 回收站找回。其他工具和 Google 网页的删除设置不会因此改变。共享存储组只是容量防重措施，不提供权限隔离。自建 Google client 仅通过已有 Rclone 配置导入，其 secret 仍和 Token 一起认证加密；obscure 本身不是加密保护。
+所有生成的 Google remote 固定 `use_trash = false`：prune、历史清理、迁移后旧副本清理与清空为永久删除，不进入回收站，无法从 Google 回收站找回。其他工具和 Google 网页的删除设置不会因此改变。共享存储组只是容量防重措施，不提供权限隔离。自建 Google client 可在按账号的授权向导中填写或从完整 Rclone 配置导入；网页填写原始 client secret，且与 Token 一起加密保存。obscure 本身不是加密保护。

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -38,6 +39,21 @@ func roots(key, fallback string) []string {
 	}
 	return out
 }
+func googleDriveRateLimits() (float64, int, error) {
+	limit, err := strconv.ParseFloat(env("VP_GDRIVE_TPS_LIMIT", "4"), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("VP_GDRIVE_TPS_LIMIT 必须为数字: %w", err)
+	}
+	if math.IsNaN(limit) || math.IsInf(limit, 0) || limit != 0 && (limit < 0.01 || limit > 1000) {
+		return 0, 0, fmt.Errorf("VP_GDRIVE_TPS_LIMIT 必须为 0（关闭）或 0.01 至 1000 之间的有限数字")
+	}
+	burst, err := strconv.Atoi(env("VP_GDRIVE_TPS_LIMIT_BURST", "1"))
+	if err != nil || burst < 1 || burst > 100 {
+		return 0, 0, fmt.Errorf("VP_GDRIVE_TPS_LIMIT_BURST 必须为 1 至 100 的整数")
+	}
+	return limit, burst, nil
+}
+
 func run() error {
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
@@ -57,6 +73,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("VP_CACHE_MAX_BYTES 必须为整数: %w", err)
 	}
+	googleDriveTPSLimit, googleDriveTPSLimitBurst, err := googleDriveRateLimits()
+	if err != nil {
+		return err
+	}
 	var trustedProxies []netip.Prefix
 	for _, value := range roots("VP_TRUSTED_PROXIES", "") {
 		prefix, err := netip.ParsePrefix(value)
@@ -72,6 +92,7 @@ func run() error {
 		AutoUnlockFile: os.Getenv("VP_AUTO_UNLOCK_FILE"), SourceRoots: roots("VP_SOURCE_ROOTS", "/sources"),
 		AllowedHosts: roots("VP_ALLOWED_HOSTS", ""), TrustedProxies: trustedProxies, RestoreRoots: roots("VP_RESTORE_ROOTS", "/restore"), AllowLocal: os.Getenv("VP_ALLOW_LOCAL") == "true",
 		GlobalConcurrency: concurrency, LogMaxRows: logMaxRows, CacheMaxBytes: cacheMaxBytes,
+		GoogleDriveTPSLimit: googleDriveTPSLimit, GoogleDriveTPSLimitBurst: googleDriveTPSLimitBurst,
 		MaintenanceWindow: os.Getenv("VP_MAINTENANCE_WINDOW"), MaintenanceTimezone: env("VP_MAINTENANCE_TIMEZONE", "Asia/Shanghai"),
 		OAuthClientID: os.Getenv("VP_OAUTH_CLIENT_ID"), OAuthClientSecret: os.Getenv("VP_OAUTH_CLIENT_SECRET"),
 		OAuthTenant: env("VP_OAUTH_TENANT", "consumers"),

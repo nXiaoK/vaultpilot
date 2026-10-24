@@ -196,6 +196,16 @@ func validateRcloneEntry(name string, v map[string]string) (rcloneImportEntry, e
 	return rcloneImportEntry{Name: name, DriveID: v["drive_id"], DriveType: v["drive_type"], CustomClient: c.ClientID != "", Credential: c}, nil
 }
 
+func validateGoogleClientPair(clientID, clientSecret string) error {
+	if clientID == "" && clientSecret == "" {
+		return nil
+	}
+	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(clientSecret) == "" || len(clientID) > 65536 || len(clientSecret) > 65536 || strings.ContainsAny(clientID+clientSecret, "\r\n\x00") {
+		return errors.New("Google 自有应用必须同时提供 client_id 和原始 client_secret，请导入完整 Rclone 配置")
+	}
+	return nil
+}
+
 func validateGoogleDriveEntry(name string, v map[string]string) (rcloneImportEntry, error) {
 	bad := errors.New("Google Drive 配置无效或不受支持：仅支持个人我的云端硬盘、标准 Google 端点和委托授权")
 	for k, value := range v {
@@ -226,14 +236,11 @@ func validateGoogleDriveEntry(name string, v map[string]string) (rcloneImportEnt
 		return rcloneImportEntry{}, bad
 	}
 	c := accountCredential{Provider: backendGoogleDrive, Mode: "rclone", ClientID: v["client_id"], ClientSecret: v["client_secret"], Scopes: "drive"}
-	if c.ClientSecret != "" && (c.ClientID == "" || len(c.ClientSecret) < 22) {
-		return rcloneImportEntry{}, errors.New("自定义应用密钥须使用 rclone.conf 中的 obscure 格式并提供 client_id")
-	}
-	if c.ClientSecret != "" {
-		secret, e := base64.RawURLEncoding.DecodeString(c.ClientSecret)
-		if e != nil || len(secret) <= 16 {
-			return rcloneImportEntry{}, errors.New("客户端密钥不是有效的 Rclone obscure 编码")
-		}
+	// Rclone's OAuth client_secret is a sensitive string, not an IsPassword
+	// option: standard Google configs contain the literal secret, not obscure.
+	// Keep the pair together and let the encrypted credential protect it at rest.
+	if err := validateGoogleClientPair(c.ClientID, c.ClientSecret); err != nil {
+		return rcloneImportEntry{}, err
 	}
 	if json.Unmarshal([]byte(v["token"]), &c.Token) != nil || c.Token.AccessToken == "" || c.Token.RefreshToken == "" || c.Token.Expiry.IsZero() || !strings.EqualFold(c.Token.TokenType, "Bearer") {
 		return rcloneImportEntry{}, errors.New("授权结果缺少有效 token、refresh_token、Bearer 类型或 expiry；请重新使用 Rclone 授权")

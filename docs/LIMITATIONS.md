@@ -88,8 +88,8 @@
 
 - 只支持个人“我的云端硬盘”，不支持 Google Workspace、共享云端硬盘、服务账号或 impersonate。Google 未提供 `storageQuota.limit` 时拒绝验证；无限容量或组织共享池不按无限可用空间处理。
 - 可用容量以 `storageQuota.limit - storageQuota.usage` 计算，包含 Drive、Gmail 与 Photos 的共享占用。家庭成员是否报告个人值或家庭合计需要真实 Google One 家庭账号核实。共享存储组只阻止同组同池，不合并组内容量；组名由用户填写，未分组账号相同上限仅提示，无法自动证明两账号是否同一家庭。
-- 单账号每日上传上限约 750 GB；备份分片触发 `userRateLimitExceeded` 或 upload limit 时返回 `CLOUD_DAILY_UPLOAD_LIMIT`，不可自动重试，由下一次计划继续。重跑可复用 Restic 已写入内容；不承诺限额固定复位时间、吞吐或字节级续传。Google HTTP 403 中的限流与空间不足不会被当作授权失效通知。
+- 单账号每日上传上限约 750 GB；备份分片识别明确的 upload limit 错误时返回 `CLOUD_DAILY_UPLOAD_LIMIT`，不可自动重试，由下一次计划继续。项目/用户 API 请求限流（如 `rateLimitExceeded` / `userRateLimitExceeded`）单独返回可重试的 `CLOUD_API_RATE_LIMITED`，应用按 60、120、240 秒并最多 300 秒退避，仍受计划重试次数限制。重跑可复用 Restic 已写入内容；不承诺限额固定复位时间、吞吐或字节级续传。Google HTTP 403 中的限流与空间不足不会被当作授权失效通知。
 - 所有 VaultPilot Google remote 固定 `use_trash = false`，历史清理/prune、旧副本清理、批量清空均永久删除，不进入回收站，无法找回；导入配置不能改变它。空间释放速度仍需实际测量，不承诺 API 立即更新。
 - Google 允许同一父目录出现同名项目。验证遇到重复 `VaultPilot` 或 `<vault_id>` 目录会报 `duplicate_cloud_folder`，需人工核对；并发创建后只清理本次新建的空目录，不合并或删除原目录。
-- `scope = drive` 允许整个 Google Drive 的读写，不采用 `drive.file`。自建 client 仅支持 Rclone 配置导入；OAuth 应用处于 Testing 时刷新令牌通常 7 天过期，应发布为 In production。Google client 环境变量不在本版范围。
+- `scope = drive` 允许整个 Google Drive 的读写，不采用 `drive.file`。自建 client 可在网页授权向导中按账号使用，也可通过 Rclone 配置导入；网页填写 Google 提供的原始 Client Secret，不是 obscure 值。OAuth 应用处于 Testing 时刷新令牌通常 7 天过期，应发布为 In production。Google client 不使用全局环境变量。
 - 恢复包与账号包仍为格式 v1；含 `gdrive` 的包需要本版或更新的兼容版本，旧版会拒绝，不可用于旧版回退恢复。真实账号、多 TB、并发与实际上传/恢复耗时均未验证。

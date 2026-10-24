@@ -18,6 +18,8 @@
 | VP_OAUTH_CLIENT_SECRET | 空 | 可选自定义 Web 应用 Secret；标准 Rclone 授权留空，不提交到 Git |
 | VP_OAUTH_TENANT | consumers | 仅自定义应用的租户；默认 OneDrive Personal |
 | VP_GLOBAL_CONCURRENCY | 2 | 全局后台任务数量上限 |
+| VP_GDRIVE_TPS_LIMIT | 4 | 每个 Drive-only Rclone 进程的事务速率；0 关闭，范围 0.01–1000。混合 Drive/OneDrive 操作使用 Google remote 的 backend pacer，不将全局速率限制施加到 OneDrive。 |
+| VP_GDRIVE_TPS_LIMIT_BURST | 1 | Drive 请求速率令牌桶突发值，范围 1–100。 |
 | VP_LOG_MAX_ROWS | 100000 | 全局日志保留条数；批量修剪最多临时超出 127 行，单行最多 8 KiB |
 | VP_CACHE_MAX_BYTES | 21474836480 | 缓存目录容量阈值，任务阶段边界检查，超限中止，不删除活动文件 |
 | VP_MAINTENANCE_WINDOW | 空 | 检查、清理、迁移启动窗口，HH:MM-HH:MM，支持跨午夜；空为全天 |

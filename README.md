@@ -73,9 +73,9 @@ Rclone 的标准回调固定为 `http://localhost:53682/`。本机运行通常�
 
 在「存储账号 → 添加账号」选择「Google Drive（Google One）」，填写名称。使用同一 Google One 家庭容量的账号请填写相同的「共享存储组」，例如“张家 Google One”；同组账号不能进入同一存储池，未分组账号容量上限相同时界面会提示核对。该字段用于防止重复计量，不会合并家庭成员的剩余空间。
 
-保持「Rclone 标准授权」，打开 Google 页面，选择个人账号并同意授权。Google 回调为 `http://127.0.0.1:53682/`；远程或 Docker 部署遇到无法访问时，复制包含 `code` 和 `state` 的完整地址，回到向导粘贴并提交，无需映射 53682 端口。平台要求重新确认同意，以取得可长期刷新的令牌。随后显式选择“我的云端硬盘”，按真实容量设置预算并完成访问验证。
+保持「Rclone 标准授权」，打开 Google 页面，选择个人账号并同意授权。向导可选择沿用该账号已保存的客户端（首次未配置时使用共享应用），也可选择使用/更换自己的 Google Cloud OAuth 桌面客户端；自有客户端会按账号保存。Google 回调为 `http://127.0.0.1:53682/`；远程或 Docker 部署遇到无法访问时，复制包含 `code` 和 `state` 的完整地址，回到向导粘贴并提交，无需映射 53682 端口。平台要求重新确认同意，以取得可长期刷新的令牌。随后显式选择“我的云端硬盘”，按真实容量设置预算并完成访问验证。
 
-也可导入 `type = drive` 的 Rclone 配置、dump JSON 或 `rclone authorize drive` 输出。scope 固定为 `drive`，授权覆盖整个 Google Drive 的读写；不支持 Workspace、共享云端硬盘、服务账号或 `drive.file`。自建 Google 桌面应用仅支持通过已有 Rclone 配置导入，OAuth 同意屏幕须发布为 **In production**，Testing 状态的刷新令牌通常 7 天过期；本版未提供 `VP_GOOGLE_CLIENT_ID` / `VP_GOOGLE_CLIENT_SECRET` 环境配置。
+也可导入 `type = drive` 的 Rclone 配置、dump JSON 或 `rclone authorize drive` 输出。scope 固定为 `drive`，授权覆盖整个 Google Drive 的读写；不支持 Workspace、共享云端硬盘、服务账号或 `drive.file`。自建 Google 桌面应用可在网页授权向导中按账号使用，也可通过已有 Rclone 配置导入；网页填写 Google 提供的原始 Client Secret（不是 obscure 值）。OAuth 同意屏幕须发布为 **In production**，Testing 状态的刷新令牌通常 7 天过期。自建客户端不通过 `VP_GOOGLE_CLIENT_ID` / `VP_GOOGLE_CLIENT_SECRET` 环境变量配置。
 
 **Google Drive 的历史清理、prune、迁移旧副本清理和账号清空都是永久删除，不进入回收站，无法找回。** VaultPilot 固定使用 `use_trash = false`。Google Drive、Gmail 与 Photos 共用容量；每日上传上限约 750 GB，触发后以 `CLOUD_DAILY_UPLOAD_LIMIT` 结束本次任务，不在当天持续重试，由下一次计划继续。真实账号授权、长期刷新、空间释放与混合池恢复仍未验收，完整边界见 [授权指南](docs/RCLONE_AUTH.md) 和 [已知限制](docs/LIMITATIONS.md)。
 

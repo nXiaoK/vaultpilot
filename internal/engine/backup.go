@@ -858,7 +858,8 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 		defer s.rt.ReleaseRcloneConfig(config)
 		// Inherit the config path in Rclone's subprocess without nested command quoting.
 		env = append(env, "RCLONE_CONFIG="+config)
-		full = append(full, "-o", "rclone.program="+s.rt.Config.RcloneBin, "-o", "rclone.args=serve restic --stdio")
+		rcloneArgs := s.rcloneArgsFor([]Account{a}, "serve", "restic", "--stdio")
+		full = append(full, "-o", "rclone.program="+s.rt.Config.RcloneBin, "-o", "rclone.args="+strings.Join(rcloneArgs, " "))
 	}
 	full = append(full, args...)
 	output, err := process.Run(ctx, s.rt.Config.ResticBin, full, env, onLine)
@@ -869,13 +870,10 @@ func (s *Service) restic(ctx context.Context, t *Task, repo Repository, a Accoun
 	return output, err
 }
 func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Repository, a Account, sources map[string]Source, stage string) (string, error) {
-	dailyUploadLimit := false
+	limits := driveBackupLimits{}
 	observeUploadLimit := func(line string) {
 		if a.Backend == "gdrive" {
-			text := strings.ToLower(line)
-			if strings.Contains(text, "userratelimitexceeded") || strings.Contains(text, "upload limit") {
-				dailyUploadLimit = true
-			}
+			limits.observe(line)
 		}
 	}
 	if repo.Status == "new" {
@@ -883,15 +881,15 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 			observeUploadLimit(line)
 			s.log(t, line)
 		}); err != nil {
-			if _, checkErr := s.restic(ctx, t, repo, a, []string{"cat", "config"}, nil); checkErr != nil {
-				if dailyUploadLimit && ctx.Err() == nil {
-					return "", fail("CLOUD_DAILY_UPLOAD_LIMIT", "Google Drive 每日上传上限已触发，请等待下一次计划继续备份")
+			if _, checkErr := s.restic(ctx, t, repo, a, []string{"cat", "config"}, observeUploadLimit); checkErr != nil {
+				if limitErr := limits.failure(ctx); limitErr != nil {
+					return "", limitErr
 				}
 				return "", fail("REPOSITORY_INIT_FAILED", "仓库初始化或已有仓库密码验证失败："+err.Error())
 			}
 		}
 	}
-	dailyUploadLimit = false
+	limits = driveBackupLimits{}
 	list, err := os.CreateTemp(s.rt.Config.CacheDir, "file-list-")
 	if err != nil {
 		return "", err
@@ -1039,8 +1037,8 @@ func (s *Service) backupShard(ctx context.Context, t *Task, p Plan, repo Reposit
 	}
 	_, _ = s.rt.Store.Save(context.Background(), "shard_runs", status["id"].(string), 0, status)
 	if err != nil {
-		if dailyUploadLimit && ctx.Err() == nil {
-			return "", fail("CLOUD_DAILY_UPLOAD_LIMIT", "Google Drive 每日上传上限已触发，请等待下一次计划继续备份")
+		if limitErr := limits.failure(ctx); limitErr != nil {
+			return "", limitErr
 		}
 		if process.ExitCode(err) == 3 {
 			return "", fail("SOURCE_READ_FAILED", "Restic报告源文件读取失败，不发布完整恢复点")
@@ -1270,6 +1268,14 @@ func (s *Service) verifySnapshotLinks(ctx context.Context, t *Task, repo Reposit
 	})
 }
 
+func (s *Service) rcloneArgsFor(accounts []Account, args ...string) []string {
+	platformAccounts := make([]platform.Account, 0, len(accounts))
+	for _, a := range accounts {
+		platformAccounts = append(platformAccounts, platform.Account{Backend: a.Backend})
+	}
+	return s.rt.RcloneArgsFor(platformAccounts, args...)
+}
+
 func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...string) ([]byte, error) {
 	ids := make([]string, 0, len(accounts))
 	for _, a := range accounts {
@@ -1280,7 +1286,7 @@ func (s *Service) rcloneOutput(ctx context.Context, accounts []Account, args ...
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
 	}
 	defer s.rt.ReleaseRcloneConfig(config)
-	output, err := process.Output(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil)
+	output, err := process.Output(ctx, s.rt.Config.RcloneBin, s.rcloneArgsFor(accounts, append([]string{"--config", config}, args...)...), nil)
 	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }
@@ -1294,7 +1300,7 @@ func (s *Service) rcloneRun(ctx context.Context, accounts []Account, onLine func
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
 	}
 	defer s.rt.ReleaseRcloneConfig(config)
-	output, err := process.Run(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil, onLine)
+	output, err := process.Run(ctx, s.rt.Config.RcloneBin, s.rcloneArgsFor(accounts, append([]string{"--config", config}, args...)...), nil, onLine)
 	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }

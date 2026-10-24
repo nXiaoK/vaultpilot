@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -28,6 +29,8 @@ type Config struct {
 	TrustedProxies                                                            []netip.Prefix
 	AllowLocal                                                                bool
 	GlobalConcurrency                                                         int
+	GoogleDriveTPSLimit                                                       float64
+	GoogleDriveTPSLimitBurst                                                  int
 	LogMaxRows                                                                int
 	CacheMaxBytes                                                             int64
 	MaintenanceWindow, MaintenanceTimezone                                    string
@@ -78,6 +81,17 @@ type Runtime struct {
 }
 
 func New(c Config) (*Runtime, error) {
+	// The zero-value Config leaves pacing disabled. The executable supplies its
+	// conservative defaults; callers can explicitly opt out with a zero limit.
+	if math.IsNaN(c.GoogleDriveTPSLimit) || math.IsInf(c.GoogleDriveTPSLimit, 0) || c.GoogleDriveTPSLimit != 0 && (c.GoogleDriveTPSLimit < 0.01 || c.GoogleDriveTPSLimit > 1000) {
+		return nil, errors.New("VP_GDRIVE_TPS_LIMIT 必须为 0（关闭）或 0.01 至 1000 之间的有限数字")
+	}
+	if c.GoogleDriveTPSLimitBurst == 0 {
+		c.GoogleDriveTPSLimitBurst = 1
+	}
+	if c.GoogleDriveTPSLimitBurst < 1 || c.GoogleDriveTPSLimitBurst > 100 {
+		return nil, errors.New("VP_GDRIVE_TPS_LIMIT_BURST 必须为 1 至 100 的整数")
+	}
 	if c.StateDir == "" {
 		c.StateDir = "./state"
 	}

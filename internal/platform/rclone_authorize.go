@@ -13,24 +13,84 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type rcloneAuthFlow struct {
 	ID, AccountID, Backend, SessionID, State, Status, Message, AuthorizationURL string
 	Version                                                                     int
+	CustomClient                                                                bool
 	Expires                                                                     time.Time
 	Account                                                                     *Account
 	cancel                                                                      context.CancelFunc
+	clientID, clientSecret                                                      string
 }
 
 func (f *rcloneAuthFlow) active() bool {
 	return f.Status == "starting" || f.Status == "waiting" || f.Status == "exchanging" || f.Status == "cancelling"
 }
 func (f *rcloneAuthFlow) view() map[string]any {
-	return map[string]any{"id": f.ID, "account_id": f.AccountID, "status": f.Status, "message": f.Message, "authorization_url": f.AuthorizationURL, "expires_at": f.Expires, "account": f.Account}
+	return map[string]any{"id": f.ID, "account_id": f.AccountID, "status": f.Status, "message": f.Message, "authorization_url": f.AuthorizationURL, "expires_at": f.Expires, "custom_client": f.CustomClient, "account": f.Account}
 }
 
 var localAuthLink = regexp.MustCompile(`http://127\.0\.0\.1:53682/auth\?state=[A-Za-z0-9_-]+`)
+var googleOAuthClientID = regexp.MustCompile(`^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$`)
+
+const googleRcloneClientID = "202264815644.apps.googleusercontent.com"
+
+func validateGoogleOAuthClient(clientID, clientSecret string) error {
+	bad := errors.New("请提供有效的 Google 桌面应用客户端 ID 和原始客户端密钥")
+	if clientID == "" || len(clientID) > 1024 || !googleOAuthClientID.MatchString(clientID) || clientSecret == "" || len(clientSecret) > 4096 {
+		return bad
+	}
+	for _, c := range clientSecret {
+		if unicode.IsSpace(c) || unicode.IsControl(c) {
+			return bad
+		}
+	}
+	return nil
+}
+
+// Reauthorization without new client settings must keep the saved application's
+// identity. A damaged or incomplete credential is an error, never a reason to
+// silently switch its token to Rclone's shared application.
+func (r *Runtime) rcloneAuthorizationClient(a Account, clientID, clientSecret *string) (string, string, error) {
+	if a.Backend != backendGoogleDrive {
+		if clientID != nil || clientSecret != nil {
+			return "", "", errors.New("自有 Google 客户端设置仅适用于 Google Drive 账号")
+		}
+		return "", "", nil
+	}
+	if clientID != nil || clientSecret != nil {
+		if clientID == nil || clientSecret == nil {
+			return "", "", errors.New("请同时提供 Google 客户端 ID 和客户端密钥；显式清空不代表沿用")
+		}
+		if err := validateGoogleOAuthClient(*clientID, *clientSecret); err != nil {
+			return "", "", err
+		}
+		return *clientID, *clientSecret, nil
+	}
+	r.credentialsMu.Lock()
+	defer r.credentialsMu.Unlock()
+	raw, err := r.meta("credential:" + a.ID)
+	if err != nil {
+		return "", "", errors.New("无法读取已保存的 Google 客户端配置，请重试")
+	}
+	if raw == "" {
+		return "", "", nil
+	}
+	c, err := r.loadCredential(a.ID)
+	if err != nil || credentialProvider(c) != backendGoogleDrive {
+		return "", "", errors.New("已保存的 Google 凭据无法读取，请重新输入客户端配置或导入完整 Rclone 配置")
+	}
+	if c.ClientID == "" && c.ClientSecret == "" {
+		return "", "", nil
+	}
+	if validateGoogleOAuthClient(c.ClientID, c.ClientSecret) != nil {
+		return "", "", errors.New("已保存的 Google 客户端配置不完整或无效，请重新输入客户端 ID 和原始密钥")
+	}
+	return c.ClientID, c.ClientSecret, nil
+}
 
 type privateOutput struct{ buffer bytes.Buffer }
 
@@ -44,9 +104,11 @@ func (b *privateOutput) Write(p []byte) (int, error) {
 
 func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 	var v struct {
-		Version int `json:"version"`
+		Version      int     `json:"version"`
+		ClientID     *string `json:"client_id"`
+		ClientSecret *string `json:"client_secret"`
 	}
-	if !decode(w, req, &v) {
+	if !decodeLimit(w, req, &v, maxAuthRequestBytes) {
 		return
 	}
 	var a Account
@@ -56,6 +118,11 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 	}
 	if !cloudBackend(a.Backend) || a.Version != v.Version {
 		fail(w, 409, "account_changed", "请重新加载 "+backendLabel(a.Backend)+" 账号配置")
+		return
+	}
+	clientID, clientSecret, e := r.rcloneAuthorizationClient(a, v.ClientID, v.ClientSecret)
+	if e != nil {
+		fail(w, 400, "invalid_oauth_client", e.Error())
 		return
 	}
 	if !engineAvailable(r.Config.RcloneBin) {
@@ -94,9 +161,17 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	f := &rcloneAuthFlow{ID: newID(), AccountID: a.ID, Backend: a.Backend, Version: a.Version, SessionID: sid, Status: "starting", Expires: time.Now().Add(10 * time.Minute), cancel: cancel}
+	f := &rcloneAuthFlow{ID: newID(), AccountID: a.ID, Backend: a.Backend, Version: a.Version, SessionID: sid, Status: "starting", CustomClient: clientID != "", Expires: time.Now().Add(10 * time.Minute), cancel: cancel, clientID: clientID, clientSecret: clientSecret}
 	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, "authorize", rcloneType(a.Backend), "--auth-no-open-browser", "--config", path, "--log-level", "NOTICE")
 	cmd.Env = rcloneEnvironment()
+	if a.Backend == backendGoogleDrive {
+		// Backend options are read by Rclone's authorize temporary remote. Pass
+		// only these explicit values, never host RCLONE_* or a secret in argv.
+		cmd.Env = append(cmd.Env, "RCLONE_DRIVE_SCOPE=drive")
+		if clientID != "" {
+			cmd.Env = append(cmd.Env, "RCLONE_DRIVE_CLIENT_ID="+clientID, "RCLONE_DRIVE_CLIENT_SECRET="+clientSecret)
+		}
+	}
 	out := &privateOutput{}
 	cmd.Stdout = out
 	stderr, e := cmd.StderrPipe()
@@ -114,12 +189,19 @@ func (r *Runtime) startRcloneAuth(w http.ResponseWriter, req *http.Request) {
 	r.rcloneAuthWG.Add(1)
 	r.rcloneAuthMu.Unlock()
 	go r.runRcloneAuth(ctx, f, cmd, stderr, out, path)
-	writeJSON(w, 202, map[string]any{"id": f.ID, "status": "starting", "expires_at": f.Expires})
+	writeJSON(w, 202, map[string]any{"id": f.ID, "status": "starting", "custom_client": f.CustomClient, "expires_at": f.Expires})
 }
 func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exec.Cmd, stderr io.Reader, out *privateOutput, path string) {
 	defer r.rcloneAuthWG.Done()
 	defer f.cancel()
 	defer os.Remove(path)
+	defer func() {
+		// Do not retain the client secret in the flow or command environment after
+		// the child exits. The encrypted credential is the only durable copy.
+		f.clientID = ""
+		f.clientSecret = ""
+		cmd.Env = nil
+	}()
 	scan := bufio.NewScanner(stderr)
 	scan.Buffer(make([]byte, 4096), maxRcloneImport)
 	for scan.Scan() {
@@ -139,7 +221,7 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 		location := res.Header.Get("Location")
 		res.Body.Close()
 		client.CloseIdleConnections()
-		auth, e := validatedRcloneAuthURL(location, state, f.Backend)
+		auth, e := validatedRcloneAuthURL(location, state, f.Backend, f.clientID)
 		if e != nil || res.StatusCode != http.StatusTemporaryRedirect {
 			f.cancel()
 			continue
@@ -157,55 +239,75 @@ func (r *Runtime) runRcloneAuth(ctx context.Context, f *rcloneAuthFlow, cmd *exe
 	}
 	e := cmd.Wait()
 	_ = os.Remove(path)
-	r.rcloneAuthMu.Lock()
-	defer r.rcloneAuthMu.Unlock()
-	defer func() {
-		if f.Status == "failed" {
+	finish := func(status, message string, account *Account) {
+		r.rcloneAuthMu.Lock()
+		if f.Status == "cancelling" || r.closing {
+			status = "cancelled"
+			message = "授权已取消"
+			account = nil
+		}
+		f.AuthorizationURL = ""
+		f.State = ""
+		f.Status = status
+		f.Message = message
+		f.Account = account
+		r.rcloneAuthMu.Unlock()
+		if status == "failed" {
 			r.AccountAuthorizationFailed(f.AccountID, "authorization_failed")
 		}
-	}()
-	f.AuthorizationURL = ""
-	f.State = ""
-	if f.Status == "cancelling" || r.closing {
-		f.Status = "cancelled"
-		f.Message = "授权已取消"
-		return
 	}
 	if ctx.Err() != nil {
-		f.Status = "failed"
-		f.Message = "授权已过期或启动失败，请检查 53682 端口后重试"
+		finish("failed", "授权已过期或启动失败，请检查 53682 端口后重试", nil)
 		return
 	}
 	if e != nil {
-		f.Status = "failed"
 		provider := "微软"
 		if f.Backend == backendGoogleDrive {
 			provider = "Google"
 		}
-		f.Message = "Rclone 授权未完成，请检查端口、网络或" + provider + "授权结果后重试"
+		finish("failed", "Rclone 授权未完成，请检查端口、网络或"+provider+"授权结果后重试", nil)
 		return
 	}
 	entries, e := parseRcloneImport(out.String(), f.Backend)
 	if e != nil || len(entries) != 1 {
-		f.Status = "failed"
-		f.Message = "Rclone 未返回有效授权凭据"
+		finish("failed", "Rclone 未返回有效授权凭据", nil)
 		return
 	}
-	a, e := r.installCredential(ctx, f.AccountID, f.Version, entries[0].Credential, "account.rclone_authorized")
+	credential := entries[0].Credential
+	if f.Backend == backendGoogleDrive && f.clientID != "" {
+		credential.ClientID = f.clientID
+		credential.ClientSecret = f.clientSecret
+		credential.Scopes = "drive"
+	}
+	r.rcloneAuthMu.Lock()
+	if f.Status == "cancelling" || r.closing {
+		r.rcloneAuthMu.Unlock()
+		finish("failed", "授权已取消", nil)
+		return
+	}
+	a, e := r.installCredential(ctx, f.AccountID, f.Version, credential, "account.rclone_authorized")
 	if e != nil {
-		f.Status = "failed"
-		f.Message = e.Error()
+		r.rcloneAuthMu.Unlock()
+		finish("failed", e.Error(), nil)
 		return
 	}
+	// Publish completion while holding the flow lock. This keeps a concurrent
+	// cancellation from reporting a committed credential as cancelled.
+	f.AuthorizationURL = ""
+	f.State = ""
 	f.Status = "completed"
-	f.Account = &a
 	f.Message = "授权凭据已加密保存，请选择 Drive 并验证访问"
+	f.Account = &a
+	r.rcloneAuthMu.Unlock()
 }
 
 // Validate the provider destination before exposing a URL from the local
 // Rclone process. Callback relaying is restricted separately to loopback.
-func validatedRcloneAuthURL(location, state, backend string) (*url.URL, error) {
+func validatedRcloneAuthURL(location, state, backend string, expectedClientIDs ...string) (*url.URL, error) {
 	bad := errors.New("Rclone 返回了不受支持的授权地址")
+	if len(expectedClientIDs) > 1 {
+		return nil, bad
+	}
 	auth, err := url.Parse(location)
 	if err != nil || auth.Scheme != "https" || auth.User != nil || auth.Query().Get("state") != state {
 		return nil, bad
@@ -219,15 +321,31 @@ func validatedRcloneAuthURL(location, state, backend string) (*url.URL, error) {
 		if err != nil {
 			return nil, bad
 		}
+		allowed := map[string]bool{"state": true, "redirect_uri": true, "response_type": true, "access_type": true, "scope": true, "client_id": true, "prompt": true}
+		for key := range q {
+			if !allowed[key] {
+				return nil, bad
+			}
+		}
 		for key, value := range map[string]string{"state": state, "redirect_uri": "http://127.0.0.1:53682/", "response_type": "code", "access_type": "offline", "scope": "https://www.googleapis.com/auth/drive"} {
 			if len(q[key]) != 1 || q.Get(key) != value {
 				return nil, bad
 			}
 		}
-		if len(q["client_id"]) != 1 || !strings.HasSuffix(q.Get("client_id"), ".apps.googleusercontent.com") {
+		if len(q["client_id"]) != 1 || !googleOAuthClientID.MatchString(q.Get("client_id")) {
 			return nil, bad
 		}
-		q.Set("prompt", "consent select_account")
+		expected := googleRcloneClientID
+		if len(expectedClientIDs) == 1 && expectedClientIDs[0] != "" {
+			expected = expectedClientIDs[0]
+		}
+		if q.Get("client_id") != expected {
+			return nil, bad
+		}
+		if len(q["prompt"]) > 1 {
+			return nil, bad
+		}
+		q = url.Values{"state": {state}, "redirect_uri": {"http://127.0.0.1:53682/"}, "response_type": {"code"}, "access_type": {"offline"}, "scope": {"https://www.googleapis.com/auth/drive"}, "client_id": {expected}, "prompt": {"consent select_account"}}
 	} else {
 		if auth.Host != "login.microsoftonline.com" || auth.Path != "/common/oauth2/v2.0/authorize" || q.Get("redirect_uri") != "http://localhost:53682/" {
 			return nil, bad

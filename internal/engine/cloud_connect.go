@@ -32,7 +32,7 @@ func (s *Service) rcloneOutputBounded(ctx context.Context, accounts []Account, l
 		return nil, fail("RCLONE_CONFIG_FAILED", "无法准备 Rclone 凭据："+err.Error())
 	}
 	defer s.rt.ReleaseRcloneConfig(config)
-	output, err := process.OutputLimited(ctx, s.rt.Config.RcloneBin, append([]string{"--config", config}, args...), nil, limit)
+	output, err := process.OutputLimited(ctx, s.rt.Config.RcloneBin, s.rcloneArgsFor(accounts, append([]string{"--config", config}, args...)...), nil, limit)
 	s.observeRcloneAccounts(accounts, output, err)
 	return output, err
 }

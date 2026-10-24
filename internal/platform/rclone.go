@@ -7,9 +7,39 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// RcloneArgsFor adds trusted process-wide HTTP pacing only to Drive-only
+// operations. Mixed-provider commands use the Drive remote's own pacer instead,
+// so a Drive limit cannot throttle OneDrive requests in the same process.
+func (r *Runtime) RcloneArgsFor(accounts []Account, args ...string) []string {
+	out := append([]string(nil), args...)
+	if r.Config.GoogleDriveTPSLimit <= 0 {
+		return out
+	}
+	hasDrive := false
+	for _, a := range accounts {
+		if a.Backend == backendGoogleDrive {
+			hasDrive = true
+		} else if a.Backend != "local" {
+			return out
+		}
+	}
+	if !hasDrive {
+		return out
+	}
+	return append(out, "--tpslimit", strconv.FormatFloat(r.Config.GoogleDriveTPSLimit, 'f', -1, 64), "--tpslimit-burst", strconv.Itoa(r.googleDriveTPSBurst()))
+}
+
+func (r *Runtime) googleDriveTPSBurst() int {
+	if r.Config.GoogleDriveTPSLimitBurst == 0 {
+		return 1
+	}
+	return r.Config.GoogleDriveTPSLimitBurst
+}
 
 // RcloneConfigFor writes a restricted ephemeral config for the given accounts.
 func (r *Runtime) RcloneConfigFor(ctx context.Context, accountIDs ...string) (string, error) {

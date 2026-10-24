@@ -340,16 +340,11 @@ func (s *Service) execute(id string) {
 					if !errors.As(err, &f) || !f.Retryable || ctx.Err() != nil {
 						break
 					}
-					t.Attempt = attempt
-					s.stage(&t, "retry_wait")
-					delay := time.NewTimer(time.Duration(1<<uint(attempt)) * time.Second)
-					select {
-					case <-ctx.Done():
-						delay.Stop()
-						err = ctx.Err()
-					case <-delay.C:
-						err = s.backup(ctx, &t)
+					if retryErr := s.waitBackupRetry(ctx, &t, err, attempt); retryErr != nil {
+						err = retryErr
+						break
 					}
+					err = s.backup(ctx, &t)
 					if err == nil {
 						break
 					}

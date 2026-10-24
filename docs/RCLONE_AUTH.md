@@ -49,11 +49,11 @@ Google 导入边界：
 - `scope` 只能为空或 `drive`，统一保存为 `drive`。`drive.file`、只读 scope 及多个 scope 均拒绝；整个 Drive 读写权限意味着切换应用后仍能看到原备份目录。
 - 不支持 `team_drive`、`service_account_file`、`service_account_credentials`、`impersonate`、`resource_key`；拒绝 `env_auth = true` 与 `shared_with_me = true`。Workspace 与 Shared Drives 不在支持范围。
 - `auth_url` 只接受默认 `https://accounts.google.com/o/oauth2/auth`，`token_url` 只接受默认 `https://oauth2.googleapis.com/token`，均可留空。
-- Token 与自定义 `client_id` / obscure 格式的 `client_secret` 按白名单加密保存。导入的 `use_trash`、`stop_on_upload_limit`、`chunk_size` 等运行设置不会覆盖平台策略；生成的所有 Google remote 固定 `scope = drive`、`use_trash = false`、`stop_on_upload_limit = true`。
+- Token 与自定义 `client_id` / 原始 `client_secret` 按白名单加密保存。标准 Google 配置中的 `client_secret` 是 Rclone 直接使用的敏感字符串，不要把它转换成 obscure 值；导入的 `use_trash`、`stop_on_upload_limit`、`chunk_size` 等运行设置不会覆盖平台策略；生成的所有 Google remote 固定 `scope = drive`、`use_trash = false`、`stop_on_upload_limit = true`。
 
 **永久删除：Google Drive 中的备份被 prune、历史清理、迁移旧副本清理或批量清空删除后，不进入回收站，无法找回。** 该配置仅用于 VaultPilot 自己的 remote 与项目目录；Google 网页及其他工具遵循它们各自的删除设置。Google 同名目录可能有多个，平台遇到重复 `VaultPilot` 或库目录会拒绝继续，需在 Google Drive 手动核对处理，不会自动合并备份。
 
-自建 Google OAuth 客户端仅能通过已有 Rclone 配置导入；类型使用“桌面应用”。OAuth 同意屏幕须发布为 **In production**，处于 Testing 的刷新令牌通常 7 天过期。该发布状态与 Google 的审核状态不同，未审核应用仍可能显示提示。网页标准授权继续使用 Rclone 内置共享 client，本版未实现 Google client 环境变量或自建 client 的网页高级入口。
+自建 Google OAuth 客户端现在可在 Google 授权向导中按账号使用，也可通过已有 Rclone 配置导入；类型使用“桌面应用”。向导要求填写 Google 提供的原始 Client Secret，不是 obscure 值。OAuth 同意屏幕须发布为 **In production**，处于 Testing 的刷新令牌通常 7 天过期。该发布状态与 Google 的审核状态不同，未审核应用仍可能显示提示。自建客户端仅按当前账号保存，不通过 Google client 环境变量配置。首次未配置自有客户端的账号继续使用 Rclone 内置共享 client；已有自建客户端再次授权时会沿用，不能静默切回共享应用。
 
 Google 账号授权成功、重复授权取得 refresh token、过期刷新并跨重启保留、读写及混合云盘恢复均需真实账号验收；当前未验证。详见 [验收计划](ACCEPTANCE.md)。
 

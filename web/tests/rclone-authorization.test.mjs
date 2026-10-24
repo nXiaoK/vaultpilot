@@ -16,22 +16,24 @@ const { code } = compile(descriptor.template.content, { mode: 'function', prefix
 const render = vm.runInNewContext(`(function(){${code}})()`, { Vue })
 function setup(t, backend) {
   const calls = [], events = [], pending = []
+  let unmount = () => {}
   const props = Vue.reactive({ account: { id: 'account', name: '备份账号', version: 2, backend }, customOAuth: true, rcloneAvailable: true, busy: false })
   const scope = Vue.effectScope(); t.after(() => scope.stop())
   const context = vm.createContext({
     Error, encodeURIComponent, setTimeout: () => 1, clearTimeout: () => {},
-    ref: Vue.ref, computed: Vue.computed, watch: Vue.watch, onUnmounted: () => {},
+    ref: Vue.ref, computed: Vue.computed, watch: Vue.watch,
     defineProps: () => props, defineEmits: () => ((...event) => events.push(event)),
+    onUnmounted: callback => { unmount = callback },
     api: (path, options) => { calls.push({ path, options }); return new Promise((resolve, reject) => pending.push({ resolve, reject })) },
   })
-  scope.run(() => vm.runInContext(outputText + '\nglobalThis.state={backend,provider,rcloneType,callbackURL,importPlaceholder,method,pending,working,resumeLoading,error,flow,callback,config,filename,remotes,selected,active,start,cancel,submitCallback,preview,importConfig,resume,upload,changedConfig}', context))
+  scope.run(() => vm.runInContext(outputText + '\nglobalThis.state={backend,provider,rcloneType,callbackURL,importPlaceholder,method,googleClientMode,clientID,clientSecret,googleClientError,googleClientLabel,authorizationBody,pending,working,resumeLoading,error,flow,callback,config,filename,remotes,selected,active,start,cancel,submitCallback,preview,importConfig,resume,upload,changedConfig}', context))
   const state = context.state
   async function html() {
     const app = Vue.createSSRApp({ setup: () => ({ ...props, ...state, date: () => 'expiry' }), render })
     for (const name of ['ShieldCheck', 'FileUp', 'LoaderCircle', 'ArrowUpRight', 'RefreshCw']) app.component(name, { render: () => null })
     return renderToString(app)
   }
-  return { props, state, calls, events, pending, html }
+  return { props, state, calls, events, pending, html, unmount: () => unmount() }
 }
 for (const [backend, provider, type, callback] of [
   ['gdrive', 'Google', 'drive', 'http://127.0.0.1:53682/'],
@@ -75,13 +77,122 @@ for (const [backend, provider, type, callback] of [
     assert.equal(state.pending.value, false)
   })
 }
-test('failed Google preview keeps input available and releases busy state', async t => {
-  const { state, pending, events } = setup(t, 'gdrive')
-  state.config.value = 'invalid config'
-  const operation = state.preview()
-  pending[0].reject(new Error('invalid scope')); await operation
-  assert.equal(state.config.value, 'invalid config')
-  assert.equal(state.error.value, 'invalid scope')
-  assert.equal(state.pending.value, false)
-  assert.deepEqual(events.at(-1), ['busy', false])
+test('Google custom authorization submits a body snapshot and clears client inputs after completion', async t => {
+  const { state, calls, pending, events } = setup(t, 'gdrive')
+  state.googleClientMode.value = 'custom'
+  state.clientID.value = '1234567890.apps.googleusercontent.com'
+  state.clientSecret.value = 'GOCSPX-original-secret'
+  const operation = state.start()
+  assert.equal(calls.length, 1)
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].options.body)), {
+    version: 2,
+    client_id: '1234567890.apps.googleusercontent.com',
+    client_secret: 'GOCSPX-original-secret',
+  })
+  pending[0].resolve({ id: 'flow', status: 'waiting', authorization_url: 'https://example.test/auth' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(calls[1].path, '/accounts/account/rclone/authorize?flow_id=flow')
+  pending[1].resolve({ id: 'flow', status: 'completed', custom_client: true, account: { id: 'account', backend: 'gdrive', version: 3 } })
+  await operation
+  assert.equal(state.clientID.value, '')
+  assert.equal(state.clientSecret.value, '')
+  assert.equal(events.find(event => event[0] === 'authorized')[0], 'authorized')
+})
+
+test('Google custom authorization clears client inputs after a failed request', async t => {
+  const { state, calls, pending } = setup(t, 'gdrive')
+  state.googleClientMode.value = 'custom'
+  state.clientID.value = '1234567890.apps.googleusercontent.com'
+  state.clientSecret.value = 'GOCSPX-original-secret'
+  const operation = state.start()
+  const body = calls[0].options.body
+  pending[0].reject(new Error('quota exceeded'))
+  await operation
+  assert.equal(body.client_secret, 'GOCSPX-original-secret')
+  assert.equal(state.clientID.value, '')
+  assert.equal(state.clientSecret.value, '')
+  assert.equal(state.error.value, 'quota exceeded')
+})
+
+test('Google custom authorization rejects missing or malformed fields without submitting', async t => {
+  const { state, calls } = setup(t, 'gdrive')
+  state.googleClientMode.value = 'custom'
+  state.clientID.value = 'not-a-client'
+  const operation = state.start()
+  await operation
+  assert.equal(calls.length, 0)
+  assert.match(state.googleClientError.value, /完整填写/)
+  state.clientSecret.value = 'GOCSPX-original-secret'
+  await state.start()
+  assert.equal(calls.length, 0)
+  assert.match(state.googleClientError.value, /Client ID 必须/)
+  state.clientID.value = '1234567890.apps.googleusercontent.com'
+  state.clientSecret.value = 'secret with spaces'
+  await state.start()
+  assert.equal(calls.length, 0)
+  assert.match(state.googleClientError.value, /Client Secret 不能/)
+})
+
+test('reusing an existing Google client omits custom client fields', async t => {
+  const { state, calls, pending } = setup(t, 'gdrive')
+  const operation = state.start()
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].options.body)), { version: 2 })
+  pending[0].resolve({ id: 'flow', status: 'failed', message: 'cancelled by test' })
+  await operation
+  assert.equal(state.clientID.value, '')
+  assert.equal(state.clientSecret.value, '')
+})
+
+test('switching to import clears Google client inputs and OneDrive authorization remains unchanged', async t => {
+  const google = setup(t, 'gdrive')
+  google.state.googleClientMode.value = 'custom'
+  google.state.clientID.value = '1234567890.apps.googleusercontent.com'
+  google.state.clientSecret.value = 'GOCSPX-original-secret'
+  google.state.method.value = 'import'
+  assert.equal(google.state.clientID.value, '')
+  assert.equal(google.state.clientSecret.value, '')
+
+  const oneDrive = setup(t, 'onedrive')
+  const operation = oneDrive.state.start()
+  assert.deepEqual(JSON.parse(JSON.stringify(oneDrive.calls[0].options.body)), { version: 2 })
+  oneDrive.pending[0].resolve({ id: 'flow', status: 'failed', message: 'cancelled by test' })
+  await operation
+  assert.equal(oneDrive.calls.length, 1)
+})
+
+test('active Google flow displays the server-reported client type', async t => {
+  const { state, html } = setup(t, 'gdrive')
+  state.flow.value = { id: 'flow', status: 'waiting', custom_client: true }
+  let markup = await html()
+  assert.match(markup, /你提供的独立 Google 应用/)
+  state.flow.value = { id: 'flow', status: 'waiting', custom_client: false }
+  markup = await html()
+  assert.match(markup, /共享的 Rclone Google 应用/)
+})
+
+test('busy state disables Google client controls and authorization action', async t => {
+  const { props, html } = setup(t, 'gdrive')
+  props.busy = true
+  const markup = await html()
+  assert.equal(markup.includes('aria-busy="true"'), false)
+  assert.match(markup, /disabled/)
+})
+
+test('cancelling or unmounting clears Google client inputs', async t => {
+  const cancelled = setup(t, 'gdrive')
+  cancelled.state.googleClientMode.value = 'custom'
+  cancelled.state.clientID.value = '1234567890.apps.googleusercontent.com'
+  cancelled.state.clientSecret.value = 'GOCSPX-original-secret'
+  cancelled.state.flow.value = { id: 'flow', status: 'waiting' }
+  const operation = cancelled.state.cancel()
+  assert.equal(cancelled.state.clientSecret.value, '')
+  cancelled.pending[0].resolve({ id: 'flow', status: 'cancelled' })
+  await operation
+
+  const unmounted = setup(t, 'gdrive')
+  unmounted.state.clientID.value = '1234567890.apps.googleusercontent.com'
+  unmounted.state.clientSecret.value = 'GOCSPX-original-secret'
+  unmounted.unmount()
+  assert.equal(unmounted.state.clientID.value, '')
+  assert.equal(unmounted.state.clientSecret.value, '')
 })

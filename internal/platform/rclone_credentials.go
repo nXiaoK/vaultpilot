@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,6 +171,12 @@ func (r *Runtime) credentialConfig(ctx context.Context, name string, c accountCr
 			b.WriteString("root_folder_id = " + driveID + "\n")
 		}
 		b.WriteString("stop_on_upload_limit = true\nuse_trash = false\n")
+		if r.Config.GoogleDriveTPSLimit > 0 {
+			// This backend-local pacer also applies to Drive in a mixed-provider
+			// copy, where a process-wide TPS limit would affect OneDrive too.
+			interval := time.Duration(float64(time.Second) / r.Config.GoogleDriveTPSLimit)
+			b.WriteString("pacer_min_sleep = " + interval.String() + "\npacer_burst = " + strconv.Itoa(r.googleDriveTPSBurst()) + "\n")
+		}
 	} else if driveID != "" {
 		b.WriteString("drive_id = " + driveID + "\ndrive_type = " + driveType + "\n")
 	}
@@ -219,6 +226,7 @@ func (r *Runtime) refreshRcloneToken(ctx context.Context, id string, c accountCr
 	if credentialProvider(c) == backendGoogleDrive {
 		args = []string{"about", "vp_refresh:", "--json", "--config", path, "--log-level", "ERROR"}
 	}
+	args = r.RcloneArgsFor([]Account{{Backend: credentialProvider(c)}}, args...)
 	cmd := exec.CommandContext(ctx, r.Config.RcloneBin, args...)
 	cmd.Env = rcloneEnvironment()
 	output, e := cmd.Output()

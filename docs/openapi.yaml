@@ -795,13 +795,13 @@ paths:
     parameters:
     - "$ref": "#/components/parameters/ResourceID"
     post:
-      summary: 启动云盘 Rclone 标准授权（无需注册应用）
+      summary: 启动云盘 Rclone 标准授权（可按账号使用 Google 客户端）
       operationId: start_rclone_authorize
       tags: [账号]
       security:
       - SessionAuth: []
         CSRFToken: []
-      description: 实际子进程使用 Rclone 内置应用。一个活动授权，10 分钟期限。返回 id 用于 flow_id 查询；未完成会话不跨重启。
+      description: 实际子进程使用 Rclone 内置应用；Google 可按账号提交自有桌面应用的 client_id 与原始 client_secret。省略客户端字段时复用该账号已保存的客户端，首次未配置时使用共享应用；两个字段必须成对提供。一个活动授权，10 分钟期限。返回 id 用于 flow_id 查询；未完成会话不跨重启。客户端 Secret 不进入响应、命令行参数或日志。
       requestBody:
         required: true
         content:
@@ -811,6 +811,8 @@ paths:
               required: [version]
               properties:
                 version: {type: integer, minimum: 1}
+                client_id: {type: string, maxLength: 1024, description: Google 自有桌面应用客户端 ID；与 client_secret 成对，省略时复用已保存客户端}
+                client_secret: {type: string, format: password, maxLength: 4096, description: Google 原始客户端密钥；不回显、不写日志}
       responses:
         '421':
           "$ref": "#/components/responses/HostInvalid"
@@ -830,7 +832,7 @@ paths:
         '421':
           "$ref": "#/components/responses/HostInvalid"
         '200':
-          description: 状态、微软授权 URL 或完成后的账号；不包含凭据
+          description: 状态、Google/微软授权 URL 或完成后的账号；不包含凭据
           content:
             application/json:
               schema: {"$ref": "#/components/schemas/RcloneAuthFlow"}
@@ -2602,7 +2604,7 @@ components:
           schema:
             "$ref": "#/components/schemas/Error"
     APIError:
-      description: 稳定错误码、中文说明及是否可重试。Google新增shared_storage_group（409）、duplicate_cloud_folder（409）、cloud_storage_full（409）；任务可能返回CLOUD_DAILY_UPLOAD_LIMIT（不可重试）和DUPLICATE_STORAGE_GROUP。
+      description: 稳定错误码、中文说明及是否可重试。Google新增shared_storage_group（409）、duplicate_cloud_folder（409）、cloud_storage_full（409）；任务可能返回CLOUD_API_RATE_LIMITED（可重试）、CLOUD_DAILY_UPLOAD_LIMIT（不可重试）和DUPLICATE_STORAGE_GROUP。
       content:
         application/json:
           schema:
@@ -2636,9 +2638,10 @@ components:
         status:
           type: string
           enum: [starting, waiting, exchanging, cancelling, completed, failed, cancelled]
+        custom_client: {type: boolean, description: 当前授权是否使用该账号的自有 Google 客户端}
         expires_at: {type: string, format: date-time}
         message: {type: string}
-        authorization_url: {type: string, description: 仅等待授权阶段可用的官方微软 URL}
+        authorization_url: {type: string, description: 仅等待授权阶段可用的官方 Google/微软 URL，且不包含凭据}
         account:
           anyOf:
           - {"$ref": "#/components/schemas/Account"}

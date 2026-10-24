@@ -11,16 +11,22 @@ import (
 	"vaultpilot/internal/platform"
 )
 
-func TestGoogleDriveBackupDailyLimitDoesNotRetry(t *testing.T) {
+func TestGoogleDriveBackupClassifiesUploadAndRequestLimits(t *testing.T) {
 	for _, tc := range []struct {
 		backend, status, output, code string
 		retry                         bool
 	}{
-		{"gdrive", "ready", "403 userRateLimitExceeded", "CLOUD_DAILY_UPLOAD_LIMIT", false},
+		{"gdrive", "ready", "403 userRateLimitExceeded", "CLOUD_API_RATE_LIMITED", true},
+		{"gdrive", "ready", "403 rateLimitExceeded", "CLOUD_API_RATE_LIMITED", true},
+		{"gdrive", "ready", `"reason": "RATE_LIMIT_EXCEEDED"`, "CLOUD_API_RATE_LIMITED", true},
 		{"gdrive", "ready", "upload limit reached", "CLOUD_DAILY_UPLOAD_LIMIT", false},
+		{"gdrive", "ready", "Received upload limit error: 403 userRateLimitExceeded", "CLOUD_DAILY_UPLOAD_LIMIT", false},
 		{"gdrive", "ready", "403 insufficientPermissions", "BACKUP_ENGINE_FAILED", true},
 		{"onedrive", "ready", "upload limit reached", "BACKUP_ENGINE_FAILED", true},
-		{"gdrive", "new", "403 userRateLimitExceeded", "CLOUD_DAILY_UPLOAD_LIMIT", false},
+		{"onedrive", "ready", "403 rateLimitExceeded", "BACKUP_ENGINE_FAILED", true},
+		{"gdrive", "new", "403 userRateLimitExceeded", "CLOUD_API_RATE_LIMITED", true},
+		{"gdrive", "new", "403 rateLimitExceeded", "CLOUD_API_RATE_LIMITED", true},
+		{"gdrive", "new", "upload limit reached", "CLOUD_DAILY_UPLOAD_LIMIT", false},
 		{"onedrive", "new", "upload limit reached", "REPOSITORY_INIT_FAILED", false},
 	} {
 		t.Run(tc.backend+"-"+tc.status+"-"+tc.output, func(t *testing.T) {
